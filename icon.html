@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8">
+<style>
+html,body{margin:0;background:#bf5700;width:512px;height:512px;overflow:hidden}
+.ball{position:absolute;left:96px;top:176px;width:320px;height:160px;border:26px solid #fff;border-radius:50%/45%;box-sizing:border-box}
+.lace{position:absolute;left:206px;top:236px;width:100px;height:40px}
+.lace i{position:absolute;top:0;width:12px;height:40px;background:#fff;border-radius:6px}
+.lace b{position:absolute;left:0;top:14px;width:100px;height:12px;background:#fff;border-radius:6px}
+body.mask .ball{left:136px;top:196px;width:240px;height:120px;border-width:20px}
+body.mask .lace{left:221px;top:241px;width:70px;height:30px}
+body.mask .lace i{width:9px;height:30px}
+body.mask .lace b{top:10px;width:70px;height:9px}
+</style>
+<body>
+<div class="ball"></div>
+<div class="lace"><b></b><i style="left:0"></i><i style="left:22px"></i><i style="left:44px"></i><i style="left:66px"></i><i style="left:88px"></i></div>
+<script>if(location.search.indexOf('mask')>=0)document.body.className='mask';</script>
+</body>

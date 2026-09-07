@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>War Room self-test</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button>
+    <button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button>
+    <button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="app.js"></script>
+<script>
+(function () {
+  var out = [], fails = 0;
+  function ok(cond, name, detail) {
+    out.push((cond ? 'PASS ' : 'FAIL ') + name + (cond ? '' : '  -- ' + (detail || '')));
+    if (!cond) fails++;
+  }
+  function click(sel) { var el = document.querySelector(sel); if (!el) { out.push('NOEL ' + sel); fails++; return false; } el.click(); return true; }
+  function text(sel) { var el = document.querySelector(sel); return el ? el.textContent.trim() : ''; }
+  function setVal(sel, v) { var el = document.querySelector(sel); el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); }
+  var W = window.WarRoom;
+
+  try {
+    /* 1. empty state */
+    ok(/Nothing on the board yet/.test(text('#view')), 'empty state renders');
+
+    /* 2. parsers */
+    var p1 = W.parsePlayerLine('Arch Manning QB JR 92 Elite');
+    ok(p1 && p1.name === 'Arch Manning' && p1.pos === 'QB' && p1.year === 'JR' && p1.ovr === 92 && p1.dev === 'Elite', 'parse player basic', JSON.stringify(p1));
+    var p2 = W.parsePlayerLine('Trey Moore, LEDG, RS SR, 88');
+    ok(p2 && p2.rs === true && p2.year === 'SR' && p2.ovr === 88 && p2.pos === 'LEDG', 'parse player redshirt + commas', JSON.stringify(p2));
+    var p3 = W.parsePlayerLine('Big Guy OT SO 71');
+    ok(p3 && p3.pos === 'OL' && p3.year === 'SO', 'parse player alias OT -> OL', JSON.stringify(p3));
+    var p4 = W.parsePlayerLine('just a name with no position');
+    ok(p4 === null, 'parse player rejects line with no position');
+    var r1 = W.parseRecruitLine('Keelon Russell QB 5* AL #3 committed', 'hs');
+    ok(r1 && r1.stars === 5 && r1.state === 'AL' && r1.rank === 3 && r1.status === 'committed', 'parse hs recruit', JSON.stringify(r1));
+    var r2 = W.parseRecruitLine('Jaylen Reed S JR 84 4*', 'portal');
+    ok(r2 && r2.year === 'JR' && r2.ovr === 84 && r2.stars === 4 && r2.pos === 'S', 'parse portal target', JSON.stringify(r2));
+    var r3 = W.parseRecruitLine('Some Kid ATH 4* TX gem', 'hs');
+    ok(r3 && r3.pos === 'ATH' && r3.gem === true && r3.state === 'TX', 'parse ATH gem', JSON.stringify(r3));
+
+    /* 3. sample program and the count */
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    ok(st.players.length > 50, 'sample loads players (' + st.players.length + ')');
+    ok(st.recruits.length === 17, 'sample loads 17 recruits', st.recruits.length);
+    var n = W.needs(), t = n.totals;
+    ok(t.projected === t.returning + t.incoming, 'projected = returning + incoming');
+    ok(t.open === st.cap - t.projected, 'open = cap - projected');
+    ok(t.on === st.players.length, 'on-roster total matches players');
+    var lead = text('.lead-figure').replace(/of.*$/, '').trim();
+    ok(lead === String(Math.abs(t.open)), 'lead figure shows open count', lead + ' vs ' + t.open);
+    ok(document.querySelectorAll('.group-row').length === 12, '12 position rows on the board');
+    var sumRows = 0; n.rows.forEach(function (r) { sumRows += r.projected; });
+    ok(sumRows + t.ath === t.projected, 'rows sum to projected (ATH counted in total only)', sumRows + '+' + t.ath + ' vs ' + t.projected);
+    ok(text('#brandSchool') === 'Texas Longhorns', 'brand shows school', text('#brandSchool'));
+    ok(getComputedStyle(document.documentElement).getPropertyValue('--team').trim() === '#bf5700', 'team colour applied');
+
+    /* 4. add a player through the modal */
+    click('[data-view="roster"]');
+    var before = W.state().players.length;
+    click('[data-action="add-player"]');
+    ok(!document.getElementById('modal').hidden, 'player modal opens');
+    document.getElementById('p-name').value = 'Test Senior';
+    document.getElementById('p-pos').value = 'MIKE';
+    document.getElementById('p-year').value = 'SR';
+    document.getElementById('p-year').dispatchEvent(new Event('change'));
+    ok(document.getElementById('p-exit').disabled, 'exit locked for seniors');
+    document.getElementById('p-ovr').value = '80';
+    click('[data-action="save-player"]');
+    ok(W.state().players.length === before + 1, 'player added');
+    var added = W.state().players[W.state().players.length - 1];
+    ok(added.year === 'SR' && added.pos === 'MIKE' && added.ovr === 80, 'player fields saved', JSON.stringify(added));
+    var lbRow = W.needs().rows.filter(function (r) { return r.group.id === 'LB'; })[0];
+    ok(lbRow.on === lbRow.returning + lbRow.leaving, 'LB on = returning + leaving');
+
+    /* 5. filters */
+    setVal('[data-filter="roster.show"]', 'leaving');
+    ok(document.querySelectorAll('.item.leaving').length > 0 && document.querySelectorAll('.item:not(.leaving)').length === 0, 'leaving filter shows only leavers');
+    setVal('[data-filter="roster.show"]', 'all');
+    setVal('[data-filter="roster.group"]', 'QB');
+    ok(document.querySelectorAll('.group-block').length === 1, 'group filter narrows to one block');
+    setVal('[data-filter="roster.group"]', '');
+
+    /* 6. redshirt + a portal commit, then advance the season */
+    var rsGuy = W.state().players.filter(function (p) { return p.year === 'FR' && !p.rs && !p.exit; })[0];
+    rsGuy.redshirtNow = true;
+    var rsName = rsGuy.name;
+    var stBefore = W.state();
+    var season0 = stBefore.season;
+    var leaving = stBefore.players.filter(function (p) { return p.year === 'SR' || p.exit; }).length;
+    var incoming = stBefore.recruits.filter(function (r) { return r.status === 'committed' || r.status === 'signed'; }).length;
+    var stayCount = stBefore.players.length - leaving;
+    click('[data-view="class"]');
+    ok(/Class of 2027/.test(text('h1')), 'class view heading');
+    click('[data-action="advance"]');
+    ok(/Advance to 2028/.test(text('#modal h2')), 'advance modal');
+    click('[data-action="do-advance"]');
+    var s2 = W.state();
+    ok(s2.season === season0 + 1, 'season advanced');
+    ok(s2.players.length === stayCount + incoming, 'roster = stayers + enrolled', s2.players.length + ' vs ' + (stayCount + incoming));
+    ok(s2.recruits.length === 0, 'board cleared');
+    ok(s2.history.length === 1 && s2.history[0].commits.length === incoming && s2.history[0].departed.length === leaving, 'history recorded');
+    ok(s2.players.filter(function (p) { return p.name === 'Test Senior'; }).length === 0, 'senior graduated');
+    var rsAfter = s2.players.filter(function (p) { return p.name === rsName; })[0];
+    ok(rsAfter && rsAfter.rs === true && rsAfter.year === 'FR' && !rsAfter.redshirtNow, 'redshirt kept year and got RS', JSON.stringify(rsAfter));
+    var portalIn = s2.players.filter(function (p) { return /via portal/.test(p.note); })[0];
+    ok(portalIn && portalIn.year === 'JR' && portalIn.ovr === 84, 'portal commit enrolled with class and OVR', JSON.stringify(portalIn));
+    var hsIn = s2.players.filter(function (p) { return /class$/.test(p.note); });
+    ok(hsIn.length === incoming - 1 && hsIn.every(function (p) { return p.year === 'FR'; }), 'hs commits enrolled as freshmen', hsIn.length);
+    ok(s2.players.every(function (p) { return !p.exit; }), 'exits reset after advance');
+
+    /* 7. persistence */
+    var raw = JSON.parse(localStorage.getItem('warroom.v1'));
+    ok(raw.season === s2.season && raw.players.length === s2.players.length, 'state persisted to localStorage');
+
+    /* 8. settings save */
+    click('[data-view="settings"]');
+    document.getElementById('s-name').value = 'Oregon';
+    document.getElementById('s-mascot').value = 'Ducks';
+    document.getElementById('s-cap').value = '85';
+    click('[data-action="save-program"]');
+    ok(text('#brandSchool') === 'Oregon Ducks', 'program saved');
+    document.getElementById('t-QB').value = '3';
+    click('[data-action="save-targets"]');
+    ok(W.state().targets.QB === 3, 'targets saved');
+
+    /* 9. wipe */
+    click('[data-action="wipe"]');
+    click('[data-action="do-wipe"]');
+    ok(W.state().players.length === 0 && localStorage.getItem('warroom.v1') === null, 'wipe clears everything');
+    ok(/Nothing on the board yet/.test(text('#view')), 'empty state after wipe');
+  } catch (e) {
+    out.push('EXC ' + (e && e.stack || e));
+    fails++;
+  }
+  out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS');
+  document.getElementById('out').textContent = out.join('\n');
+  setTimeout(function () { window.close(); }, 200);
+})();
+</script>
+</body>
+</html>

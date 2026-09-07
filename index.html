@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>War Room — CFB 27 Dynasty tracker</title>
+<meta name="description" content="A recruiting war room for College Football 27 Dynasty. Counts the scholarships you actually have open from your real roster, tracks every recruit and portal target, and rolls the whole thing forward a season.">
+<link rel="preload" as="font" type="font/woff2" href="fonts/archivo-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="fonts/plexmono-600-latin.woff2" crossorigin>
+<link rel="stylesheet" href="styles.css">
+
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="War Room">
+<meta name="mobile-web-app-capable" content="yes">
+</head>
+<body>
+
+<div class="team-stripe" aria-hidden="true"></div>
+
+<header class="topbar">
+  <button class="brand" data-view="home" title="Home">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-text">
+      <span class="brand-school" id="brandSchool">War Room</span>
+      <span class="brand-season" id="brandSeason"></span>
+    </span>
+  </button>
+  <nav class="nav" id="nav" aria-label="Sections">
+    <button class="nav-btn" data-view="home">Needs</button>
+    <button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button>
+    <button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" title="Settings" aria-label="Settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle" title="Switch light / dark" aria-label="Switch light / dark"></button>
+</header>
+
+<main id="view" class="view"></main>
+
+<footer class="footer">
+  <span><b>War Room</b> — the count the game gets wrong.</span>
+  <span class="footer-dot">·</span>
+  <span class="footer-rne">An RNE Holdings Product</span>
+</footer>
+
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="app.js"></script>
+<script>
+  if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function (e) {
+        console.warn('Offline support unavailable:', e);
+      });
+    });
+  }
+</script>
+</body>
+</html>
