@@ -94,6 +94,13 @@
 * { box-sizing: border-box; }
 ::selection { background: var(--team); color: var(--team-ink); }
 
+/* The `hidden` attribute is a UA rule, so ANY author `display` on the same
+   element beats it. `.modal-backdrop { display: flex }` therefore left an
+   invisible full-screen overlay on top of the app that ate every real mouse
+   click — while `el.click()` in the test suite still worked, which is what
+   let it ship. Author-level, so nothing can lose to it by accident. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--plane);

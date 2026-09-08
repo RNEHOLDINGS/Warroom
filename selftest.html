@@ -32,7 +32,29 @@
     out.push((cond ? 'PASS ' : 'FAIL ') + name + (cond ? '' : '  -- ' + (detail || '')));
     if (!cond) fails++;
   }
-  function click(sel) { var el = document.querySelector(sel); if (!el) { out.push('NOEL ' + sel); fails++; return false; } el.click(); return true; }
+  /* Clicks go through a hit test first. el.click() fires the handler even when
+     something invisible is lying on top of the button, which is exactly how a
+     full-screen modal backdrop stuck on `display:flex` shipped once: every
+     assertion here passed while nothing in the real app was clickable. */
+  function hits(el) {
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return 'zero-size';
+    var x = Math.min(Math.max(r.left + r.width / 2, 1), window.innerWidth - 1);
+    var y = Math.min(Math.max(r.top + r.height / 2, 1), window.innerHeight - 1);
+    var top = document.elementFromPoint(x, y);
+    if (!top) return 'nothing at point';
+    if (top === el || el.contains(top)) return true;
+    return 'covered by ' + top.tagName.toLowerCase() + '.' + (top.className || '');
+  }
+  function click(sel) {
+    var el = document.querySelector(sel);
+    if (!el) { out.push('NOEL ' + sel); fails++; return false; }
+    el.scrollIntoView({ block: 'center' });
+    var h = hits(el);
+    ok(h === true, 'clickable: ' + sel, h);
+    el.click();
+    return true;
+  }
   function text(sel) { var el = document.querySelector(sel); return el ? el.textContent.trim() : ''; }
   function setVal(sel, v) { var el = document.querySelector(sel); el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); }
   var W = window.WarRoom;
@@ -40,6 +62,10 @@
   try {
     /* 1. empty state */
     ok(/Nothing on the board yet/.test(text('#view')), 'empty state renders');
+    var mid = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+    ok(mid && !mid.closest('.modal-backdrop'), 'no overlay covers the page at rest', mid && mid.tagName);
+    ok(getComputedStyle(document.getElementById('modal')).display === 'none', 'hidden modal is display:none');
+    ok(getComputedStyle(document.getElementById('toast')).display === 'none', 'hidden toast is display:none');
 
     /* 2. parsers */
     var p1 = W.parsePlayerLine('Arch Manning QB JR 92 Elite');
