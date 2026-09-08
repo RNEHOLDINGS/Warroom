@@ -392,6 +392,38 @@ table.plain td.num, table.plain th.num { text-align: right; }
 .targets-grid label { margin-bottom: 2px; }
 .targets-grid input { padding: 6px 8px; }
 
+/* ---------- reading a screenshot ---------- */
+
+.dropzone {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 30px 18px; text-align: center; cursor: pointer;
+  border: 2px dashed var(--grid); border-radius: var(--r-md);
+  color: var(--ink-muted); background: var(--wash);
+}
+.dropzone:hover, .dropzone:focus, .dropzone.over { border-color: var(--team); color: var(--ink-2); outline: none; }
+.dropzone.over { background: var(--surface-1); }
+.dropzone svg.ic { width: 26px; height: 26px; }
+.dropzone b { color: var(--ink); font-size: var(--t-body); }
+.dropzone span { font-size: var(--t-small); text-wrap: pretty; }
+
+.scan-status { padding: 22px 4px; text-align: center; }
+.scan-status b { display: block; font-size: var(--t-body); margin-bottom: 10px; }
+.scan-status .meter { margin: 0 auto 8px; max-width: 320px; }
+.scan-status span { font-size: var(--t-small); color: var(--ink-muted); display: block; text-wrap: pretty; }
+
+.scan-table td { padding: 4px 5px; vertical-align: middle; }
+.scan-table input[type="text"], .scan-table input[type="number"], .scan-table select {
+  padding: 5px 7px; font-size: var(--t-small); min-width: 68px;
+}
+.scan-table input[type="text"] { min-width: 130px; }
+.scan-table input[type="checkbox"] { width: 17px; height: 17px; margin: 0; }
+.scan-table tr.needs td { background: rgba(250, 178, 25, 0.12); }
+.scan-table tr.needs select[data-scan="year"] { border-color: var(--warning); }
+.scan-table tr.suspect input[data-scan="name"] {
+  border-color: var(--critical);
+  background: rgba(208, 59, 59, 0.07);
+}
+
 .banner {
   border-radius: var(--r-md); padding: 12px 14px; font-size: var(--t-small);
   background: rgba(250,178,25,0.14); border: 1px solid rgba(250,178,25,0.5); color: var(--ink);

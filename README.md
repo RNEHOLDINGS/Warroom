@@ -27,6 +27,31 @@ always the real one.
   leave, everyone else moves up a year (redshirts keep theirs), commits enroll
   as freshmen or at their portal class, and the board resets.
 
+## Reading a roster off a screenshot
+
+On the Roster screen, **Screenshot** opens a drop zone. Drop in a screenshot of
+the in-game roster or depth chart, click to choose files, or just press Ctrl+V
+if the image is on your clipboard. Several pages at once is fine.
+
+The text is recognised on this machine by Tesseract compiled to WebAssembly,
+from the files in `ocr/`. Nothing is uploaded and no network is used.
+
+It is not perfect. On the test roster it reads about 13 or 14 rows out of 14
+correctly, and gets one name badly wrong. So it never imports anything
+directly: you get a table of what it read, every field editable, with
+
+- names it probably misread outlined in red,
+- rows missing a year highlighted, and the Add button disabled until you
+  fill them in, because a wrong year silently corrupts the graduation count,
+- a tick box per row to leave anyone out.
+
+**This one feature needs the local server.** Browsers refuse to load a
+WebAssembly worker from a page opened straight off the disk, so open the app
+through `serve.ps1` to use it. Everything else works fine from `file://`, and
+the app tells you if you try.
+
+## Typing a roster instead
+
 Paste your whole roster at once, one player per line:
 
 ```
@@ -58,11 +83,19 @@ Then open http://localhost:8123/.
 
 ## Checking it
 
-`selftest.html` drives the app through real clicks and prints PASS/FAIL lines.
+There are three suites, all driven through real DOM clicks with hit testing:
+
+- `selftest.html` — the app: counting, roster editing, season rollover.
+- `ocrtest.html` — recognition accuracy, scored against a known roster, plus
+  the line parser on its own.
+- `scantest.html` — the whole screenshot-to-roster flow through the real UI.
+
+`rostermock.html` renders the fake roster screen the OCR tests are scored
+against; `?photo` degrades it to look like a phone photo of a TV.
 Run it through headless Edge against the local server:
 
 ```
-& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=old --user-data-dir="$env:TEMP\wr-test" --virtual-time-budget=8000 --dump-dom http://localhost:8123/selftest.html | Select-String '^(PASS|FAIL|RESULT)'
+& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=old --user-data-dir="$env:TEMP\wr-test" --virtual-time-budget=8000  --dump-dom http://localhost:8123/selftest.html | Select-String '^(PASS|FAIL|RESULT)'
 ```
 
 `icon.html` is the source for the app icons: screenshot it at 512×512 and

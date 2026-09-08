@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>scan shot</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script>localStorage.clear();</script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+<script>
+var R = function (n, p, y, rs, o, conf, sus) {
+  return { name: n, pos: p, year: y, rs: rs, ovr: o, dev: '', jersey: '', raw: '', missing: [], conf: conf, suspect: !!sus };
+};
+var q = new URLSearchParams(location.search);
+if (q.get('dark')) document.documentElement.setAttribute('data-theme', 'dark');
+if (q.get('v') === 'picker') {
+  document.querySelector('[data-action="scan-roster"]').click();
+} else {
+  WarRoom.showScanReview([
+    R('Arch Manning', 'QB', 'JR', false, 92, 95),
+    R('Une ee', 'QB', 'SO', true, 78, 26, true),
+    R('Quintrevion Wisner', 'HB', 'SR', false, 87, 94),
+    R('Christian Clark', 'HB', 'FR', true, 74, 96),
+    R('Ryan Wingo', 'WR', '', false, 85, 91),
+    R('DeAndre Moore', 'WR', 'JR', false, 83, 94),
+    R('Trevor Goosby', 'LT', 'JR', false, 86, 94),
+    R('DJ Campbell', 'RG', 'SR', false, 88, 96)
+  ]);
+}
+</script>
+</body></html>

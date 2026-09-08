@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>War Room scan-flow test</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button>
+    <button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button>
+    <button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  var out = [], fails = 0;
+  function ok(c, name, detail) { out.push((c ? 'PASS ' : 'FAIL ') + name + (c ? '' : '  -- ' + (detail || ''))); if (!c) fails++; render(); }
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function q(s) { return document.querySelector(s); }
+  function hits(el) {
+    /* Scroll first: a control below the fold of a scrollable modal is not a
+       covered control, and testing it where it is not yet painted reports a
+       bug that does not exist. */
+    el.scrollIntoView({ block: 'center' });
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return 'zero-size';
+    var x = Math.min(Math.max(r.left + r.width / 2, 1), innerWidth - 1);
+    var y = Math.min(Math.max(r.top + r.height / 2, 1), innerHeight - 1);
+    var top = document.elementFromPoint(x, y);
+    return (top === el || el.contains(top)) ? true : 'covered by ' + (top ? top.tagName : 'nothing');
+  }
+  function click(sel) {
+    var el = q(sel);
+    if (!el) { out.push('NOEL ' + sel); fails++; render(); return false; }
+    el.scrollIntoView({ block: 'center' });
+    ok(hits(el) === true, 'clickable: ' + sel, hits(el));
+    el.click();
+    return true;
+  }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS');
+    render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+
+  /* Open the scanner from the empty state and drive it with a real File, the
+     same object a drop or a paste would hand it. */
+  click('[data-action="scan-roster"]');
+  ok(!!q('#dropzone'), 'scanner opens with a dropzone');
+  ok(hits(q('#dropzone')) === true, 'dropzone is not covered');
+
+  fetch('test-roster-photo.png')
+    .then(function (r) { return r.blob(); })
+    .then(function (blob) {
+      var file = new File([blob], 'roster.png', { type: 'image/png' });
+      var dt = new DataTransfer();
+      dt.items.add(file);
+      var input = q('#scanFiles');
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      ok(true, 'scan started');
+      return new Promise(function (res) {
+        var n = 0;
+        var iv = setInterval(function () {
+          n++;
+          if (q('.scan-table') || n > 120) { clearInterval(iv); res(); }
+        }, 500);
+      });
+    })
+    .then(function () {
+      var table = q('.scan-table');
+      ok(!!table, 'review table appears');
+      if (!table) return finish();
+
+      var rows = table.querySelectorAll('tbody tr');
+      ok(rows.length === 14, 'all 14 rows in the review table', rows.length);
+      ok(hits(q('#scanAdd')) === true, 'add button is clickable', hits(q('#scanAdd')));
+
+      var names = Array.prototype.map.call(table.querySelectorAll('[data-scan="name"]'), function (i) { return i.value; });
+      ok(names.indexOf('Arch Manning') >= 0, 'read Arch Manning', names.join(','));
+      ok(names.indexOf('Quintrevion Wisner') >= 0, 'read a hard name', names.join(','));
+
+      /* the redshirt column is the whole point of the exercise */
+      var rsBoxes = table.querySelectorAll('[data-scan="rs"]');
+      var yearSels = table.querySelectorAll('[data-scan="year"]');
+      out.push('CONF ' + Array.prototype.map.call(table.querySelectorAll('tbody tr'), function (tr, i) {
+        return names[i] + '=' + tr.getAttribute('data-conf') + (tr.classList.contains('suspect') ? '!' : '');
+      }).join(' , '));
+
+      /* Row 2 is the redshirt sophomore. Assert on its position in the table
+         rather than its name: which single row the engine mangles varies with
+         the renderer, and the year/redshirt columns are what the count needs.
+         The name being wrong is covered by the suspect-flagging check below. */
+      ok(rsBoxes[1].checked === true, 'row 2 marked redshirt');
+      ok(yearSels[1].value === 'SO', 'row 2 year SO', yearSels[1].value);
+
+      /* Any name the engine invented must be flagged, or the review step is
+         asking the user to re-read all 14 rows to find the one bad one. */
+      var TRUE_NAMES = ['Arch Manning', 'Trey Owens', 'Quintrevion Wisner', 'Christian Clark', 'Ryan Wingo',
+        'DeAndre Moore', 'Parker Livingstone', 'Jack Endries', 'Nick Townsend', 'Trevor Goosby',
+        'DJ Campbell', 'Cole Hutson', 'Brandon Baker', 'Nick Brooks'];
+      var wrong = [], unflagged = [];
+      names.forEach(function (nm, i) {
+        if (TRUE_NAMES.indexOf(nm) >= 0) return;
+        wrong.push(nm);
+        if (!table.querySelectorAll('tbody tr')[i].classList.contains('suspect')) unflagged.push(nm);
+      });
+      out.push('MISREAD ' + (wrong.length ? wrong.join(' | ') : 'none'));
+      ok(unflagged.length === 0, 'every misread name is flagged', unflagged.join(' | '));
+      ok(names.filter(function (nm) { return TRUE_NAMES.indexOf(nm) >= 0; }).length >= 12,
+        'at least 12 of 14 names read correctly', String(14 - wrong.length));
+      /* and a correct name must not be flagged, or the flag means nothing */
+      var falseAlarms = names.filter(function (nm, i) {
+        return TRUE_NAMES.indexOf(nm) >= 0 && table.querySelectorAll('tbody tr')[i].classList.contains('suspect');
+      });
+      ok(falseAlarms.length === 0, 'no correct name is flagged', falseAlarms.join(' | '));
+      var idxArch = names.indexOf('Arch Manning');
+      ok(rsBoxes[idxArch].checked === false, 'Arch Manning not a redshirt');
+      ok(yearSels[idxArch].value === 'JR', 'Arch Manning year JR', yearSels[idxArch].value);
+
+      /* editing the table must reach the imported player */
+      table.querySelectorAll('[data-scan="name"]')[idxArch].value = 'Arch Manning Jr';
+      table.querySelectorAll('[data-scan="name"]')[idxArch].dispatchEvent(new Event('input', { bubbles: true }));
+
+      /* unticking must exclude */
+      var uses = table.querySelectorAll('[data-scan="use"]');
+      uses[names.indexOf('Nick Brooks')].checked = false;
+      uses[names.indexOf('Nick Brooks')].dispatchEvent(new Event('change', { bubbles: true }));
+      ok(/Add 13 players/.test(q('#scanAdd').textContent), 'button counts only ticked rows', q('#scanAdd').textContent);
+
+      /* a blank year must block the import rather than be guessed */
+      yearSels[idxArch].value = '';
+      yearSels[idxArch].dispatchEvent(new Event('change', { bubbles: true }));
+      ok(q('#scanAdd').disabled === true, 'blank year disables import');
+      ok(/missing year/.test(q('#scanAdd').textContent), 'button says what is wrong', q('#scanAdd').textContent);
+      yearSels[idxArch].value = 'JR';
+      yearSels[idxArch].dispatchEvent(new Event('change', { bubbles: true }));
+      ok(q('#scanAdd').disabled === false, 're-enabled once fixed');
+
+      click('#scanAdd');
+      var st = window.WarRoom.state();
+      ok(st.players.length === 13, 'imported 13 players', st.players.length);
+      ok(st.players.some(function (p) { return p.name === 'Arch Manning Jr'; }), 'edit carried into the roster');
+      ok(!st.players.some(function (p) { return p.name === 'Nick Brooks'; }), 'unticked player left out');
+      var rsGuy = st.players.filter(function (p) { return p.pos === 'QB' && p.rs === true; })[0];
+      ok(rsGuy && rsGuy.year === 'SO' && rsGuy.ovr === 78, 'redshirt, year and overall stored', JSON.stringify(rsGuy));
+      var gooseby = st.players.filter(function (p) { return /Goosby/.test(p.name); })[0];
+      ok(gooseby && gooseby.pos === 'LT', 'line position kept', gooseby && gooseby.pos);
+      ok(q('#modal').hidden === true, 'modal closed after import');
+
+      /* and the count that the whole app exists for */
+      var n = window.WarRoom.needs();
+      ok(n.totals.on === 13, 'roster total is 13', n.totals.on);
+      ok(n.totals.leaving === 3, 'three seniors counted as leaving', n.totals.leaving);
+      finish();
+    })
+    .catch(function (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); });
+})();
+</script>
+</body>
+</html>

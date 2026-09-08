@@ -41,8 +41,17 @@ try {
     try {
       $client = $listener.AcceptTcpClient()
       $stream = $client.GetStream()
+
+      # Chromium opens speculative sockets it may never send a request on. This
+      # loop is single threaded, so one silent socket blocking in ReadLine()
+      # freezes the whole server -- every later page load just hangs, which
+      # looks exactly like the app failing to start. A read timeout turns that
+      # into an IOException the catch below discards.
+      $stream.ReadTimeout = 5000
+      $stream.WriteTimeout = 5000
+
       $reader = [System.IO.StreamReader]::new($stream)
-  
+
       $requestLine = $reader.ReadLine()
       if (-not $requestLine) { $client.Close(); continue }
   

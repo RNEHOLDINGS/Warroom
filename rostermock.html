@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Roster mock</title>
+<style>
+  html, body { margin: 0; background: #0e1116; color: #fff; font-family: "Segoe UI", Arial, sans-serif; }
+  .wrap { width: 1280px; padding: 28px 36px; }
+  h1 { font-size: 26px; letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 4px; }
+  .sub { color: #9aa4b2; font-size: 14px; margin-bottom: 20px; letter-spacing: 0.04em; }
+  table { width: 100%; border-collapse: collapse; font-size: 19px; }
+  th { text-align: left; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: #8c97a6; padding: 8px 10px; border-bottom: 2px solid #2a3240; }
+  td { padding: 9px 10px; border-bottom: 1px solid #1b212b; }
+  tr:nth-child(even) td { background: #141922; }
+  .jersey { color: #6f7b8c; width: 52px; }
+  .name { font-weight: 600; }
+  .pos { color: #f0a92b; font-weight: 700; width: 76px; }
+  .yr { width: 88px; }
+  .ovr { font-weight: 700; width: 62px; }
+  .dev { color: #7fc7ff; width: 96px; }
+  body.photo { background: #05070a; }
+  body.photo .wrap {
+    filter: blur(0.7px) contrast(0.82) brightness(1.06) saturate(1.15);
+    transform: rotate(-0.8deg) perspective(1400px) rotateY(2.2deg) scale(0.97);
+    transform-origin: center;
+  }
+  /* a band of screen glare across the middle, like a lamp on a TV */
+  body.photo .wrap::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 220px; height: 200px;
+    background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.16) 50%, rgba(255,255,255,0) 100%);
+    pointer-events: none;
+  }
+  body.photo .wrap { position: relative; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Texas Longhorns — Roster</h1>
+  <div class="sub">Offense · Page 1 of 4</div>
+  <table>
+    <thead><tr><th class="jersey">#</th><th>Name</th><th>Pos</th><th>Yr</th><th>Ovr</th><th>Dev</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<script>
+/* Ground truth lives here so the OCR test can score against it. */
+window.TRUTH = [
+  ['16', 'Arch Manning',      'QB',   'JR',    '92', 'Elite'],
+  ['4',  'Trey Owens',        'QB',   'RS SO', '78', 'Star'],
+  ['7',  'Quintrevion Wisner','HB',   'SR',    '87', 'Impact'],
+  ['26', 'Christian Clark',   'HB',   'RS FR', '74', 'Normal'],
+  ['1',  'Ryan Wingo',        'WR',   'SO',    '85', 'Star'],
+  ['3',  'DeAndre Moore',     'WR',   'JR',    '83', 'Impact'],
+  ['80', 'Parker Livingstone','WR',   'RS FR', '76', 'Star'],
+  ['11', 'Jack Endries',      'TE',   'SR',    '84', 'Normal'],
+  ['88', 'Nick Townsend',     'TE',   'RS JR', '71', 'Normal'],
+  ['74', 'Trevor Goosby',     'LT',   'JR',    '86', 'Impact'],
+  ['54', 'DJ Campbell',       'RG',   'SR',    '88', 'Star'],
+  ['77', 'Cole Hutson',       'C',    'JR',    '85', 'Normal'],
+  ['móc','Brandon Baker',     'RT',   'RS SO', '79', 'Impact'],
+  ['65', 'Nick Brooks',       'LG',   'FR',    '68', 'Normal']
+];
+/* the jersey cell above intentionally contains junk on one row: real screens
+   have glyphs OCR cannot read, and the parser must not choke on them. */
+var tb = document.getElementById('rows');
+window.TRUTH.forEach(function (r) {
+  var tr = document.createElement('tr');
+  tr.innerHTML = '<td class="jersey">' + r[0] + '</td><td class="name">' + r[1] + '</td>' +
+    '<td class="pos">' + r[2] + '</td><td class="yr">' + r[3] + '</td>' +
+    '<td class="ovr">' + r[4] + '</td><td class="dev">' + r[5] + '</td>';
+  tb.appendChild(tr);
+});
+if (location.search.indexOf('photo') >= 0) document.body.className = 'photo';
+</script>
+</body>
+</html>

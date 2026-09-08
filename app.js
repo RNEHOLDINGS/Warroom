@@ -144,7 +144,9 @@
     check: '<path d="M5 12l5 5L20 7"/>',
     alert: '<path d="M12 3L2 21h20L12 3zM12 10v5M12 18v.5"/>',
     flag: '<path d="M5 21V4M5 4h12l-2 4 2 4H5"/>',
-    users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4.5-6.2"/>'
+    users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4.5-6.2"/>',
+    camera: '<path d="M3 8a2 2 0 0 1 2-2h2.5l1.2-2h6.6l1.2 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/>',
+    spin: '<path d="M12 3a9 9 0 1 0 9 9" />'
   };
   function icon(name, cls) {
     return '<svg class="ic' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICON[name] || '') + '</svg>';
@@ -282,12 +284,16 @@
   }
   function closeModal() { var m = $('#modal'); m.hidden = true; m.innerHTML = ''; }
 
-  function posSelect(id, value) {
+  /* compact drops the spelled-out group name, which a narrow table column
+     clips to "QB — Quarterb…" and so shows less than the bare code does */
+  function posSelect(id, value, compact) {
     var out = '<select id="' + id + '">';
     POS_OPTIONS.forEach(function (o) {
       out += '<optgroup label="' + o.label + '">';
       o.list.forEach(function (p) {
-        out += '<option value="' + p + '"' + (p === value ? ' selected' : '') + '>' + p + (POS_GROUP[p] !== p ? '' : (groupInfo(p).name !== p ? ' — ' + groupInfo(p).name : '')) + '</option>';
+        var label = p;
+        if (!compact && POS_GROUP[p] === p && groupInfo(p).name !== p) label += ' — ' + groupInfo(p).name;
+        out += '<option value="' + p + '"' + (p === value ? ' selected' : '') + '>' + label + '</option>';
       });
       out += '</optgroup>';
     });
@@ -338,7 +344,8 @@
         '<p class="sub">Type in your roster and the count starts. The game may tell you a different number — this one comes from the players you actually have.</p></div>' +
         '<div class="card"><div class="empty"><b>Start with the roster</b>Paste it straight from the depth chart, one player per line, or load a sample program to see how it works.</div>' +
         '<div class="modal-actions" style="justify-content:center;margin-top:0">' +
-        '<button class="btn primary" data-action="paste-players">' + icon('paste') + 'Paste roster</button>' +
+        '<button class="btn primary" data-action="scan-roster">' + icon('camera') + 'Read a screenshot</button>' +
+        '<button class="btn" data-action="paste-players">' + icon('paste') + 'Paste roster</button>' +
         '<button class="btn" data-action="load-sample">Load sample program</button>' +
         '<button class="btn" data-view="settings">Set my school</button>' +
         '</div></div>';
@@ -440,7 +447,7 @@
     var groupsToShow = f.group ? allGroups.filter(function (g) { return g.id === f.group; }) : allGroups;
 
     var html = '<div class="view-head"><h1>Roster</h1>' +
-      '<div class="actions"><button class="btn" data-action="paste-players">' + icon('paste') + 'Paste</button><button class="btn primary" data-action="add-player">' + icon('plus') + 'Add player</button></div>' +
+      '<div class="actions"><button class="btn" data-action="scan-roster">' + icon('camera') + 'Screenshot</button><button class="btn" data-action="paste-players">' + icon('paste') + 'Paste</button><button class="btn primary" data-action="add-player">' + icon('plus') + 'Add player</button></div>' +
       '<p class="sub">' + state.players.length + ' of ' + state.cap + ' scholarships used. Tap a player to change their year, rating, or whether they are leaving.</p></div>';
 
     html += '<div class="filters">' +
@@ -812,6 +819,204 @@
     toast('Added ' + added + (skipped ? ', skipped ' + skipped + ' ' + plural(skipped, 'line') + ' with no position' : '') + '.');
   }
 
+  /* ---------- reading a roster off a screenshot ----------
+     The engine gets most rows right and some wrong, so nothing it produces is
+     imported without being shown first. Every field is editable in the review
+     table, and a row missing a year blocks the import until it is filled in —
+     guessing a year would quietly corrupt the one number this app exists to
+     get right. */
+
+  var scanRows = [];
+  var scanBusy = false;
+
+  function scanSupported() { return location.protocol.indexOf('http') === 0; }
+
+  function scanModal() {
+    if (!scanSupported()) {
+      openModal('<h2>Reading screenshots needs the local server</h2>' +
+        '<p style="color:var(--ink-2);font-size:var(--t-small)">The text recogniser runs as a WebAssembly worker, and browsers refuse to load those from a file opened directly off the disk. Everything else in War Room works this way, just not this.</p>' +
+        '<div class="banner info" style="margin-top:12px">Start the server, then open <span class="kbd">http://localhost:8123/</span>:<br><span class="kbd">powershell -ExecutionPolicy Bypass -File serve.ps1</span></div>' +
+        '<div class="modal-actions"><span class="spacer"></span><button class="btn primary" data-action="close">Got it</button></div>');
+      return;
+    }
+    scanRows = [];
+    openModal('<h2>Read a roster screenshot</h2>' +
+      '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:12px">Take a screenshot of the roster or depth chart and drop it here. A photo of the TV works too. It is read on this machine and never uploaded, and you get to check every row before anything is added.</p>' +
+      '<div class="dropzone" id="dropzone" tabindex="0">' + icon('camera') +
+        '<b>Drop images here</b><span>or click to choose · paste with Ctrl+V · several pages at once is fine</span>' +
+      '</div>' +
+      '<input type="file" id="scanFiles" accept="image/*" multiple hidden>' +
+      '<div id="scanProgress"></div>' +
+      '<div class="modal-actions"><span class="spacer"></span><button class="btn" data-action="close">Cancel</button></div>');
+    wireDropzone();
+  }
+
+  function wireDropzone() {
+    var dz = $('#dropzone');
+    if (!dz) return;
+    dz.addEventListener('click', function () { $('#scanFiles').click(); });
+    dz.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#scanFiles').click(); }
+    });
+    ['dragenter', 'dragover'].forEach(function (t) {
+      dz.addEventListener(t, function (e) { e.preventDefault(); dz.classList.add('over'); });
+    });
+    ['dragleave', 'drop'].forEach(function (t) {
+      dz.addEventListener(t, function (e) { e.preventDefault(); dz.classList.remove('over'); });
+    });
+    dz.addEventListener('drop', function (e) {
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) runScan(files);
+    });
+  }
+
+  /* Ctrl+V anywhere while the picker is open. Console screenshots usually
+     arrive on the clipboard, so this is the shortest path there is. */
+  document.addEventListener('paste', function (e) {
+    if ($('#modal').hidden || !$('#dropzone') || scanBusy) return;
+    var items = (e.clipboardData && e.clipboardData.items) || [];
+    var imgs = [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type && items[i].type.indexOf('image') === 0) {
+        var f = items[i].getAsFile();
+        if (f) imgs.push(f);
+      }
+    }
+    if (imgs.length) { e.preventDefault(); runScan(imgs); }
+  });
+
+  function runScan(fileList) {
+    if (scanBusy || !window.WarRoomOCR) {
+      if (!window.WarRoomOCR) toast('The recogniser did not load.');
+      return;
+    }
+    var files = Array.prototype.slice.call(fileList).filter(function (f) {
+      return f && f.type && f.type.indexOf('image') === 0;
+    });
+    if (!files.length) { toast('That was not an image.'); return; }
+
+    scanBusy = true;
+    var prog = $('#scanProgress');
+    var dz = $('#dropzone');
+    if (dz) dz.style.display = 'none';
+    var done = 0;
+
+    var show = function (msg, pct) {
+      if (!prog) return;
+      prog.innerHTML = '<div class="scan-status"><b>' + esc(msg) + '</b>' +
+        '<div class="meter"><i style="width:' + Math.round(pct * 100) + '%"></i></div>' +
+        '<span>Image ' + Math.min(done + 1, files.length) + ' of ' + files.length + ' · the first run loads the recogniser, which takes a few seconds</span></div>';
+    };
+    show('Starting', 0);
+
+    var step = function (i) {
+      if (i >= files.length) {
+        scanBusy = false;
+        renderScanReview();
+        return;
+      }
+      window.WarRoomOCR.recognize(files[i], function (status, p) {
+        show(status.replace(/^\w/, function (c) { return c.toUpperCase(); }), p);
+      }).then(function (res) {
+        res.rows.forEach(function (r) {
+          var dup = scanRows.some(function (x) {
+            return x.name.toLowerCase() === r.name.toLowerCase() && x.pos === r.pos;
+          });
+          if (!dup) scanRows.push(r);
+        });
+        done++;
+        step(i + 1);
+      }).catch(function (err) {
+        scanBusy = false;
+        openModal('<h2>Could not read that</h2>' +
+          '<p style="color:var(--ink-2);font-size:var(--t-small)">' + esc(String(err && err.message || err)) + '</p>' +
+          '<div class="modal-actions"><span class="spacer"></span><button class="btn" data-action="close">Close</button><button class="btn primary" data-action="scan-roster">Try again</button></div>');
+      });
+    };
+    step(0);
+  }
+
+  function renderScanReview() {
+    if (!scanRows.length) {
+      openModal('<h2>Nothing readable in that image</h2>' +
+        '<p style="color:var(--ink-2);font-size:var(--t-small)">No rows came back that looked like players. A tighter crop of just the roster table, taken straight from the console rather than photographed at an angle, reads far better.</p>' +
+        '<div class="modal-actions"><span class="spacer"></span><button class="btn" data-action="close">Close</button><button class="btn primary" data-action="scan-roster">Try another image</button></div>');
+      return;
+    }
+    var rows = scanRows.map(function (r, i) {
+      var needsYear = !r.year;
+      return '<tr class="' + (needsYear ? 'needs' : '') + (r.suspect ? ' suspect' : '') + '" data-scan-row="' + i + '" data-conf="' + (r.conf == null ? '' : r.conf) + '">' +
+        '<td><input type="checkbox" data-scan="use" data-i="' + i + '" checked aria-label="Include ' + esc(r.name) + '"></td>' +
+        '<td><input type="text" data-scan="name" data-i="' + i + '" value="' + esc(r.name) + '"' + (r.suspect ? ' title="This one looks misread — check it against the screen"' : '') + '></td>' +
+        '<td>' + posSelect('scan-pos-' + i, r.pos, true).replace('<select', '<select data-scan="pos" data-i="' + i + '"') + '</td>' +
+        '<td><select data-scan="year" data-i="' + i + '"><option value="">—</option>' + options(YEARS, r.year) + '</select></td>' +
+        '<td style="text-align:center"><input type="checkbox" data-scan="rs" data-i="' + i + '"' + (r.rs ? ' checked' : '') + ' aria-label="Redshirt"></td>' +
+        '<td><input type="number" data-scan="ovr" data-i="' + i + '" value="' + (r.ovr || '') + '" min="0" max="99" placeholder="—"></td>' +
+      '</tr>';
+    }).join('');
+
+    var missing = scanRows.filter(function (r) { return !r.year; }).length;
+    var suspect = scanRows.filter(function (r) { return r.suspect; }).length;
+    openModal('<h2>Check what it read</h2>' +
+      '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:10px">' + scanRows.length + ' ' + plural(scanRows.length, 'row') + ' found. Fix anything wrong here, untick anyone you do not want, then add them.</p>' +
+      (suspect ? '<div class="banner">' + suspect + ' ' + plural(suspect, 'name looks', 'names look') + ' misread and ' + (suspect === 1 ? 'is' : 'are') + ' marked below. Expect roughly one bad row in every ten or fifteen.</div>' : '') +
+      (missing ? '<div class="banner" id="scanWarn">' + missing + ' ' + plural(missing, 'row has', 'rows have') + ' no year. A year decides who graduates, so fill it in or untick the row.</div>' : '') +
+      '<div class="table-wrap"><table class="plain scan-table"><thead><tr><th></th><th>Name</th><th>Pos</th><th>Year</th><th>RS</th><th class="num">Ovr</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<div class="modal-actions">' +
+        '<button class="btn" data-action="scan-roster">' + icon('camera') + 'Another image</button>' +
+        '<span class="spacer"></span>' +
+        '<button class="btn" data-action="close">Cancel</button>' +
+        '<button class="btn primary" data-action="import-scan" id="scanAdd">Add players</button>' +
+      '</div>');
+    updateScanAdd();
+  }
+
+  function readScanTable() {
+    $$('[data-scan]').forEach(function (el) {
+      var i = parseInt(el.getAttribute('data-i'), 10);
+      var r = scanRows[i];
+      if (!r) return;
+      var k = el.getAttribute('data-scan');
+      if (k === 'use') r.use = el.checked;
+      else if (k === 'rs') r.rs = el.checked;
+      else if (k === 'ovr') r.ovr = int(el.value, 0, 99);
+      else if (k === 'name') r.name = el.value.trim();
+      else r[k] = el.value;
+    });
+  }
+  function updateScanAdd() {
+    readScanTable();
+    var use = scanRows.filter(function (r) { return r.use !== false && r.name; });
+    var blocked = use.filter(function (r) { return !r.year; }).length;
+    var btn = $('#scanAdd');
+    if (!btn) return;
+    btn.disabled = !use.length || blocked > 0;
+    btn.textContent = blocked ? 'Set ' + blocked + ' missing ' + plural(blocked, 'year') : 'Add ' + use.length + ' ' + plural(use.length, 'player');
+    $$('[data-scan-row]').forEach(function (tr) {
+      var r = scanRows[parseInt(tr.getAttribute('data-scan-row'), 10)];
+      tr.classList.toggle('needs', !!r && r.use !== false && !r.year);
+    });
+  }
+  function doImportScan() {
+    readScanTable();
+    var added = 0;
+    scanRows.forEach(function (r) {
+      if (r.use === false || !r.name || !r.year) return;
+      state.players.push({
+        id: uid(), name: r.name, pos: r.pos, year: r.year, rs: !!r.rs,
+        redshirtNow: false, ovr: r.ovr || 0, dev: r.dev || 'Normal', exit: '',
+        note: ''
+      });
+      added++;
+    });
+    scanRows = [];
+    save();
+    closeModal();
+    view = 'roster';
+    render();
+    toast('Added ' + added + ' ' + plural(added, 'player') + ' from the screenshot.');
+  }
+
   /* ---------- advance the season ---------- */
 
   function advanceModal() {
@@ -1003,6 +1208,8 @@
       case 'delete-recruit':
         state.recruits = state.recruits.filter(function (x) { return x.id !== id; });
         save(); closeModal(); render(); toast('Removed.'); break;
+      case 'scan-roster': scanModal(); break;
+      case 'import-scan': doImportScan(); break;
       case 'paste-players': pasteModal('players'); break;
       case 'paste-recruits': pasteModal('recruits', type || 'hs'); break;
       case 'do-paste': doPaste(t.getAttribute('data-kind'), type || 'hs'); break;
@@ -1047,15 +1254,25 @@
     } else if (t.id === 'importFile' && t.files && t.files[0]) {
       importBackup(t.files[0]);
       t.value = '';
+    } else if (t.id === 'scanFiles' && t.files && t.files.length) {
+      runScan(t.files);
+      t.value = '';
+    } else if (t.matches('[data-scan]')) {
+      updateScanAdd();
     } else if (t.matches('[data-target]')) {
       var s = 0;
       $$('[data-target]').forEach(function (inp) { s += int(inp.value, 0, 99); });
       var el = $('#targetSum'); if (el) el.textContent = s;
     }
   });
+  document.addEventListener('input', function (e) {
+    if (e.target.matches('[data-scan]')) updateScanAdd();
+  });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && !$('#modal').hidden) closeModal();
-    if (e.key === 'Enter' && !$('#modal').hidden && e.target.tagName === 'INPUT') {
+    /* Not in the review table: you are 3 rows into fixing 14 and Enter would
+       import the other 11 unchecked. */
+    if (e.key === 'Enter' && !$('#modal').hidden && e.target.tagName === 'INPUT' && !e.target.matches('[data-scan]')) {
       var go = $('#modal .btn.primary');
       if (go) go.click();
     }
@@ -1072,5 +1289,15 @@
   render();
 
   /* exposed for the self-test page only */
-  window.WarRoom = { state: function () { return state; }, needs: computeNeeds, parsePlayerLine: parsePlayerLine, parseRecruitLine: parseRecruitLine, render: render, setView: function (v) { view = v; render(); } };
+  window.WarRoom = {
+    state: function () { return state; },
+    needs: computeNeeds,
+    parsePlayerLine: parsePlayerLine,
+    parseRecruitLine: parseRecruitLine,
+    render: render,
+    setView: function (v) { view = v; render(); },
+    /* lets a screenshot harness show the review table without waiting on the
+       recogniser */
+    showScanReview: function (rows) { scanRows = rows; renderScanReview(); }
+  };
 })();
