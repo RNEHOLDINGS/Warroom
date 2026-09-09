@@ -886,9 +886,13 @@
   function closeModal() { var m = $('#modal'); m.hidden = true; m.innerHTML = ''; }
 
   /* compact drops the spelled-out group name, which a narrow table column
-     clips to "QB — Quarterb…" and so shows less than the bare code does */
-  function posSelect(id, value, compact) {
+     clips to "QB — Quarterb…" and so shows less than the bare code does.
+     allowBlank keeps an empty choice selected when the recogniser could not
+     read the cell -- without it a blank position silently becomes whatever
+     option happens to be first, which is how a lineman ends up a quarterback. */
+  function posSelect(id, value, compact, allowBlank) {
     var out = '<select id="' + id + '">';
+    if (allowBlank || !value) out += '<option value=""' + (value ? '' : ' selected') + '>—</option>';
     POS_OPTIONS.forEach(function (o) {
       out += '<optgroup label="' + o.label + '">';
       o.list.forEach(function (p) {
@@ -1644,10 +1648,10 @@
     }
     var recruits = scanKind === 'recruits';
     var rows = scanRows.map(function (r, i) {
-      var needs = recruits ? false : !r.year;
+      var needs = recruits ? !r.pos : (!r.year || !r.pos);
       var cells = '<td><input type="checkbox" data-scan="use" data-i="' + i + '" checked aria-label="Include ' + esc(r.name) + '"></td>' +
         '<td><input type="text" data-scan="name" data-i="' + i + '" value="' + esc(r.name) + '"' + (r.suspect ? ' title="This one looks misread — check it against the screen"' : '') + '></td>' +
-        '<td>' + posSelect('scan-pos-' + i, r.pos, true).replace('<select', '<select data-scan="pos" data-i="' + i + '"') + '</td>';
+        '<td class="' + (r.pos ? '' : 'stars-guess') + '">' + posSelect('scan-pos-' + i, r.pos, true, true).replace('<select', '<select data-scan="pos" data-i="' + i + '"') + '</td>';
 
       if (recruits) {
         cells += '<td class="' + (r.starsRead ? '' : 'stars-guess') + '"><select data-scan="stars" data-i="' + i + '"' + (r.starsRead ? '' : ' title="Not read from the image — this is a guess"') + '>' + options([5, 4, 3, 2, 1], int(r.stars, 1, 5), function (s) { return s + '★'; }) + '</select></td>' +
@@ -1672,8 +1676,8 @@
       '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:10px">' + scanRows.length + ' ' + plural(scanRows.length, 'row') + ' found. Fix anything wrong here, untick anyone you do not want, then add them.' +
         '</p>' +
       (guessedStars ? '<div class="banner">The star column is icons, not text, so it does not survive a screenshot at all. ' + guessedStars + ' ' + plural(guessedStars, 'row', 'rows') + ' came in as 3 stars — the amber cells. Set the ones you care about; stars do not affect the scholarship count either way.</div>' : '') +
-      (suspect ? '<div class="banner">' + suspect + ' ' + plural(suspect, 'name looks', 'names look') + ' misread and ' + (suspect === 1 ? 'is' : 'are') + ' marked below. Expect roughly one bad row in every ten or fifteen.</div>' : '') +
-      (missing ? '<div class="banner" id="scanWarn">' + missing + ' ' + plural(missing, 'row has', 'rows have') + ' no year. A year decides who graduates, so fill it in or untick the row.</div>' : '') +
+      (suspect ? '<div class="banner">' + suspect + ' ' + plural(suspect, 'row is', 'rows are') + ' worth a second look — outlined below. Either the name came back odd or the position had to be guessed from the rest of the page.</div>' : '') +
+      (missing ? '<div class="banner" id="scanWarn">' + missing + ' ' + plural(missing, 'row is', 'rows are') + ' missing a year or a position — the amber cells. Both feed the count, so they are asked for rather than guessed. Fill them in or untick the row.</div>' : '') +
       '<div class="table-wrap"><table class="plain scan-table"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table></div>' +
       '<div class="modal-actions">' +
         '<button class="btn" data-action="scan-' + (recruits ? 'recruits' : 'roster') + '">' + icon('camera') + 'Another image</button>' +
@@ -1702,17 +1706,21 @@
     readScanTable();
     var recruits = scanKind === 'recruits';
     var use = scanRows.filter(function (r) { return r.use !== false && r.name; });
-    /* A recruit has no year to be missing, so nothing blocks that import. */
-    var blocked = recruits ? 0 : use.filter(function (r) { return !r.year; }).length;
+    /* The year and the position are the two fields the scholarship count is
+       built out of, so neither gets guessed on the reader's behalf. A recruit
+       has no year to be missing. */
+    var needYear = recruits ? 0 : use.filter(function (r) { return !r.year; }).length;
+    var needPos = use.filter(function (r) { return !r.pos; }).length;
+    var blocked = needYear + needPos;
     var btn = $('#scanAdd');
     if (!btn) return;
     btn.disabled = !use.length || blocked > 0;
     btn.textContent = blocked
-      ? 'Set ' + blocked + ' missing ' + plural(blocked, 'year')
+      ? 'Fill in ' + blocked + ' ' + plural(blocked, 'blank')
       : 'Add ' + use.length + ' ' + plural(use.length, recruits ? 'recruit' : 'player');
     $$('[data-scan-row]').forEach(function (tr) {
       var r = scanRows[parseInt(tr.getAttribute('data-scan-row'), 10)];
-      tr.classList.toggle('needs', !recruits && !!r && r.use !== false && !r.year);
+      tr.classList.toggle('needs', !!r && r.use !== false && (!r.pos || (!recruits && !r.year)));
     });
   }
   function doImportScan() {
@@ -1720,7 +1728,9 @@
     var recruits = scanKind === 'recruits';
     var added = 0;
     scanRows.forEach(function (r) {
-      if (r.use === false || !r.name) return;
+      /* the button is disabled while any of these are blank, so this is the
+         belt to that braces */
+      if (r.use === false || !r.name || !r.pos) return;
       if (recruits) {
         state.recruits.push({
           id: uid(), type: 'hs', name: r.name, pos: r.pos,

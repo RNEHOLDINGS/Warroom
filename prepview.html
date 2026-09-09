@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Preprocessing view</title>
+<style>body{margin:0;background:#888}img{display:block;width:1500px}</style></head>
+<body>
+<img id="v">
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var winX = parseInt(q.get('winx') || '100', 10);
+  var winY = parseInt(q.get('winy') || '20', 10);
+  var gain = parseFloat(q.get('gain') || '3');
+  var targetW = parseInt(q.get('w') || '2600', 10);
+
+  function adaptive(ctx, w, h, winX, winY, gain) {
+    var d = ctx.getImageData(0, 0, w, h), p = d.data;
+    var n = w * h, gray = new Uint8Array(n), i, j;
+    for (i = 0, j = 0; j < n; i += 4, j++) gray[j] = (0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]) | 0;
+    var iw = w + 1, integ = new Uint32Array(iw * (h + 1)), x, y, rowsum;
+    for (y = 0; y < h; y++) {
+      rowsum = 0;
+      for (x = 0; x < w; x++) {
+        rowsum += gray[y * w + x];
+        integ[(y + 1) * iw + (x + 1)] = integ[y * iw + (x + 1)] + rowsum;
+      }
+    }
+    var rx = Math.max(2, winX >> 1), ry = Math.max(1, winY >> 1);
+    var x0, x1, y0, y1, area, s, mean, diff, v, k;
+    for (y = 0; y < h; y++) {
+      y0 = y - ry < 0 ? 0 : y - ry; y1 = y + ry > h - 1 ? h - 1 : y + ry;
+      for (x = 0; x < w; x++) {
+        x0 = x - rx < 0 ? 0 : x - rx; x1 = x + rx > w - 1 ? w - 1 : x + rx;
+        area = (x1 - x0 + 1) * (y1 - y0 + 1);
+        s = integ[(y1 + 1) * iw + (x1 + 1)] - integ[y0 * iw + (x1 + 1)] - integ[(y1 + 1) * iw + x0] + integ[y0 * iw + x0];
+        mean = s / area;
+        diff = gray[y * w + x] - mean; if (diff < 0) diff = -diff;
+        v = 255 - diff * gain; if (v < 0) v = 0;
+        k = (y * w + x) * 4; p[k] = p[k + 1] = p[k + 2] = v; p[k + 3] = 255;
+      }
+    }
+    ctx.putImageData(d, 0, 0);
+  }
+
+  var img = new Image();
+  img.onload = function () {
+    var scale = targetW / img.width;
+    var w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var ctx = c.getContext('2d');
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, w, h);
+    if (q.get('raw') !== '1') adaptive(ctx, w, h, winX, winY, gain);
+
+    /* show just the table rows so the detail is visible */
+    var cx0 = 0.04, cx1 = 0.76, cy0 = 0.375, cy1 = 0.60;
+    var sx = Math.round(w * cx0), sy = Math.round(h * cy0);
+    var sw = Math.round(w * (cx1 - cx0)), sh = Math.round(h * (cy1 - cy0));
+    var o = document.createElement('canvas');
+    o.width = sw; o.height = sh;
+    o.getContext('2d').drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh);
+    document.getElementById('v').src = o.toDataURL();
+  };
+  img.src = 'testshots/' + (q.get('img') || 'ol') + '.png';
+})();
+</script>
+</body>
+</html>

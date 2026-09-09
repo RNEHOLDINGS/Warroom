@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>real review shot</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script>localStorage.clear();</script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  if (q.get('dark')) document.documentElement.setAttribute('data-theme', 'dark');
+  WarRoom.setView('roster');
+  /* exactly what the recogniser returned for testshots/edge.png */
+  function R(n, y, rs, p, o, conf, sus) {
+    return { name: n, year: y, rs: rs, pos: p, ovr: o, dev: '', jersey: '', raw: '', missing: [], conf: conf, suspect: sus };
+  }
+  WarRoom.showScanReview([
+    R('D.Drango', 'JR', true, 'REDG', 0, 88, false),
+    R('L.Redman', 'SR', true, 'LG', 82, 84, true),
+    R('JiMandetino', 'FR', false, 'REDG', 0, 71, true),
+    R('F.Osborne', 'SR', false, 'DT', 85, 90, false),
+    R('I.Cameron', 'SR', true, '', 0, 74, true),
+    R('J.Kashama', 'FR', true, 'LEDG', 88, 77, true),
+    R('J.Queen', 'SO', true, 'DT', 83, 86, false),
+    R('S.Exum', 'SO', true, 'DT', 82, 88, false),
+    R('M.Dillard', 'SO', true, 'WR', 0, 73, true)
+  ]);
+})();
+</script>
+</body></html>

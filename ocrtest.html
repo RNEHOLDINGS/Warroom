@@ -74,7 +74,14 @@
 
   /* parser-only checks first: these must hold regardless of the engine */
   function unit() {
+    /* Real CFB 27 depth-chart rows: # RS NAME YEAR POS OVR NIL then stats. */
     var cases = [
+      ['1 J.Carty SO (RS) LT 86 15 64 74 84 62 86 95 85',  'J.Carty', 'LT', 'SO', true, 86],
+      ['2 C.Hamm SR (RS) RT 83 10 72 73 90 60 82 88 93',   'C.Hamm', 'RT', 'SR', true, 83],
+      ['- C.Doucet SO LG 85 95 74 80 81 68 91 82 80',      'C.Doucet', 'LG', 'SO', false, 85],
+      ['3 D.Tuten SO HB 78 0 83 85 88 97 72 80 69',        'D.Tuten', 'HB', 'SO', false, 78],
+      ['1 B.Chavez JR (RS) P 82 10 90 87 67 24 78 44 69',  'B.Chavez', 'P', 'JR', true, 82],
+      ['- M.Dillard SO (RS) WILL 81 0 90 82 83 72 68 74 93','M.Dillard','WILL','SO', true, 81],
       ['16 Arch Manning QB JR 92 Elite',        'Arch Manning', 'QB', 'JR', false, 92],
       ['4 Trey Owens QB RS SO 78 Star',         'Trey Owens',   'QB', 'SO', true,  78],
       ['74 Trevor Goosby LT JR 86 Impact',      'Trevor Goosby','LT', 'JR', false, 86],
@@ -120,12 +127,16 @@
       say('');
       say('RESULT unitFailures=' + unitBad + ' cleanExact=' + a.exact + '/' + TRUTH.length + ' photoExact=' + b.exact + '/' + TRUTH.length);
       say('DONE');
-      window.__done = true; if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+      window.__done = true;
+      try { localStorage.setItem('warroom.testresult', lines.join(String.fromCharCode(10))); } catch (e) {}
+      if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
     });
   }).catch(function (e) {
     say('EXC ' + (e && e.stack || e));
     say('DONE');
-    window.__done = true; if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+    window.__done = true;
+    try { localStorage.setItem('warroom.testresult', lines.join(String.fromCharCode(10))); } catch (err) {}
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
   });
 })();
 </script>

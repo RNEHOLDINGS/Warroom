@@ -87,11 +87,41 @@ if the image is on your clipboard. Several pages at once is fine.
 The text is recognised on this machine by Tesseract compiled to WebAssembly,
 from the files in `ocr/`. Nothing is uploaded and no network is used.
 
-Measured against mock screens with known answers:
+Measured against **real CFB 27 screenshots** — four depth-chart pages holding
+25 players between them, in `testshots/`, scored by `realtest.html`:
+
+| Field | Right |
+| --- | --- |
+| Players found | 25 of 25 |
+| Year | 25 of 25 |
+| Redshirt | 24 of 25 |
+| Position | 21 of 25 |
+| Name exactly | 20 of 25 |
+| Overall | 17 of 25 |
+| Junk rows imported | 0 |
+
+The five name misses are all one or two characters out. Every row worth
+checking is outlined red or amber, so you are looking at four or five rows on
+a page rather than proof-reading all nine.
+
+Three things had to be got right for that, and each was wrong first:
+
+- **The depth chart shows three kinds of text at once** — the selected row is
+  dark on cream, the rows under it white on dark, the depth rows grey on dark.
+  Any single global invert serves one and destroys another. The reader now
+  thresholds against a local average instead, so anything that contrasts with
+  its own surroundings comes out black on white whichever way round it began.
+- **The columns are `NAME YEAR POS OVR`**, not name-then-position, and there
+  are eight more two-digit numbers to the right of the overall. Reading "the
+  first number that looks like a rating" returned a man's agility.
+- **An unreadable cell must not delete the player.** A missing position used
+  to throw the whole row away, which is how somebody vanishes off a roster
+  without anyone noticing. Blank fields are kept, marked, and asked for.
+
+The recruiting board, scored against a mock board:
 
 | Screen | Rows found | Reads correctly |
 | --- | --- | --- |
-| Roster | 14 of 14 | 13-14 of 14 |
 | Recruiting board | 12 of 12 | names, positions, states and status 11-12 of 12 |
 
 **Star ratings do not survive a screenshot at all.** The star column is icons,
@@ -175,12 +205,15 @@ between them.
 
 ## Checking it
 
-There are five suites, all driven through real DOM clicks with hit testing:
+There are six suites, all driven through real DOM clicks with hit testing:
 
 - `selftest.html` — the app: counting, roster editing, season rollover.
 - `ocrtest.html` — recognition accuracy, scored against a known roster, plus
   the line parser on its own.
 - `scantest.html` — the whole screenshot-to-roster flow through the real UI.
+- `realtest.html` — accuracy against real CFB 27 screenshots in `testshots/`,
+  scored field by field against a hand transcription. This is the one that
+  matters; the mock-based numbers flattered the reader badly.
 - `storytest.html` — storylines: generation, the drama ration, destructive
   choices, self-resolution, archiving, and that a render never mutates state.
 - `portaltest.html` — outgoing transfers and what they do to the count.

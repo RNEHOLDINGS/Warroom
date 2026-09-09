@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Real screenshot accuracy</title></head>
+<body>
+<pre id="out">RUNNING</pre>
+<script src="ocr.js"></script>
+<script>
+(function () {
+  /* Transcribed by eye from the four screenshots in testshots/.
+     [name, year, redshirt, position, overall] */
+  var TRUTH = {
+    ol: [
+      ['J.Carty',     'SO', true,  'LT', 86],
+      ['C.Hamm',      'SR', true,  'RT', 83],
+      ['J.Bliss',     'FR', true,  'LT', 83],
+      ['T.Brady',     'SR', true,  'RT', 92],
+      ['C.Doucet',    'SO', false, 'LG', 85],
+      ['K.Campanaro', 'JR', true,  'LT', 83],
+      ['K.McGahee',   'FR', true,  'C',  83],
+      ['E.Lamar',     'SO', true,  'LG', 83],
+      ['N.Montez',    'FR', true,  'RT', 81]
+    ],
+    hb: [
+      ['D.Jewell',     'JR', false, 'HB', 86],
+      ['J.Oruwariye',  'SO', true,  'HB', 84],
+      ['D.Tuten',      'SO', false, 'HB', 78],
+      ['B.Brightwell', 'FR', true,  'HB', 73],
+      ['C.Spillman',   'JR', false, 'HB', 87]
+    ],
+    p: [
+      ['B.Chavez', 'JR', true,  'P', 82],
+      ['L.Clark',  'SO', false, 'K', 83]
+    ],
+    edge: [
+      ['D.Drango',    'JR', true,  'REDG', 81],
+      ['L.Redman',    'SR', true,  'LEDG', 82],
+      ['J.Manderino', 'FR', false, 'REDG', 67],
+      ['F.Osborne',   'SR', false, 'DT',   85],
+      ['I.Cameron',   'SR', true,  'REDG', 84],
+      ['J.Kashama',   'FR', true,  'REDG', 83],
+      ['J.Queen',     'SO', true,  'DT',   83],
+      ['S.Exum',      'SO', true,  'DT',   82],
+      ['M.Dillard',   'SO', true,  'WILL', 81]
+    ]
+  };
+
+  var L = [];
+  function say(s) { L.push(s); document.getElementById('out').textContent = L.join('\n'); }
+  function dist(a, b) {
+    a = a.toLowerCase(); b = b.toLowerCase();
+    var m = a.length, n = b.length, pv = [], cu = [], i, j;
+    for (j = 0; j <= n; j++) pv[j] = j;
+    for (i = 1; i <= m; i++) {
+      cu[0] = i;
+      for (j = 1; j <= n; j++) cu[j] = Math.min(pv[j] + 1, cu[j - 1] + 1, pv[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      pv = cu.slice();
+    }
+    return pv[n];
+  }
+
+  var tot = { players: 0, found: 0, exactName: 0, year: 0, rs: 0, pos: 0, ovr: 0, perfect: 0, spurious: 0 };
+
+  function score(key, rows) {
+    var truth = TRUTH[key], used = {};
+    say('');
+    say('===== ' + key + '.png  (' + rows.length + ' rows read, ' + truth.length + ' players on screen) =====');
+    truth.forEach(function (t) {
+      tot.players++;
+      var best = null, bd = 99, bi = -1;
+      rows.forEach(function (r, i) {
+        if (used[i]) return;
+        var d = dist(t[0], r.name);
+        if (d < bd) { bd = d; best = r; bi = i; }
+      });
+      if (!best || bd > Math.max(3, Math.ceil(t[0].length * 0.4))) {
+        say('  MISSING   ' + t.join(' '));
+        return;
+      }
+      used[bi] = true;
+      tot.found++;
+      var nameOK = bd === 0, yOK = best.year === t[1], rOK = best.rs === t[2], pOK = best.pos === t[3], oOK = best.ovr === t[4];
+      if (nameOK) tot.exactName++;
+      if (yOK) tot.year++;
+      if (rOK) tot.rs++;
+      if (pOK) tot.pos++;
+      if (oOK) tot.ovr++;
+      if (nameOK && yOK && rOK && pOK && oOK) { tot.perfect++; return; }
+      say('  DIFF      want [' + t.join(' ') + ']');
+      say('            got  [' + best.name + ' ' + best.year + ' ' + best.rs + ' ' + best.pos + ' ' + best.ovr + ']' +
+        (nameOK ? '' : ' nameEdits=' + bd));
+    });
+    rows.forEach(function (r, i) {
+      if (!used[i]) { tot.spurious++; say('  SPURIOUS  ' + r.name + ' ' + r.year + ' ' + r.pos + ' ' + r.ovr + '   <<< ' + r.raw); }
+    });
+  }
+
+  var keys = ['ol', 'hb', 'p', 'edge'];
+  var chain = Promise.resolve();
+  keys.forEach(function (k) {
+    chain = chain.then(function () {
+      var t0 = Date.now();
+      return window.WarRoomOCR.recognize('testshots/' + k + '.png').then(function (res) {
+        score(k, res.rows);
+        say('  (' + Math.round((Date.now() - t0) / 100) / 10 + 's)');
+      });
+    });
+  });
+  chain.then(function () {
+    say('');
+    say('===== TOTAL =====');
+    say('players on screen : ' + tot.players);
+    say('found             : ' + tot.found + '/' + tot.players);
+    say('name exact        : ' + tot.exactName + '/' + tot.players);
+    say('year right        : ' + tot.year + '/' + tot.players);
+    say('redshirt right    : ' + tot.rs + '/' + tot.players);
+    say('position right    : ' + tot.pos + '/' + tot.players);
+    say('overall right     : ' + tot.ovr + '/' + tot.players);
+    say('perfect rows      : ' + tot.perfect + '/' + tot.players);
+    say('spurious rows     : ' + tot.spurious);
+    say('');
+    say('RESULT found=' + tot.found + '/' + tot.players + ' perfect=' + tot.perfect + ' spurious=' + tot.spurious);
+    say('DONE');
+    window.__done = true;
+    try { localStorage.setItem('warroom.testresult', L.join(String.fromCharCode(10))); } catch (e) {}
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 400);
+  }).catch(function (e) {
+    say('EXC ' + (e && e.stack || e));
+    window.__done = true;
+    try { localStorage.setItem('warroom.testresult', L.join(String.fromCharCode(10))); } catch (err) {}
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 400);
+  });
+})();
+</script>
+</body>
+</html>

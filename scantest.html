@@ -149,7 +149,7 @@
       yearSels[idxArch].value = '';
       yearSels[idxArch].dispatchEvent(new Event('change', { bubbles: true }));
       ok(q('#scanAdd').disabled === true, 'blank year disables import');
-      ok(/missing year/.test(q('#scanAdd').textContent), 'button says what is wrong', q('#scanAdd').textContent);
+      ok(/Fill in/.test(q('#scanAdd').textContent), 'button says what is wrong', q('#scanAdd').textContent);
       yearSels[idxArch].value = 'JR';
       yearSels[idxArch].dispatchEvent(new Event('change', { bubbles: true }));
       ok(q('#scanAdd').disabled === false, 're-enabled once fixed');
