@@ -23,9 +23,28 @@ always the real one.
   is marked committed they count against next season.
 - **Class** — this season's commits summarised by position and star average,
   plus every past class after you advance.
+- **Storylines** — two or three recruits a season get a story that generates
+  itself from your board and closes itself when you commit or lose them.
 - **Advance season** — one click does the offseason: seniors and marked exits
   leave, everyone else moves up a year (redshirts keep theirs), commits enroll
   as freshmen or at their portal class, and the board resets.
+
+## Storylines
+
+Two or three recruits a season get a story attached, shown at the top of the
+Board. They are generated from the board you actually have — the position you
+are three short at, the kid who is third on his own list, the room that is
+already full, the in-state kid whose coach keeps ringing.
+
+**There is nothing to manage.** You never open, update or close one. Commit
+the player and it closes as landed; lose him and it closes as missed, with a
+line about what happened. A couple of them ask you one question, and the
+athlete one actually moves the player to the position you pick. Advance the
+season and the whole set is filed into that class's history, so old seasons
+read as a story instead of a list of names.
+
+Set your school's **State** in Settings and the in-state storylines start
+firing. **New set** on the card swaps them if you do not like the ones you got.
 
 ## Reading a roster off a screenshot
 
@@ -89,6 +108,8 @@ There are three suites, all driven through real DOM clicks with hit testing:
 - `ocrtest.html` — recognition accuracy, scored against a known roster, plus
   the line parser on its own.
 - `scantest.html` — the whole screenshot-to-roster flow through the real UI.
+- `storytest.html` — storylines: generation, choices, self-resolution,
+  archiving, and that a render never mutates stored state.
 
 `rostermock.html` renders the fake roster screen the OCR tests are scored
 against; `?photo` degrades it to look like a phone photo of a TV.

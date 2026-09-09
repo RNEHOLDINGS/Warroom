@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>story shot</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script>localStorage.clear();</script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+<script>
+var q = new URLSearchParams(location.search);
+if (q.get('dark')) document.documentElement.setAttribute('data-theme', 'dark');
+document.querySelector('[data-action="load-sample"]').click();
+var st = WarRoom.state();
+/* one of each kind so the writing can be judged side by side */
+st.recruits = st.recruits.filter(function (r) { return (r.type || 'hs') === 'hs'; }).slice(0, 6);
+st.recruits[0].name = 'Cormac Villareal'; st.recruits[0].pos = 'QB'; st.recruits[0].stars = 5; st.recruits[0].state = 'TX'; st.recruits[0].status = 'board';
+st.recruits[1].name = 'Jaylen Ridout';   st.recruits[1].pos = 'ATH'; st.recruits[1].stars = 4; st.recruits[1].state = 'GA'; st.recruits[1].status = 'board';
+st.recruits[2].name = 'Deshawn Pettway'; st.recruits[2].pos = 'LEDG'; st.recruits[2].stars = 4; st.recruits[2].state = 'FL'; st.recruits[2].standing = 3; st.recruits[2].status = 'board';
+st.recruits[3].name = 'Micah Thibodeaux';st.recruits[3].pos = 'CB'; st.recruits[3].stars = 3; st.recruits[3].gem = true; st.recruits[3].state = 'LA'; st.recruits[3].rank = 412; st.recruits[3].status = 'board';
+WarRoom.rollStorylines('demo');
+if (q.get('resolved')) {
+  var ss = WarRoom.stories();
+  st.recruits.filter(function (r) { return r.id === ss[0].recruitId; })[0].status = 'committed';
+  if (ss[1]) st.recruits.filter(function (r) { return r.id === ss[1].recruitId; })[0].status = 'lost';
+  WarRoom.syncStorylines();
+}
+WarRoom.setView(q.get('v') || 'board');
+</script>
+</body></html>

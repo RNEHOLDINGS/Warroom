@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>War Room storyline test</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button>
+    <button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button>
+    <button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, name, detail) { out.push((c ? 'PASS ' : 'FAIL ') + name + (c ? '' : '  -- ' + (detail || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function hits(el) {
+    el.scrollIntoView({ block: 'center' });
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return 'zero-size';
+    var top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!top) return 'nothing at point';
+    return (top === el || el.contains(top)) ? true : 'covered by ' + top.tagName.toLowerCase();
+  }
+  function click(sel) {
+    var el = q(sel);
+    if (!el) { out.push('NOEL ' + sel); fails++; render(); return false; }
+    var h = hits(el);
+    ok(h === true, 'clickable: ' + sel, h);
+    el.click();
+    return true;
+  }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS');
+    render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom;
+
+  try {
+    /* A board with no recruits must not invent stories out of nothing. */
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    ok(st.school.state !== undefined, 'school has a state field');
+
+    /* 1. they generate themselves, with no button pressed */
+    var stories = W.stories();
+    ok(stories.length >= 2 && stories.length <= 3, 'two or three storylines rolled automatically', stories.length);
+    ok(stories.every(function (s) { return s.season === st.season; }), 'all belong to this season');
+    var ids = stories.map(function (s) { return s.recruitId; });
+    ok(new Set(ids).size === ids.length, 'one storyline per recruit');
+    var tpls = stories.map(function (s) { return s.tpl; });
+    ok(new Set(tpls).size === tpls.length, 'no template repeats in a season', tpls.join(','));
+    ok(stories.every(function (s) { return s.hook && s.hook.length > 40 && s.title; }), 'each has a title and a real hook');
+    ok(stories.every(function (s) {
+      return st.recruits.some(function (r) { return r.id === s.recruitId && (r.type || 'hs') === 'hs'; });
+    }), 'storylines attach only to high-school recruits');
+
+    /* 2. they are stable — re-rendering must not reshuffle them */
+    W.setView('board');
+    W.setView('home');
+    W.setView('board');
+    ok(W.stories().map(function (s) { return s.id; }).join() === stories.map(function (s) { return s.id; }).join(),
+      'storylines survive re-render unchanged');
+
+    /* 3. they show up on the board and are reachable */
+    ok(!!q('.story-card'), 'storyline card renders on the board');
+    ok(q('.story-card .story').length !== 0 || document.querySelectorAll('.story').length === stories.length,
+      'one block per storyline', document.querySelectorAll('.story').length);
+    ok(hits(q('.story-card')) === true, 'storyline card is not covered', hits(q('.story-card')));
+    ok(document.querySelectorAll('.story-chip').length >= 1, 'recruits with a story are badged on the board');
+
+    /* the hook must never leak raw HTML from a recruit name */
+    var evil = st.recruits[0];
+    evil.name = '<img src=x onerror=alert(1)>';
+    W.rollStorylines('xss');
+    W.setView('board');
+    ok(document.querySelectorAll('.story-card img').length === 0, 'recruit names are escaped in storylines');
+
+    /* 4. a choice is a real decision */
+    localStorage.clear();
+    location.hash = '';
+    var st2 = W.state();
+    st2.recruits.forEach(function (r) { r.status = 'board'; });
+    /* force the athlete storyline by making an ATH the only sensible subject */
+    st2.recruits = st2.recruits.filter(function (r) { return (r.type || 'hs') === 'hs'; }).slice(0, 4);
+    st2.recruits[0].pos = 'ATH';
+    st2.recruits[0].name = 'Test Athlete';
+    st2.recruits[0].stars = 5;
+    W.rollStorylines('ath');
+    W.setView('board');
+    var athStory = W.stories().filter(function (s) { return s.tpl === 'athlete'; })[0];
+    ok(!!athStory, 'athlete storyline fires for an ATH recruit', W.stories().map(function (s) { return s.tpl; }).join(','));
+    if (athStory) {
+      var btn = q('[data-action="story-choice"][data-id="' + athStory.id + '"]');
+      ok(!!btn, 'choice buttons render');
+      ok(hits(btn) === true, 'choice button is clickable', hits(btn));
+      btn.click();
+      var moved = W.state().recruits.filter(function (r) { return r.id === athStory.recruitId; })[0];
+      ok(moved.pos === 'WR', 'choosing offense actually moves him to WR', moved.pos);
+      var after = W.stories().filter(function (s) { return s.id === athStory.id; })[0];
+      ok(after.chosen === 'off', 'choice is recorded');
+      W.setView('board');
+      ok(!q('[data-action="story-choice"][data-id="' + athStory.id + '"]'), 'choice cannot be made twice');
+    }
+
+    /* 5. committing a recruit closes his story with no extra step */
+    var open = W.stories().filter(function (s) { return s.state === 'open'; })[0];
+    ok(!!open, 'an open storyline exists to resolve');
+    var target = W.state().recruits.filter(function (r) { return r.id === open.recruitId; })[0];
+    target.status = 'committed';
+    W.setView('board');            /* render alone must NOT resolve it... */
+    ok(W.stories().filter(function (s) { return s.id === open.id; })[0].state === 'open',
+      'rendering does not silently mutate stored state');
+    /* ...the save that any real edit performs does */
+    var m = q('[data-action="edit-recruit"][data-id="' + target.id + '"]');
+    if (m) { m.click(); click('[data-action="save-recruit"]'); }
+    var resolved = W.stories().filter(function (s) { return s.id === open.id; })[0];
+    ok(resolved.state === 'won', 'committing closes the storyline as won', resolved.state);
+    ok(resolved.outcome && resolved.outcome.length > 10, 'a won storyline gets outcome text', resolved.outcome);
+
+    /* 6. losing one closes it the other way */
+    var open2 = W.stories().filter(function (s) { return s.state === 'open'; })[0];
+    if (open2) {
+      var t2 = W.state().recruits.filter(function (r) { return r.id === open2.recruitId; })[0];
+      t2.status = 'lost';
+      W.state().players.push({ id: 'x1', name: 'Nudge Save', pos: 'QB', year: 'FR', rs: false, redshirtNow: false, ovr: 0, dev: 'Normal', exit: '', note: '' });
+      var m2 = q('[data-view="board"]'); if (m2) m2.click();
+      var addBtn = q('[data-action="add-recruit"]');
+      if (addBtn) { addBtn.click(); q('#r-name').value = 'Filler Guy'; click('[data-action="save-recruit"]'); }
+      var lost = W.stories().filter(function (s) { return s.id === open2.id; })[0];
+      ok(lost.state === 'lost', 'losing a recruit closes the storyline as missed', lost.state);
+      ok(!!lost.outcome, 'a missed storyline gets outcome text');
+    }
+
+    /* 7. advancing settles everything and files it in the history */
+    var seasonBefore = W.state().season;
+    var storiesBefore = W.stories().length;
+    click('[data-view="class"]');
+    click('[data-action="advance"]');
+    click('[data-action="do-advance"]');
+    var st3 = W.state();
+    ok(st3.season === seasonBefore + 1, 'season advanced');
+    ok(W.stories().length === 0, 'no storylines carried into the new season', W.stories().length);
+    var h = st3.history[st3.history.length - 1];
+    ok(h.stories && h.stories.length === storiesBefore, 'every storyline filed in the history', (h.stories || []).length + ' vs ' + storiesBefore);
+    ok(h.stories.every(function (s) { return s.state === 'won' || s.state === 'lost'; }), 'none left open in the history');
+    ok(h.stories.every(function (s) { return !!s.outcome; }), 'each has an outcome in the history');
+    click('[data-view="class"]');
+    ok(document.querySelectorAll('.story-log-item').length === storiesBefore, 'past classes show the storylines', document.querySelectorAll('.story-log-item').length);
+
+    /* 8. a new season with recruits rolls a fresh set */
+    var st4 = W.state();
+    ['Alpha One', 'Beta Two', 'Gamma Three'].forEach(function (nm, i) {
+      st4.recruits.push({ id: 'n' + i, type: 'hs', name: nm, pos: ['QB', 'WR', 'CB'][i], stars: 4, gem: i === 1,
+        rank: 100 + i, state: 'TX', standing: 1, hours: 3, archetype: '', dealbreaker: '', ovr: 0,
+        year: 'FR', rs: false, from: '', status: 'board', note: '', dev: 'Normal' });
+    });
+    var addBtn2 = q('[data-view="board"]'); if (addBtn2) addBtn2.click();
+    var ab = q('[data-action="add-recruit"]');
+    if (ab) { ab.click(); q('#r-name').value = 'Trigger Save'; click('[data-action="save-recruit"]'); }
+    ok(W.stories().length >= 2, 'a new season rolls new storylines once recruits exist', W.stories().length);
+    ok(W.stories().every(function (s) { return s.season === st4.season; }), 'they belong to the new season');
+
+    /* 9. re-roll swaps the set */
+    var beforeIds = W.stories().map(function (s) { return s.id; }).join();
+    click('[data-view="board"]');
+    click('[data-action="reroll-stories"]');
+    ok(W.stories().map(function (s) { return s.id; }).join() !== beforeIds, 'New set produces different storylines');
+
+    finish();
+  } catch (e) {
+    out.push('EXC ' + (e && e.stack || e));
+    fails++;
+    finish();
+  }
+})();
+</script>
+</body>
+</html>

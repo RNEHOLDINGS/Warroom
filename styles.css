@@ -392,6 +392,58 @@ table.plain td.num, table.plain th.num { text-align: right; }
 .targets-grid label { margin-bottom: 2px; }
 .targets-grid input { padding: 6px 8px; }
 
+/* ---------- storylines ---------- */
+
+.story-card { border-left: 3px solid var(--team); }
+.story {
+  padding: 14px 0; border-top: 1px solid var(--border);
+}
+.story:first-of-type { border-top: 0; padding-top: 4px; }
+.story.won { opacity: 0.92; }
+.story.lost { opacity: 0.82; }
+
+.story-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.story-head > b { font-size: var(--t-body); font-weight: 800; }
+.story-who {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+  font-size: var(--t-small); font-weight: 600; padding: 3px 8px;
+}
+.story-who .pos-badge { min-width: 34px; }
+
+.story-hook {
+  font-size: var(--t-small); color: var(--ink-2); line-height: 1.55;
+  text-wrap: pretty; max-width: 62ch;
+}
+.story.won .story-hook, .story.lost .story-hook { color: var(--ink-muted); }
+
+.story-choice { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.story-q { font-size: var(--t-small); font-weight: 700; color: var(--ink); }
+.story-choice.done { color: var(--ink-muted); font-size: var(--t-small); }
+.story-choice.done b { color: var(--ink-2); }
+
+.story-outcome {
+  display: flex; align-items: flex-start; gap: 7px; margin-top: 10px;
+  font-size: var(--t-small); font-weight: 600; color: var(--ink);
+  background: var(--wash); border-radius: var(--r-sm); padding: 8px 10px;
+  max-width: 62ch;
+}
+.story.won .story-outcome { color: var(--good-ink); }
+.story.lost .story-outcome { color: var(--crit-ink); }
+.story-outcome svg { margin-top: 2px; }
+
+.story-chip { padding: 3px 6px; vertical-align: middle; }
+.story-chip svg { display: block; fill: currentColor; stroke-width: 1.2; }
+
+.story-log { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.story-log-item {
+  font-size: var(--t-small); padding: 7px 10px; border-radius: var(--r-sm);
+  background: var(--wash); border-left: 2px solid var(--grid);
+}
+.story-log-item.won { border-left-color: var(--good); }
+.story-log-item.lost { border-left-color: var(--critical); }
+.story-log-item b { display: block; color: var(--ink); }
+.story-log-item span { color: var(--ink-muted); text-wrap: pretty; }
+
 /* ---------- reading a screenshot ---------- */
 
 .dropzone {

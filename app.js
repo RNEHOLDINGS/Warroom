@@ -144,6 +144,8 @@
     check: '<path d="M5 12l5 5L20 7"/>',
     alert: '<path d="M12 3L2 21h20L12 3zM12 10v5M12 18v.5"/>',
     flag: '<path d="M5 21V4M5 4h12l-2 4 2 4H5"/>',
+    /* a bookmark, not a book: at 14px the book's spine turns to mush */
+    book: '<path d="M7 4h10v16l-5-4-5 4z"/>',
     users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4.5-6.2"/>',
     camera: '<path d="M3 8a2 2 0 0 1 2-2h2.5l1.2-2h6.6l1.2 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/>',
     spin: '<path d="M12 3a9 9 0 1 0 9 9" />'
@@ -168,13 +170,14 @@
   function defaultState() {
     return {
       v: 1,
-      school: { name: '', mascot: '', color: '#2a78d6' },
+      school: { name: '', mascot: '', state: '', color: '#2a78d6' },
       season: 2027,
       cap: 85,
       hours: 35,
       targets: defaultTargets(),
       players: [],
       recruits: [],
+      storylines: [],
       history: []
     };
   }
@@ -192,6 +195,7 @@
           s.targets = Object.assign(s.targets, parsed.targets || {});
           s.players = Array.isArray(parsed.players) ? parsed.players : [];
           s.recruits = Array.isArray(parsed.recruits) ? parsed.recruits : [];
+          s.storylines = Array.isArray(parsed.storylines) ? parsed.storylines : [];
           s.history = Array.isArray(parsed.history) ? parsed.history : [];
         }
       }
@@ -200,6 +204,10 @@
   }
   var state = load();
   function save() {
+    /* One hook instead of eight: every mutation path ends up here, so
+       storylines open and close themselves without any caller remembering to
+       ask. */
+    syncStorylines();
     try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
     catch (e) { toast('Could not save — storage is full or blocked.'); }
   }
@@ -233,6 +241,371 @@
     t.openNow = state.cap - t.on;
     t.ath = athIn;
     return { rows: rows, totals: t };
+  }
+
+  /* ---------- storylines ----------
+     A dynasty is not a spreadsheet. Two or three recruits a season get a
+     story attached, and every one of them is generated from the board you
+     already have — the spot you are three short at, the kid who is third on
+     his own list, the room that is already full.
+
+     The rule this is built to: no new bookkeeping. You never open, update or
+     close a storyline. Commit the player or lose him and it closes itself.
+     High-school recruits only; the portal moves too fast to have a plot. */
+
+  function firstName(n) { return String(n || '').trim().split(' ')[0] || 'He'; }
+  function lastName(n) {
+    var p = String(n || '').trim().split(' ');
+    return p.length > 1 ? p[p.length - 1] : (p[0] || '');
+  }
+  function hashStr(s) {
+    var h = 2166136261, i;
+    for (i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 16777619) >>> 0; }
+    return h >>> 0;
+  }
+  function seededRnd(seed) {
+    var s = (seed >>> 0) || 1;
+    return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  }
+
+  /* fit() returns 0 for "does not apply" or a weight — the higher the weight
+     the more the story is about this particular recruit rather than colour. */
+  var STORY_TEMPLATES = [
+    {
+      id: 'hometown',
+      fit: function (c) { return c.school.state && c.r.state && c.r.state === c.school.state ? 9 : 0; },
+      make: function (c) {
+        return {
+          title: 'The hometown kid',
+          hook: c.first + ' grew up in ' + c.r.state + ' and has been coming to your games since he was small. His high school coach rings your staff without being asked. Everyone here assumes he signs.'
+        };
+      },
+      won: function () { return 'He stayed home. The local paper put it on the front of the sports section.'; },
+      lost: function () { return 'He left the state. This is the one people bring up years from now.'; }
+    },
+    {
+      id: 'crowded',
+      fit: function (c) { return c.row && c.row.need <= 0 ? 8 : 0; },
+      make: function (c) {
+        return {
+          title: 'A crowded room',
+          hook: 'You already project ' + c.row.projected + ' at ' + c.group.name.toLowerCase() + ' next season, which is ' + (c.row.need === 0 ? 'exactly your target' : Math.abs(c.row.need) + ' over it') + '. ' + c.first + ' knows it. His people have asked twice who is ahead of him.',
+          choice: {
+            question: 'What do you tell him?',
+            options: [
+              { id: 'promise', label: 'Promise him the job' },
+              { id: 'compete', label: 'Tell him he has to earn it' }
+            ]
+          }
+        };
+      },
+      won: function (c) {
+        return c.chosen === 'promise'
+          ? 'He signed on the promise. Somebody already on your roster is going to find out about it.'
+          : 'He signed anyway, knowing he has to beat somebody out. That is the kind you want.';
+      },
+      lost: function (c) {
+        return c.chosen === 'promise'
+          ? 'He took a promise from someone else instead. They got there first.'
+          : 'He went where the depth chart was thinner. Hard to blame him.';
+      }
+    },
+    {
+      id: 'needy',
+      fit: function (c) { return c.row && c.row.need >= 3 ? 8 : 0; },
+      make: function (c) {
+        return {
+          title: 'The one you cannot miss',
+          hook: 'You are ' + c.row.need + ' short at ' + c.group.name.toLowerCase() + ' and ' + c.first + ' is the best one left on your board. Miss here and you are signing whoever is still available in February.'
+        };
+      },
+      won: function (c) { return 'He is in. That is the hole at ' + c.group.id + ' closed, or most of it.'; },
+      lost: function (c) { return 'Gone, and you are still ' + c.row.need + ' short at ' + c.group.id + '. Start calling.'; }
+    },
+    {
+      id: 'longshot',
+      fit: function (c) { return c.r.standing >= 3 ? 7 : 0; },
+      make: function (c) {
+        return {
+          title: 'Third on the list',
+          hook: 'You are number ' + c.r.standing + ' on his list and everybody involved knows it. Your staff think the visit is the whole shot. ' + c.first + ' has not returned a call in two weeks.'
+        };
+      },
+      won: function () { return 'He picked you from the back of his own list. Somebody on your staff earned that one.'; },
+      lost: function () { return 'He went where he was always going. The hours are gone either way.'; }
+    },
+    {
+      id: 'gem',
+      fit: function (c) { return c.r.gem ? 7 : 0; },
+      make: function (c) {
+        return {
+          title: 'Nobody else sees it',
+          hook: (c.r.stars || 3) + ' stars' + (c.r.rank ? ', ranked ' + c.r.rank + ' nationally' : '') + ', and your area scout will not stop talking about him. He is certain ' + c.first + ' is the best ' + c.group.name.toLowerCase() + ' in the class and that everyone else is watching the wrong tape.'
+        };
+      },
+      won: function () { return 'You got him cheap. Ask again in three years whether the scout was right.'; },
+      lost: function () { return 'Somebody else took the flyer. Your scout has not said a word since.'; }
+    },
+    {
+      id: 'athlete',
+      fit: function (c) { return groupOf(c.r.pos) === 'ATH' ? 8 : 0; },
+      make: function (c) {
+        return {
+          title: 'Two coaches, one player',
+          hook: 'Nobody can agree what ' + c.first + ' actually is. Both coordinators have filed a claim on him and they want it settled before the visit.',
+          choice: {
+            question: 'Where does he play?',
+            options: [
+              { id: 'off', label: 'Offense — receiver', pos: 'WR' },
+              { id: 'def', label: 'Defense — corner', pos: 'CB' }
+            ]
+          }
+        };
+      },
+      won: function (c) { return 'He signed as a ' + c.r.pos + '. The other coordinator has not let it go.'; },
+      lost: function () { return 'He went somewhere that told him what he was on the first call.'; }
+    },
+    {
+      id: 'dealbreaker',
+      fit: function (c) { return c.r.dealbreaker ? 6 : 0; },
+      make: function (c) {
+        return {
+          title: 'What he actually wants',
+          hook: 'Every conversation comes back to the same thing: ' + c.r.dealbreaker + '. He is not being awkward about it. It is simply the only question he ever asks.'
+        };
+      },
+      won: function (c) { return 'You gave him an answer he believed about ' + c.r.dealbreaker + '. Now you have to mean it.'; },
+      lost: function (c) { return 'Somebody answered the ' + c.r.dealbreaker + ' question better than you did.'; }
+    },
+    {
+      id: 'silent',
+      /* the only story worth telling about someone who has already said yes */
+      committed: true,
+      fit: function (c) { return (c.r.stars || 0) >= 4 ? 6 : 4; },
+      make: function (c) {
+        return {
+          title: 'Quiet for now',
+          hook: c.first + ' is committed and will not say so in public. He wants a hat on a table on signing day. Until then every program in the country still believes he is available, and they are all still calling.'
+        };
+      },
+      won: function () { return 'He kept it quiet and signed. Nobody got near him.'; },
+      lost: function () { return 'Somebody got in the ear of a kid nobody knew was taken. Flipped.'; }
+    },
+    {
+      id: 'legacy',
+      fit: function (c) { return (c.r.stars || 0) >= 3 && lastName(c.r.name) ? 3 : 0; },
+      make: function (c) {
+        return {
+          title: 'His father’s jersey',
+          hook: 'A ' + lastName(c.r.name) + ' played here, a long time ago, and there is a photograph of him in the hallway outside the team room. ' + c.first + ' has walked past it on every visit since he was small. Nobody in the family will say out loud that it matters.'
+        };
+      },
+      won: function (c) { return 'Two ' + lastName(c.r.name) + 's in the same hallway now.'; },
+      lost: function () { return 'He wanted his own thing. You cannot argue with it.'; }
+    },
+    {
+      id: 'grades',
+      fit: function () { return 2; },
+      make: function (c) {
+        return {
+          title: 'The qualifying question',
+          hook: 'The tape was never the problem. Compliance flagged ' + c.first + '’s transcript and he needs one clean semester to qualify. Your academic people say it is close, and they mean close.'
+        };
+      },
+      won: function () { return 'He qualified. It went to the last week and it was never comfortable.'; },
+      lost: function () { return 'It did not come together. Somebody will get him out of junior college in two years.'; }
+    }
+  ];
+
+  function templateById(id) {
+    for (var i = 0; i < STORY_TEMPLATES.length; i++) if (STORY_TEMPLATES[i].id === id) return STORY_TEMPLATES[i];
+    return null;
+  }
+  function storyContext(r, chosen) {
+    var gid = groupOf(r.pos);
+    var row = null;
+    computeNeeds().rows.forEach(function (x) { if (x.group.id === gid) row = x; });
+    return {
+      r: r, row: row, group: groupInfo(gid), school: state.school,
+      first: firstName(r.name), last: lastName(r.name), chosen: chosen || ''
+    };
+  }
+  function storyRecruit(s) {
+    for (var i = 0; i < state.recruits.length; i++) if (state.recruits[i].id === s.recruitId) return state.recruits[i];
+    return null;
+  }
+  function currentStories() {
+    return state.storylines.filter(function (s) {
+      return s.season === state.season && storyRecruit(s);
+    });
+  }
+
+  /* Generates at most three, one per recruit, best-fitting template first and
+     never the same template twice in a season. Seeded on the season and the
+     board so it does not reshuffle itself on every render. */
+  function rollStorylines(nonce) {
+    state.storylines = state.storylines.filter(function (s) { return s.season !== state.season; });
+    var pool = state.recruits.filter(function (r) {
+      return (r.type || 'hs') === 'hs' && r.status !== 'lost' && r.name;
+    });
+    if (pool.length < 2) return 0;
+
+    var rnd = seededRnd(hashStr(state.season + '|' + (nonce || '') + '|' + pool.map(function (r) { return r.id; }).join(',')));
+    /* interesting first — stars, then a jitter so it is not the same three
+       every single season */
+    /* A live chase is a better story than a done deal, so board status
+       outweighs a star. */
+    var live = function (r) { return r.status === 'board' ? 2.5 : 0; };
+    pool = pool.slice().sort(function (a, b) {
+      return ((b.stars || 0) + live(b) + rnd() * 1.5) - ((a.stars || 0) + live(a) + rnd() * 1.5);
+    });
+
+    var used = {}, made = 0;
+    pool.forEach(function (r) {
+      if (made >= 3) return;
+      var c = storyContext(r);
+      var committed = isIncoming(r);
+      var best = null, bestFit = 0;
+      STORY_TEMPLATES.forEach(function (t) {
+        if (used[t.id]) return;
+        /* Chasing someone who has already said yes reads as nonsense, and
+           "will he stay quiet" means nothing for a kid still on the board.
+           Each template belongs to one phase or the other. */
+        if (!!t.committed !== committed) return;
+        var f = t.fit(c);
+        if (f > bestFit) { bestFit = f; best = t; }
+      });
+      if (!best) return;
+      used[best.id] = true;
+      var built = best.make(c);
+      state.storylines.push({
+        id: uid(), season: state.season, recruitId: r.id, tpl: best.id,
+        title: built.title, hook: built.hook,
+        choice: built.choice || null, chosen: '',
+        state: 'open', outcome: ''
+      });
+      made++;
+    });
+    return made;
+  }
+
+  /* Called after anything that could change a recruit's status. Opens stories
+     for a new season and closes the ones the board has already decided. */
+  function syncStorylines() {
+    var changed = false;
+    state.storylines.forEach(function (s) {
+      if (s.state !== 'open') return;
+      var r = storyRecruit(s);
+      if (!r) return;
+      var t = templateById(s.tpl);
+      if (!t) return;
+      var done = null;
+      if (isIncoming(r)) done = 'won';
+      else if (r.status === 'lost') done = 'lost';
+      if (!done) return;
+      s.state = done;
+      s.outcome = t[done](storyContext(r, s.chosen));
+      changed = true;
+    });
+    if (!currentStories().length && state.recruits.some(function (r) { return (r.type || 'hs') === 'hs'; })) {
+      if (rollStorylines()) changed = true;
+    }
+    return changed;
+  }
+
+  function chooseStory(storyId, optId) {
+    var s = null;
+    state.storylines.forEach(function (x) { if (x.id === storyId) s = x; });
+    if (!s || s.chosen || !s.choice) return;
+    var opt = null;
+    s.choice.options.forEach(function (o) { if (o.id === optId) opt = o; });
+    if (!opt) return;
+    s.chosen = optId;
+    var r = storyRecruit(s);
+    /* Some choices are only colour. The athlete one actually moves him, which
+       is the point — a decision that changes nothing is a quiz, not a story. */
+    if (opt.pos && r) r.pos = opt.pos;
+    save();
+    render();
+    toast(opt.pos && r ? r.name + ' is a ' + opt.pos + ' now.' : 'Noted.');
+  }
+
+  /* Closes whatever the season did not, and hands back a summary for the
+     history so old classes read as a story rather than a list of names. */
+  function closeSeasonStories() {
+    var out = [];
+    state.storylines.filter(function (s) { return s.season === state.season; }).forEach(function (s) {
+      var r = storyRecruit(s);
+      var t = templateById(s.tpl);
+      if (s.state === 'open' && r && t) {
+        s.state = isIncoming(r) ? 'won' : 'lost';
+        s.outcome = t[s.state](storyContext(r, s.chosen));
+      }
+      out.push({
+        title: s.title,
+        name: r ? r.name : '',
+        pos: r ? r.pos : '',
+        state: s.state,
+        outcome: s.outcome
+      });
+    });
+    state.storylines = state.storylines.filter(function (s) { return s.season !== state.season; });
+    return out;
+  }
+
+  function storyBadge(recruitId) {
+    var s = null;
+    currentStories().forEach(function (x) { if (x.recruitId === recruitId) s = x; });
+    if (!s) return '';
+    var cls = s.state === 'won' ? 'good' : s.state === 'lost' ? 'crit' : 'team';
+    return '<span class="chip ' + cls + ' story-chip" title="' + esc(s.title) + '">' + icon('book', 'sm') + '</span>';
+  }
+
+  function renderStorylines() {
+    var stories = currentStories();
+    if (!stories.length) return '';
+    var open = stories.filter(function (s) { return s.state === 'open'; }).length;
+
+    var body = stories.map(function (s) {
+      var r = storyRecruit(s);
+      var c = storyContext(r, s.chosen);
+      var cls = s.state === 'won' ? 'won' : s.state === 'lost' ? 'lost' : 'open';
+      var chip = s.state === 'won' ? '<span class="chip good">Landed</span>'
+        : s.state === 'lost' ? '<span class="chip crit">Missed</span>'
+        : '<span class="chip outline">Open</span>';
+
+      var choiceHtml = '';
+      if (s.choice && s.state === 'open') {
+        if (s.chosen) {
+          var picked = s.choice.options.filter(function (o) { return o.id === s.chosen; })[0];
+          choiceHtml = '<div class="story-choice done">' + icon('check', 'sm') + '<span>You told him: <b>' + esc(picked ? picked.label : s.chosen) + '</b></span></div>';
+        } else {
+          choiceHtml = '<div class="story-choice"><span class="story-q">' + esc(s.choice.question) + '</span>' +
+            s.choice.options.map(function (o) {
+              return '<button class="btn small" data-action="story-choice" data-id="' + s.id + '" data-opt="' + o.id + '">' + esc(o.label) + '</button>';
+            }).join('') + '</div>';
+        }
+      }
+
+      return '<div class="story ' + cls + '">' +
+        '<div class="story-head">' +
+          '<b>' + esc(s.title) + '</b>' + chip +
+          '<button class="btn small ghost story-who" data-action="edit-recruit" data-id="' + r.id + '">' +
+            '<span class="pos-badge">' + esc(r.pos) + '</span>' + esc(r.name) + ' ' + stars(r.stars || 0) +
+          '</button>' +
+        '</div>' +
+        '<p class="story-hook">' + esc(s.hook) + '</p>' +
+        choiceHtml +
+        (s.outcome ? '<p class="story-outcome">' + icon('flag', 'sm') + '<span>' + esc(s.outcome) + '</span></p>' : '') +
+      '</div>';
+    }).join('');
+
+    return '<div class="card story-card"><div class="card-head">' +
+      '<h2>' + state.season + ' storylines</h2>' +
+      '<span class="hint">' + (open ? open + ' still open. They close themselves when you commit or lose the player.' : 'All settled for this class.') + '</span>' +
+      '<span class="spacer"></span>' +
+      '<button class="btn small" data-action="reroll-stories" title="Swap these for a different set">New set</button>' +
+    '</div>' + body + '</div>';
   }
 
   /* ---------- theme + team colour ---------- */
@@ -490,7 +863,7 @@
     var stCls = st === 'signed' ? 'team' : st === 'committed' ? 'good' : st === 'lost' ? 'crit' : 'outline';
     return '<button class="item" data-action="edit-recruit" data-id="' + r.id + '">' +
       '<span class="pos-badge">' + esc(r.pos) + '</span>' +
-      '<span class="who"><b>' + esc(r.name || 'Unnamed') + (r.gem ? ' <span class="chip good" title="Gem">Gem</span>' : '') + (r.bust ? ' <span class="chip crit" title="Bust">Bust</span>' : '') + '</b><span>' + sub.filter(Boolean).join(' · ') + '</span></span>' +
+      '<span class="who"><b>' + esc(r.name || 'Unnamed') + (r.gem ? ' <span class="chip good" title="Gem">Gem</span>' : '') + (r.bust ? ' <span class="chip crit" title="Bust">Bust</span>' : '') + storyBadge(r.id) + '</b><span>' + sub.filter(Boolean).join(' · ') + '</span></span>' +
       '<span class="meta"><span class="chip ' + stCls + '">' + statusLabel(st) + '</span>' + (r.type === 'portal' && r.ovr ? '<span class="ovr">' + r.ovr + '</span>' : '') + stars(r.stars || 0) + '</span>' +
     '</button>';
   }
@@ -533,6 +906,10 @@
     if (holes.length) {
       html += '<div class="banner info">Still need: ' + holes.map(function (r) { return '<b>' + r.need + ' ' + r.group.id + '</b>'; }).join(', ') + '.</div>';
     }
+
+    /* Storylines sit above the board: they are about these same players, and
+       below the needs banner, because the count is still the point. */
+    if (type === 'hs') html += renderStorylines();
 
     html += '<div class="card">';
     if (!list.length) {
@@ -587,6 +964,11 @@
         html += '<div class="history-item"><h3>Class of ' + h.season + '</h3><div class="sub">' + (h.commits || []).length + ' enrolled · ' + a + ' avg stars · ' + (h.departed || []).length + ' departed' + (h.dropped ? ' · ' + h.dropped + ' uncommitted dropped' : '') + '</div>' +
           '<div class="pill-list">' + (h.commits || []).map(function (c) { return '<span class="chip outline">' + esc(c.pos) + ' ' + esc(c.name) + (c.type === 'portal' ? ' (portal)' : ' ' + (c.stars || 0) + '★') + '</span>'; }).join('') + '</div>' +
           ((h.departed || []).length ? '<div class="pill-list">' + h.departed.map(function (d) { return '<span class="chip crit">' + esc(d.pos) + ' ' + esc(d.name) + ' · ' + esc(d.reason) + '</span>'; }).join('') + '</div>' : '') +
+          ((h.stories || []).length ? '<div class="story-log">' + h.stories.map(function (s) {
+            return '<div class="story-log-item ' + (s.state === 'won' ? 'won' : 'lost') + '">' +
+              '<b>' + esc(s.title) + '</b>' +
+              '<span>' + esc(s.name) + (s.pos ? ' · ' + esc(s.pos) : '') + ' — ' + esc(s.outcome || (s.state === 'won' ? 'Landed.' : 'Missed.')) + '</span></div>';
+          }).join('') + '</div>' : '') +
         '</div>';
       });
       html += '</div>';
@@ -600,6 +982,7 @@
     html += '<div class="card"><div class="card-head"><h2>Program</h2></div><div class="row">' +
       '<div class="field"><label for="s-name">School</label><input type="text" id="s-name" value="' + esc(state.school.name) + '" placeholder="Texas"></div>' +
       '<div class="field"><label for="s-mascot">Mascot</label><input type="text" id="s-mascot" value="' + esc(state.school.mascot) + '" placeholder="Longhorns"></div>' +
+      '<div class="field"><label for="s-state">State</label><select id="s-state"><option value="">—</option>' + options(STATES, state.school.state || '') + '</select><div class="help">Lets storylines tell an in-state kid from an out-of-state one.</div></div>' +
       '<div class="field"><label for="s-color">Team colour</label><input type="color" id="s-color" value="' + esc(/^#[0-9a-f]{6}$/i.test(state.school.color) ? state.school.color : '#2a78d6') + '"></div>' +
       '<div class="field"><label for="s-season">Season</label><input type="number" id="s-season" value="' + state.season + '" min="1900" max="2999"></div>' +
       '<div class="field"><label for="s-cap">Scholarship limit</label><input type="number" id="s-cap" value="' + state.cap + '" min="1" max="200"></div>' +
@@ -1024,6 +1407,7 @@
     var incoming = state.recruits.filter(isIncoming);
     var dropped = state.recruits.filter(function (r) { return !isIncoming(r); });
     var rsNow = state.players.filter(function (p) { return p.redshirtNow && !p.rs && !isLeaving(p); });
+    var openStories = currentStories().filter(function (s) { return s.state === 'open'; }).length;
     var after = state.players.length - leaving.length + incoming.length;
     openModal('<h2>Advance to ' + (state.season + 1) + '?</h2>' +
       '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:12px">This is the offseason in one click. It cannot be undone, so export a backup first if you are unsure.</p>' +
@@ -1032,6 +1416,7 @@
         '<div class="item" style="cursor:default"><span class="chip good">In</span><span class="who"><b>' + incoming.length + ' ' + plural(incoming.length, 'recruit') + ' enroll</b><span>' + (incoming.length ? incoming.map(function (r) { return esc(r.name); }).join(', ') : 'nobody — the class is empty') + '</span></span><span></span></div>' +
         '<div class="item" style="cursor:default"><span class="chip">Age</span><span class="who"><b>Everyone else moves up a year</b><span>' + (rsNow.length ? rsNow.length + ' redshirting: ' + rsNow.map(function (p) { return esc(p.name); }).join(', ') : 'no redshirts this year') + '</span></span><span></span></div>' +
         '<div class="item" style="cursor:default"><span class="chip outline">Drop</span><span class="who"><b>' + dropped.length + ' uncommitted or lost ' + plural(dropped.length, 'recruit') + ' cleared</b><span>The board starts empty for the new class.</span></span><span></span></div>' +
+        (openStories ? '<div class="item" style="cursor:default"><span class="chip team">Story</span><span class="who"><b>' + openStories + ' open ' + plural(openStories, 'storyline') + ' settles</b><span>Whoever has not committed by now counts as missed, and the whole season goes into the history.</span></span><span></span></div>' : '') +
       '</div>' +
       '<div class="banner ' + (after > state.cap ? 'crit' : 'info') + '" style="margin-top:12px">Roster after: <b>' + after + '</b> of ' + state.cap + (after > state.cap ? ' — over the limit. You will have to cut ' + (after - state.cap) + '.' : '.') + '</div>' +
       '<div class="modal-actions"><span class="spacer"></span><button class="btn" data-action="close">Not yet</button><button class="btn primary" data-action="do-advance">' + icon('forward') + 'Advance season</button></div>');
@@ -1040,11 +1425,13 @@
     var leaving = state.players.filter(isLeaving);
     var incoming = state.recruits.filter(isIncoming);
     var dropped = state.recruits.length - incoming.length;
+    var stories = closeSeasonStories();
     state.history.push({
       season: state.season,
       commits: incoming.map(function (r) { return { name: r.name, pos: r.pos, stars: r.stars, type: r.type || 'hs', ovr: r.ovr || 0 }; }),
       departed: leaving.map(function (p) { return { name: p.name, pos: p.pos, ovr: p.ovr || 0, reason: exitLabel(p) }; }),
-      dropped: dropped
+      dropped: dropped,
+      stories: stories
     });
     state.players = state.players.filter(function (p) { return !isLeaving(p); }).map(function (p) {
       if (p.redshirtNow && !p.rs) { p.rs = true; }
@@ -1127,7 +1514,7 @@
     });
     state.players = players;
     state.recruits = recruits;
-    if (!state.school.name) state.school = { name: 'Texas', mascot: 'Longhorns', color: '#bf5700' };
+    if (!state.school.name) state.school = { name: 'Texas', mascot: 'Longhorns', state: 'TX', color: '#bf5700' };
     save();
     view = 'home';
     render();
@@ -1208,6 +1595,11 @@
       case 'delete-recruit':
         state.recruits = state.recruits.filter(function (x) { return x.id !== id; });
         save(); closeModal(); render(); toast('Removed.'); break;
+      case 'story-choice': chooseStory(id, t.getAttribute('data-opt')); break;
+      case 'reroll-stories':
+        if (rollStorylines(uid())) { save(); render(); toast('A different set of storylines.'); }
+        else toast('Add a couple more recruits first.');
+        break;
       case 'scan-roster': scanModal(); break;
       case 'import-scan': doImportScan(); break;
       case 'paste-players': pasteModal('players'); break;
@@ -1226,6 +1618,7 @@
       case 'save-program':
         state.school.name = $('#s-name').value.trim();
         state.school.mascot = $('#s-mascot').value.trim();
+        state.school.state = $('#s-state').value;
         state.school.color = $('#s-color').value;
         state.season = int($('#s-season').value, 1900, 2999);
         state.cap = int($('#s-cap').value, 1, 200);
@@ -1286,6 +1679,7 @@
   });
 
   applyTheme();
+  if (syncStorylines()) save();   /* a board restored from storage may be due a season's stories */
   render();
 
   /* exposed for the self-test page only */
@@ -1298,6 +1692,9 @@
     setView: function (v) { view = v; render(); },
     /* lets a screenshot harness show the review table without waiting on the
        recogniser */
-    showScanReview: function (rows) { scanRows = rows; renderScanReview(); }
+    showScanReview: function (rows) { scanRows = rows; renderScanReview(); },
+    stories: currentStories,
+    rollStorylines: rollStorylines,
+    syncStorylines: syncStorylines
   };
 })();
