@@ -97,32 +97,84 @@
     W.setView('board');
     ok(document.querySelectorAll('.story-card img').length === 0, 'recruit names are escaped in storylines');
 
-    /* 4. a choice is a real decision */
-    localStorage.clear();
-    location.hash = '';
+    /* 4. athletes are gone — the user does not recruit them */
+    ok(W.stories().every(function (s) { return s.tpl !== 'athlete'; }), 'no athlete storyline exists any more');
+
+    /* 5. drama is rationed. Roll many seasons and count how often it turns up:
+       the point of the feature is that a bad night is an event, not a fixture. */
     var st2 = W.state();
     st2.recruits.forEach(function (r) { r.status = 'board'; });
-    /* force the athlete storyline by making an ATH the only sensible subject */
-    st2.recruits = st2.recruits.filter(function (r) { return (r.type || 'hs') === 'hs'; }).slice(0, 4);
-    st2.recruits[0].pos = 'ATH';
-    st2.recruits[0].name = 'Test Athlete';
-    st2.recruits[0].stars = 5;
-    W.rollStorylines('ath');
-    W.setView('board');
-    var athStory = W.stories().filter(function (s) { return s.tpl === 'athlete'; })[0];
-    ok(!!athStory, 'athlete storyline fires for an ATH recruit', W.stories().map(function (s) { return s.tpl; }).join(','));
-    if (athStory) {
-      var btn = q('[data-action="story-choice"][data-id="' + athStory.id + '"]');
-      ok(!!btn, 'choice buttons render');
-      ok(hits(btn) === true, 'choice button is clickable', hits(btn));
-      btn.click();
-      var moved = W.state().recruits.filter(function (r) { return r.id === athStory.recruitId; })[0];
-      ok(moved.pos === 'WR', 'choosing offense actually moves him to WR', moved.pos);
-      var after = W.stories().filter(function (s) { return s.id === athStory.id; })[0];
-      ok(after.chosen === 'off', 'choice is recorded');
-      W.setView('board');
-      ok(!q('[data-action="story-choice"][data-id="' + athStory.id + '"]'), 'choice cannot be made twice');
+    var DRAMA = ['injury', 'badnight', 'money', 'flip', 'father', 'blowup', 'bust', 'grades'];
+    var dramaSeasons = 0, ROLLS = 60;
+    for (var k = 0; k < ROLLS; k++) {
+      W.rollStorylines('mix' + k);
+      if (W.stories().some(function (s) { return DRAMA.indexOf(s.tpl) >= 0; })) dramaSeasons++;
     }
+    var pct = Math.round(dramaSeasons / ROLLS * 100);
+    ok(pct >= 15 && pct <= 60, 'drama shows up sometimes, not every season (' + pct + '% of ' + ROLLS + ')', pct + '%');
+
+    /* backstory should be the staple */
+    var BACK = ['smallschool', 'secondsport', 'latebloomer', 'filmroom', 'family', 'camp', 'quiet', 'legacy'];
+    var backSeen = 0;
+    for (k = 0; k < 20; k++) {
+      W.rollStorylines('b' + k);
+      if (W.stories().some(function (s) { return BACK.indexOf(s.tpl) >= 0; })) backSeen++;
+    }
+    ok(backSeen >= 18, 'nearly every season has a backstory', backSeen + '/20');
+
+    /* 6. a destructive choice asks first, then really ends the recruitment */
+    var dramaStory = null, tries = 0;
+    while (!dramaStory && tries < 60) {
+      W.rollStorylines('kill' + tries);
+      W.stories().forEach(function (s) {
+        if (!dramaStory && s.choice && s.choice.options.some(function (o) { return o.status; })) dramaStory = s;
+      });
+      tries++;
+    }
+    ok(!!dramaStory, 'a storyline with an offer-pulling choice can be rolled', 'tries=' + tries);
+    if (dramaStory) {
+      W.setView('board');
+      var killOpt = dramaStory.choice.options.filter(function (o) { return o.status; })[0];
+      var btn = q('[data-action="story-choice"][data-id="' + dramaStory.id + '"][data-opt="' + killOpt.id + '"]');
+      ok(!!btn, 'the destructive option renders');
+      ok(btn && btn.classList.contains('danger'), 'it is marked as destructive');
+      ok(hits(btn) === true, 'it is clickable', hits(btn));
+      btn.click();
+      /* it must confirm rather than just do it */
+      var confirmBtn = q('#modal [data-action="story-choice"][data-confirmed="1"]');
+      ok(!!confirmBtn, 'pulling the offer asks for confirmation first');
+      var stillThere = W.state().recruits.filter(function (r) { return r.id === dramaStory.recruitId; })[0];
+      ok(stillThere.status !== 'lost', 'nothing happened until it was confirmed', stillThere.status);
+      confirmBtn.click();
+      var killed = W.state().recruits.filter(function (r) { return r.id === dramaStory.recruitId; })[0];
+      ok(killed.status === 'lost', 'confirming really drops the recruit', killed.status);
+      var closed = W.stories().filter(function (s) { return s.id === dramaStory.id; })[0];
+      ok(closed.state === 'lost', 'and the storyline closes as missed', closed.state);
+      ok(/pulled it/i.test(closed.outcome), 'the outcome reflects the choice made', closed.outcome);
+    }
+
+    /* 7. a committed-phase story cannot resolve just for being committed */
+    var comStory = null; tries = 0;
+    while (!comStory && tries < 60) {
+      var stx = W.state();
+      stx.recruits.forEach(function (r) { r.status = 'committed'; });
+      W.rollStorylines('com' + tries);
+      W.syncStorylines();
+      W.stories().forEach(function (s) { if (!comStory && (s.tpl === 'silent' || s.tpl === 'flip')) comStory = s; });
+      tries++;
+    }
+    ok(!!comStory, 'a committed-phase storyline can be rolled', 'tries=' + tries);
+    if (comStory) {
+      ok(comStory.state === 'open', 'it stays open while he is merely committed', comStory.state);
+      W.state().recruits.filter(function (r) { return r.id === comStory.recruitId; })[0].status = 'signed';
+      W.syncStorylines();
+      ok(W.stories().filter(function (s) { return s.id === comStory.id; })[0].state === 'won',
+        'signing day is what closes it');
+    }
+    /* reset for the sections below */
+    W.state().recruits.forEach(function (r) { r.status = 'board'; });
+    W.rollStorylines('reset');
+    W.syncStorylines();
 
     /* 5. committing a recruit closes his story with no extra step */
     var open = W.stories().filter(function (s) { return s.state === 'open'; })[0];

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Portal test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function hits(el) {
+    el.scrollIntoView({ block: 'center' });
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return 'zero-size';
+    var t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!t) return 'nothing at point';
+    return (t === el || el.contains(t)) ? true : 'covered by ' + t.tagName.toLowerCase();
+  }
+  function click(sel) {
+    var el = q(sel);
+    if (!el) { out.push('NOEL ' + sel); fails++; render(); return false; }
+    var h = hits(el); ok(h === true, 'clickable: ' + sel, h); el.click(); return true;
+  }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom;
+  try {
+    click('[data-action="load-sample"]');
+    /* the sample program already ships a couple of departures, so every
+       assertion below is a delta rather than an absolute */
+    var open0 = W.needs().totals.open;
+    var portalOut0 = W.needs().totals.portalOut;
+
+    var st = W.state();
+    var guy = st.players.filter(function (p) { return p.year !== 'SR' && !p.exit; })[0];
+    var guy2 = st.players.filter(function (p) { return p.year !== 'SR' && !p.exit && p.id !== guy.id; })[0];
+    ok(!!guy && !!guy2, 'found two returning players to work with');
+    var guyName = guy.name;
+
+    /* --- the tick-list --- */
+    click('[data-view="portal"]');
+    ok(/Out of the portal/.test(q('#view').textContent), 'portal view shows the outgoing section');
+    click('[data-action="portal-picker"]');
+    ok(!!q('.pick-list'), 'the tick-list opens');
+    var outBox = q('[data-portal="out"][data-id="' + guy.id + '"]');
+    var riskBox = q('[data-portal="risk"][data-id="' + guy2.id + '"]');
+    ok(!!outBox && !!riskBox, 'every player has both ticks');
+    ok(hits(outBox) === true, 'a tick is clickable', hits(outBox));
+
+    /* seniors are already leaving, so offering the tick would be a lie */
+    var senior = st.players.filter(function (p) { return p.year === 'SR'; })[0];
+    if (senior) {
+      var sBox = q('[data-portal="out"][data-id="' + senior.id + '"]');
+      ok(sBox && sBox.disabled, 'seniors cannot be ticked');
+    }
+
+    /* --- "gone" changes the count --- */
+    outBox.checked = true;
+    outBox.dispatchEvent(new Event('change', { bubbles: true }));
+    var afterOut = W.needs().totals;
+    ok(W.state().players.filter(function (p) { return p.id === guy.id; })[0].exit === 'portal', 'ticking Gone marks the exit');
+    ok(afterOut.open === open0 + 1, 'a player in the portal opens a scholarship', afterOut.open + ' vs ' + open0);
+    ok(afterOut.portalOut === portalOut0 + 1, 'counted as a portal departure', afterOut.portalOut + ' vs ' + portalOut0);
+
+    /* --- "might" does NOT change the count --- */
+    riskBox.checked = true;
+    riskBox.dispatchEvent(new Event('change', { bubbles: true }));
+    var afterRisk = W.needs().totals;
+    ok(afterRisk.open === afterOut.open, 'a player who might go still counts as yours', afterRisk.open);
+    ok(afterRisk.atRisk === 1, 'but he is counted as at risk', afterRisk.atRisk);
+    ok(afterRisk.openIfRisk === afterRisk.open + 1, 'and the if-they-all-go number is shown', afterRisk.openIfRisk);
+
+    /* --- a player cannot be both --- */
+    var bothOut = q('[data-portal="out"][data-id="' + guy2.id + '"]');
+    bothOut.checked = true;
+    bothOut.dispatchEvent(new Event('change', { bubbles: true }));
+    var g2 = W.state().players.filter(function (p) { return p.id === guy2.id; })[0];
+    ok(g2.exit === 'portal' && g2.risk === false, 'going to the portal clears "might go"', JSON.stringify({ e: g2.exit, r: g2.risk }));
+    ok(q('[data-portal="risk"][data-id="' + guy2.id + '"]').checked === false, 'and the other tick clears on screen');
+
+    /* --- unticking puts him back --- */
+    bothOut.checked = false;
+    bothOut.dispatchEvent(new Event('change', { bubbles: true }));
+    ok(W.state().players.filter(function (p) { return p.id === guy2.id; })[0].exit === '', 'unticking returns him to the roster');
+    ok(W.needs().totals.open === open0 + 1, 'and the count goes back', W.needs().totals.open);
+
+    click('[data-action="close"]');
+
+    /* --- it shows where it should --- */
+    click('[data-view="portal"]');
+    ok(q('#view').textContent.indexOf(guyName) >= 0, 'the departing player is listed on the portal screen', guyName);
+
+    var g3 = W.state().players.filter(function (p) { return p.year !== 'SR' && !p.exit && !p.risk; })[0];
+    g3.risk = true;
+    click('[data-view="roster"]');
+    ok(q('#view').innerHTML.indexOf('Might go') >= 0, 'roster badges a player who might go');
+    click('[data-view="home"]');
+    ok(/might transfer/.test(q('#view').textContent), 'the needs screen says what happens if they all go');
+
+    /* --- rollover --- */
+    click('[data-view="class"]');
+    click('[data-action="advance"]');
+    click('[data-action="do-advance"]');
+    var st2 = W.state();
+    ok(st2.players.every(function (p) { return !p.risk; }), 'advancing clears last season worries');
+    ok(st2.players.filter(function (p) { return p.name === guyName; }).length === 0, 'the portal player actually left');
+    ok(st2.players.every(function (p) { return p.exit === ''; }), 'no exits carried over');
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

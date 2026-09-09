@@ -444,6 +444,33 @@ table.plain td.num, table.plain th.num { text-align: right; }
 .story-log-item b { display: block; color: var(--ink); }
 .story-log-item span { color: var(--ink-muted); text-wrap: pretty; }
 
+/* ---------- the transfer tick-list ---------- */
+
+.pick-list { max-height: 52vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.pick-head {
+  position: sticky; top: 0; z-index: 1;
+  font-size: var(--t-micro); text-transform: uppercase; letter-spacing: 0.09em; font-weight: 800;
+  color: var(--ink-muted); background: var(--surface-1);
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+}
+.pick-row {
+  display: grid; grid-template-columns: auto 1fr auto auto; gap: 10px; align-items: center;
+  padding: 7px 10px; border-bottom: 1px solid var(--border);
+}
+.pick-row:last-child { border-bottom: 0; }
+.pick-row.is-senior { opacity: 0.5; }
+.pick-who { display: flex; flex-direction: column; min-width: 0; }
+.pick-who b { font-size: var(--t-small); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick-who span { font-size: var(--t-micro); color: var(--ink-muted); }
+.pick-box {
+  display: inline-flex; align-items: center; gap: 5px; margin: 0; cursor: pointer;
+  font-size: var(--t-micro); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--ink-muted); white-space: nowrap;
+}
+.pick-box input { width: 17px; height: 17px; margin: 0; }
+.pick-box:has(input:checked) { color: var(--ink); }
+.pick-box input:disabled { opacity: 0.4; }
+
 /* ---------- reading a screenshot ---------- */
 
 .dropzone {
@@ -471,6 +498,8 @@ table.plain td.num, table.plain th.num { text-align: right; }
 .scan-table input[type="checkbox"] { width: 17px; height: 17px; margin: 0; }
 .scan-table tr.needs td { background: rgba(250, 178, 25, 0.12); }
 .scan-table tr.needs select[data-scan="year"] { border-color: var(--warning); }
+.scan-table td.stars-guess { background: rgba(250, 178, 25, 0.14); }
+.scan-table td.stars-guess select { border-color: var(--warning); }
 .scan-table tr.suspect input[data-scan="name"] {
   border-color: var(--critical);
   background: rgba(208, 59, 59, 0.07);

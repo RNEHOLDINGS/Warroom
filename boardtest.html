@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Board OCR test</title></head>
+<body><pre id="out">RUNNING</pre>
+<script src="ocr.js"></script>
+<script>
+(function () {
+  var TRUTH = [
+    ['Keelon Russell','QB',5,'TX','committed'],
+    ['Dakorien Moore','WR',5,'LA','board'],
+    ['Michael Fasusi','LT',4,'TX','board'],
+    ['Jonah Williams','CB',4,'TX','committed'],
+    ['Marcus Bell','DT',4,'AL','board'],
+    ['Tyler Atkinson','MIKE',4,'GA','board'],
+    ['Aaron Chiles','LEDG',4,'MD','board'],
+    ['Devin Fitzgerald','WR',4,'AZ','board'],
+    ['Brandon Arrington','HB',3,'CA','board'],
+    ['Cortez Redding','FS',3,'FL','signed'],
+    ['Jaden Hollis','TE',3,'OH','board'],
+    ['Owen Trestrail','RG',3,'IN','board']
+  ];
+  var L=[]; function say(s){L.push(s);document.getElementById('out').textContent=L.join('\n');}
+  function dist(a,b){a=a.toLowerCase();b=b.toLowerCase();var m=a.length,n=b.length,pv=[],cu=[],i,j;
+    for(j=0;j<=n;j++)pv[j]=j;
+    for(i=1;i<=m;i++){cu[0]=i;for(j=1;j<=n;j++){cu[j]=Math.min(pv[j]+1,cu[j-1]+1,pv[j-1]+(a[i-1]===b[j-1]?0:1));}pv=cu.slice();}
+    return pv[n];}
+  var bad=0;
+  function unit(){
+    var cases=[
+      ['3 Keelon Russell QB ***** Duncanville, TX Committed','Keelon Russell','QB',5,'TX','committed'],
+      ['24 Michael Fasusi LT **** Lewisville, TX','Michael Fasusi','LT',4,'TX','board'],
+      ['203 Cortez Redding FS *** Tampa, FL Signed','Cortez Redding','FS',3,'FL','signed'],
+      ['77 Tyler Atkinson MIKE **** Loganville, GA','Tyler Atkinson','MIKE',4,'GA','board']
+    ];
+    cases.forEach(function(c){
+      var r=window.WarRoomOCR.parseRecruitLine(c[0]);
+      var ok=r&&r.name===c[1]&&r.pos===c[2]&&r.stars===c[3]&&r.state===c[4]&&r.status===c[5];
+      if(!ok){bad++;say('UNIT FAIL '+c[0]+' -> '+JSON.stringify(r));}
+    });
+    ['Recruiting Board','Top Targets Page 1 of 3','Rank Name Pos Stars Hometown Status',''].forEach(function(j){
+      var r=window.WarRoomOCR.parseRecruitLine(j);
+      if(r){bad++;say('UNIT FAIL junk accepted: "'+j+'" -> '+JSON.stringify(r));}
+    });
+    say('unit recruit parser: '+(bad?bad+' FAILURES':'all pass'));
+  }
+  function score(label,rows){
+    var found=0,posOK=0,starOK=0,stOK=0,statusOK=0,perfect=0,misses=[];
+    TRUTH.forEach(function(t){
+      var best=null,bd=99;
+      rows.forEach(function(r){var d=dist(t[0],r.name);if(d<bd){bd=d;best=r;}});
+      if(!best||bd>Math.max(2,Math.ceil(t[0].length*0.25))){misses.push('MISSING '+t[0]);return;}
+      found++;
+      var p=best.pos===t[1],s=best.stars===t[2],st=best.state===t[3],x=best.status===t[4];
+      if(p)posOK++;if(s)starOK++;if(st)stOK++;if(x)statusOK++;
+      if(p&&s&&st&&x&&bd===0)perfect++;
+      else misses.push('DIFF  '+t.join(' ')+'  ->  '+best.name+' '+best.pos+' '+best.stars+'* '+best.state+' '+best.status+(bd?' edits='+bd:''));
+    });
+    say('');say('=== '+label+' ===');
+    say('rows '+rows.length+'  found '+found+'/'+TRUTH.length+'  pos '+posOK+'  stars '+starOK+'  state '+stOK+'  status '+statusOK+'  perfect '+perfect+'/'+TRUTH.length);
+    misses.forEach(function(m){say('  '+m);});
+    return perfect;
+  }
+  unit();
+  window.WarRoomOCR.recognize('test-board-clean.png',null,'recruits').then(function(a){
+    say('');say('--- raw clean ---');say(a.text.replace(/\n{2,}/g,'\n').trim());
+    var pa=score('CLEAN BOARD',a.rows);
+    return window.WarRoomOCR.recognize('test-board-photo.png',null,'recruits').then(function(b){
+      var pb=score('PHOTO BOARD',b.rows);
+      say('');say('RESULT unit='+bad+' cleanPerfect='+pa+' photoPerfect='+pb);
+      say('DONE');window.__done=true;
+      try{localStorage.setItem('warroom.testresult',L.join(String.fromCharCode(10)));}catch(e){}
+      if(location.search.indexOf('close')>=0)setTimeout(function(){window.close();},300);
+    });
+  }).catch(function(e){say('EXC '+(e&&e.stack||e));say('DONE');window.__done=true;
+    try{localStorage.setItem('warroom.testresult',L.join(String.fromCharCode(10)));}catch(err){}
+    if(location.search.indexOf('close')>=0)setTimeout(function(){window.close();},300);});
+})();
+</script></body></html>

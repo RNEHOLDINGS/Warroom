@@ -110,7 +110,10 @@
     RB: 'HB', FB: 'HB', OT: 'OL', OG: 'OL', G: 'OL', T: 'OL', OC: 'C',
     DE: 'EDGE', LE: 'LEDG', RE: 'REDG', DL: 'DT', NT: 'DT',
     OLB: 'LB', ILB: 'LB', MLB: 'MIKE', LOLB: 'SAM', ROLB: 'WILL',
-    SAF: 'S', SAFETY: 'S', DB: 'CB', ATHLETE: 'ATH', PK: 'K'
+    SAF: 'S', SAFETY: 'S', DB: 'CB', ATHLETE: 'ATH', PK: 'K',
+    /* letter-for-letter mangles seen coming out of the recogniser; the
+       digit ones are already handled by deconfuse */
+    ES: 'FS', PS: 'FS', GB: 'CB', OB: 'QB', HR: 'WR'
   };
   var DEVS = ['Normal', 'Impact', 'Star', 'Elite'];
 
@@ -275,9 +278,111 @@
     return out;
   }
 
+  /* ---------- recruiting board rows ----------
+     A different shape from a roster row: [rank] Name POS STARS CITY, ST.
+     There is no year column to anchor the position on, so anchor on the star
+     rating instead, then on a state abbreviation, and only then fall back to
+     scanning left to right. */
+
+  var STATE_RE = /^(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)$/;
+
+  function starsFrom(tok) {
+    var u = String(tok).toUpperCase();
+    var glyphs = (u.match(/[★*]/g) || []).length;
+    if (glyphs >= 1 && glyphs <= 5) return glyphs;
+    var m = /^([1-5])\s*(?:[★*]|STAR|STARS)?$/.exec(u.replace(/[^0-9★*A-Z]/g, ''));
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  function parseRecruitLine(line) {
+    var raw = String(line == null ? '' : line);
+    var t = raw.replace(/[,\t|]+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+    if (!t.length) return null;
+
+    /* a national rank leads most boards, as "12" or "#12" */
+    var rank = 0;
+    if (t.length > 2 && /^#?\d{1,4}$/.test(t[0])) { rank = parseInt(t[0].replace('#', ''), 10) || 0; t.shift(); }
+    else if (t.length > 2 && /^[^A-Za-z]{1,4}$/.test(t[0])) { t.shift(); }
+
+    var clean = function (s) { return String(s).toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+    var i, p, posAt = -1, pos = null;
+
+    /* the token immediately left of the stars is the position */
+    for (i = 2; i < t.length; i++) {
+      if (starsFrom(t[i]) && normalisePos(t[i - 1])) { posAt = i - 1; pos = normalisePos(t[i - 1]); break; }
+    }
+    /* else the last position-shaped token before a state */
+    if (posAt < 0) {
+      for (i = 2; i < t.length; i++) {
+        if (STATE_RE.test(clean(t[i]))) {
+          for (var j = i - 1; j >= 1; j--) {
+            p = normalisePos(t[j]);
+            if (p) { posAt = j; pos = p; break; }
+          }
+          break;
+        }
+      }
+    }
+    if (posAt < 0) {
+      for (i = 1; i < t.length; i++) {
+        p = normalisePos(t[i]);
+        if (p) { posAt = i; pos = p; break; }
+      }
+    }
+    if (posAt < 0) return null;
+
+    var name = t.slice(0, posAt).join(' ').replace(/[^A-Za-z'\-. ]/g, '').replace(/\s+/g, ' ').trim();
+    if (!looksLikeName(name) || NOISE.test(name)) return null;
+
+    var row = {
+      name: name, pos: pos, stars: 0, state: '', rank: rank,
+      status: 'board', gem: false, bust: false, raw: raw
+    };
+    t.slice(posAt + 1).forEach(function (tok) {
+      /* Stars first, on the raw token: clean() strips "*****" to nothing, so
+         reading them after it silently threw every rating away. */
+      if (!row.stars) { var s = starsFrom(tok); if (s) { row.stars = s; return; } }
+      var u = clean(tok);
+      if (!u) return;
+      if (!row.state && STATE_RE.test(u)) { row.state = u; return; }
+      if (u === 'GEM') { row.gem = true; return; }
+      if (u === 'BUST') { row.bust = true; return; }
+      if (u === 'COMMITTED' || u === 'COMMIT') { row.status = 'committed'; return; }
+      if (u === 'SIGNED') { row.status = 'signed'; return; }
+      if (!row.rank && /^\d{2,4}$/.test(u)) { row.rank = parseInt(u, 10); return; }
+    });
+    /* A star column is a row of icons, and Tesseract reads five stars as
+       "SOS" or "leielel" — there is no text there to recover. Measured on the
+       test board: names, positions, states and statuses come back 11 or 12 of
+       12, and star ratings essentially never. So say so rather than pretend:
+       default to 3, mark it unread, and let the review table collect them.
+       Stars are the one field here that does not feed the scholarship count,
+       which is why this defaults at all instead of blocking the import. */
+    row.starsRead = row.stars > 0;
+    if (!row.stars) row.stars = 3;
+    return row;
+  }
+
+  function parseRecruitLines(lines) {
+    var rows = [], seen = {};
+    lines.forEach(function (l) {
+      var text = typeof l === 'string' ? l : (l && l.text) || '';
+      var conf = typeof l === 'string' ? 100 : (l && typeof l.confidence === 'number' ? l.confidence : 100);
+      var r = parseRecruitLine(text);
+      if (!r) return;
+      var key = r.name.toLowerCase() + '|' + r.pos;
+      if (seen[key]) return;
+      seen[key] = true;
+      r.conf = Math.round(conf);
+      r.suspect = conf < 60 || nameLooksOff(r.name);
+      rows.push(r);
+    });
+    return rows;
+  }
+
   /* ---------- public ---------- */
 
-  function recognize(fileOrUrl, onProgress) {
+  function recognize(fileOrUrl, onProgress, kind) {
     var canvas;
     return toImage(fileOrUrl)
       .then(function (img) { canvas = preprocess(img); return getWorker(onProgress); })
@@ -287,7 +392,7 @@
         var lines = linesFrom(data);
         return {
           text: data.text || lines.map(function (l) { return l.text; }).join('\n'),
-          rows: parseRosterLines(lines),
+          rows: kind === 'recruits' ? parseRecruitLines(lines) : parseRosterLines(lines),
           confidence: data.confidence || 0
         };
       });
@@ -303,6 +408,8 @@
     recognize: recognize,
     parseRosterText: parseRosterText,
     parseRosterLines: parseRosterLines,
+    parseRecruitLine: parseRecruitLine,
+    parseRecruitLines: parseRecruitLines,
     nameLooksOff: nameLooksOff,
     parseLine: parseLine,
     preprocess: preprocess,

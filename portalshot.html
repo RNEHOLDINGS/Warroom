@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>portal shot</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script>localStorage.clear();</script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+<script>
+var q = new URLSearchParams(location.search);
+if (q.get('dark')) document.documentElement.setAttribute('data-theme','dark');
+document.querySelector('[data-action="load-sample"]').click();
+var st = WarRoom.state();
+var pool = st.players.filter(function(p){return p.year!=='SR' && !p.exit;});
+pool[0].exit='portal'; pool[1].exit='portal'; pool[2].exit='portal';
+pool[4].risk=true; pool[5].risk=true;
+WarRoom.setView('portal');
+if (q.get('picker')) document.querySelector('[data-action="portal-picker"]').click();
+</script>
+</body></html>

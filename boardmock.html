@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Board mock</title>
+<style>
+  html,body{margin:0;background:#0e1116;color:#fff;font-family:"Segoe UI",Arial,sans-serif}
+  .wrap{width:1280px;padding:28px 36px}
+  h1{font-size:26px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 4px}
+  .sub{color:#9aa4b2;font-size:14px;margin-bottom:20px;letter-spacing:.04em}
+  table{width:100%;border-collapse:collapse;font-size:19px}
+  th{text-align:left;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#8c97a6;padding:8px 10px;border-bottom:2px solid #2a3240}
+  td{padding:9px 10px;border-bottom:1px solid #1b212b}
+  tr:nth-child(even) td{background:#141922}
+  .rk{color:#6f7b8c;width:60px}.nm{font-weight:600}.ps{color:#f0a92b;font-weight:700;width:76px}
+  .st{width:90px;color:#ffd166;letter-spacing:2px}.hm{width:150px;color:#9aa4b2}.sx{width:120px}
+  body.photo{background:#05070a}
+  body.photo .wrap{filter:blur(.7px) contrast(.82) brightness(1.06);transform:rotate(-.7deg) perspective(1400px) rotateY(2deg) scale(.97);position:relative}
+</style></head>
+<body>
+<div class="wrap">
+  <h1>Recruiting Board</h1>
+  <div class="sub">Top Targets · Page 1 of 3</div>
+  <table>
+    <thead><tr><th class="rk">Rank</th><th>Name</th><th>Pos</th><th>Stars</th><th>Hometown</th><th>Status</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<script>
+window.TRUTH = [
+  ['3','Keelon Russell','QB','5','Duncanville, TX','Committed'],
+  ['7','Dakorien Moore','WR','5','Duncanville, LA',''],
+  ['24','Michael Fasusi','LT','4','Lewisville, TX',''],
+  ['41','Jonah Williams','CB','4','Galena Park, TX','Committed'],
+  ['58','Marcus Bell','DT','4','Mobile, AL',''],
+  ['77','Tyler Atkinson','MIKE','4','Loganville, GA',''],
+  ['96','Aaron Chiles','LEDG','4','Waldorf, MD',''],
+  ['112','Devin Fitzgerald','WR','4','Phoenix, AZ',''],
+  ['144','Brandon Arrington','HB','3','San Diego, CA',''],
+  ['203','Cortez Redding','FS','3','Tampa, FL','Signed'],
+  ['288','Jaden Hollis','TE','3','Akron, OH',''],
+  ['341','Owen Trestrail','RG','3','Carmel, IN','']
+];
+var tb=document.getElementById('rows');
+window.TRUTH.forEach(function(r){
+  var tr=document.createElement('tr');
+  tr.innerHTML='<td class="rk">'+r[0]+'</td><td class="nm">'+r[1]+'</td><td class="ps">'+r[2]+'</td>'+
+    '<td class="st">'+Array(parseInt(r[3],10)+1).join('*')+'</td><td class="hm">'+r[4]+'</td><td class="sx">'+r[5]+'</td>';
+  tb.appendChild(tr);
+});
+if(location.search.indexOf('photo')>=0)document.body.className='photo';
+</script>
+</body></html>

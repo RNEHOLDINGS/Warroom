@@ -223,23 +223,32 @@
       var target = int(state.targets[g.id], 0, 99);
       var returning = on.length - leaving.length;
       var projected = returning + incoming.length;
+      /* Players who have said they want out but have not gone. They still
+         count as here, because until he enters the portal he is on your
+         roster — but you want to see the hole coming. */
+      var atRisk = on.filter(function (p) { return p.risk && !isLeaving(p); }).length;
       return {
         group: g, on: on.length, leaving: leaving.length, returning: returning,
         incoming: incoming.length, board: board.length, target: target,
-        projected: projected, need: target - projected
+        atRisk: atRisk,
+        projected: projected, need: target - projected,
+        needIfRisk: target - (projected - atRisk)
       };
     });
     var athIn = state.recruits.filter(function (r) { return groupOf(r.pos) === 'ATH' && isIncoming(r); }).length;
     var athOn = state.players.filter(function (p) { return groupOf(p.pos) === 'ATH'; }).length;
-    var t = { on: athOn, leaving: 0, returning: athOn, incoming: athIn, target: 0, board: 0 };
+    var t = { on: athOn, leaving: 0, returning: athOn, incoming: athIn, target: 0, board: 0, atRisk: 0 };
     rows.forEach(function (r) {
       t.on += r.on; t.leaving += r.leaving; t.returning += r.returning;
       t.incoming += r.incoming; t.target += r.target; t.board += r.board;
+      t.atRisk += r.atRisk;
     });
     t.projected = t.returning + t.incoming;
     t.open = state.cap - t.projected;
     t.openNow = state.cap - t.on;
     t.ath = athIn;
+    t.portalOut = state.players.filter(function (p) { return p.exit === 'portal'; }).length;
+    t.openIfRisk = t.open + t.atRisk;   /* if everyone unhappy actually goes */
     return { rows: rows, totals: t };
   }
 
@@ -267,12 +276,21 @@
     var s = (seed >>> 0) || 1;
     return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
   }
+  /* Three kinds, and the mix per season is deliberate:
 
-  /* fit() returns 0 for "does not apply" or a weight — the higher the weight
-     the more the story is about this particular recruit rather than colour. */
+       situation — read off your own board (you are 3 short here, he has you
+                   third on his list). Always one if anything fits.
+       back      — who this kid actually is. The staple.
+       drama     — something has gone wrong. Rationed, because a program where
+                   somebody is arrested every single season is a comedy.
+
+     fit() returns 0 for "does not apply" or a weight. phase limits a template
+     to before or after he commits; most backstory works either way. */
   var STORY_TEMPLATES = [
+
+    /* ---------- situation: straight off the board ---------- */
     {
-      id: 'hometown',
+      id: 'hometown', kind: 'situation', phase: 'chase',
       fit: function (c) { return c.school.state && c.r.state && c.r.state === c.school.state ? 9 : 0; },
       make: function (c) {
         return {
@@ -284,7 +302,7 @@
       lost: function () { return 'He left the state. This is the one people bring up years from now.'; }
     },
     {
-      id: 'crowded',
+      id: 'crowded', kind: 'situation', phase: 'chase',
       fit: function (c) { return c.row && c.row.need <= 0 ? 8 : 0; },
       make: function (c) {
         return {
@@ -311,7 +329,7 @@
       }
     },
     {
-      id: 'needy',
+      id: 'needy', kind: 'situation', phase: 'chase',
       fit: function (c) { return c.row && c.row.need >= 3 ? 8 : 0; },
       make: function (c) {
         return {
@@ -323,7 +341,7 @@
       lost: function (c) { return 'Gone, and you are still ' + c.row.need + ' short at ' + c.group.id + '. Start calling.'; }
     },
     {
-      id: 'longshot',
+      id: 'longshot', kind: 'situation', phase: 'chase',
       fit: function (c) { return c.r.standing >= 3 ? 7 : 0; },
       make: function (c) {
         return {
@@ -335,7 +353,7 @@
       lost: function () { return 'He went where he was always going. The hours are gone either way.'; }
     },
     {
-      id: 'gem',
+      id: 'gem', kind: 'situation', phase: 'chase',
       fit: function (c) { return c.r.gem ? 7 : 0; },
       make: function (c) {
         return {
@@ -347,26 +365,7 @@
       lost: function () { return 'Somebody else took the flyer. Your scout has not said a word since.'; }
     },
     {
-      id: 'athlete',
-      fit: function (c) { return groupOf(c.r.pos) === 'ATH' ? 8 : 0; },
-      make: function (c) {
-        return {
-          title: 'Two coaches, one player',
-          hook: 'Nobody can agree what ' + c.first + ' actually is. Both coordinators have filed a claim on him and they want it settled before the visit.',
-          choice: {
-            question: 'Where does he play?',
-            options: [
-              { id: 'off', label: 'Offense — receiver', pos: 'WR' },
-              { id: 'def', label: 'Defense — corner', pos: 'CB' }
-            ]
-          }
-        };
-      },
-      won: function (c) { return 'He signed as a ' + c.r.pos + '. The other coordinator has not let it go.'; },
-      lost: function () { return 'He went somewhere that told him what he was on the first call.'; }
-    },
-    {
-      id: 'dealbreaker',
+      id: 'dealbreaker', kind: 'situation', phase: 'chase',
       fit: function (c) { return c.r.dealbreaker ? 6 : 0; },
       make: function (c) {
         return {
@@ -378,10 +377,8 @@
       lost: function (c) { return 'Somebody answered the ' + c.r.dealbreaker + ' question better than you did.'; }
     },
     {
-      id: 'silent',
-      /* the only story worth telling about someone who has already said yes */
-      committed: true,
-      fit: function (c) { return (c.r.stars || 0) >= 4 ? 6 : 4; },
+      id: 'silent', kind: 'situation', phase: 'committed',
+      fit: function (c) { return (c.r.stars || 0) >= 4 ? 7 : 4; },
       make: function (c) {
         return {
           title: 'Quiet for now',
@@ -391,29 +388,223 @@
       won: function () { return 'He kept it quiet and signed. Nobody got near him.'; },
       lost: function () { return 'Somebody got in the ear of a kid nobody knew was taken. Flipped.'; }
     },
+
+    /* ---------- back: who he actually is ---------- */
     {
-      id: 'legacy',
-      fit: function (c) { return (c.r.stars || 0) >= 3 && lastName(c.r.name) ? 3 : 0; },
+      id: 'smallschool', kind: 'back',
+      fit: function (c) { return c.r.rank && c.r.rank > 250 ? 6 : 4; },
+      make: function (c) {
+        return {
+          title: 'Four hundred kids in the school',
+          hook: c.first + ' plays both ways and returns kicks because there is nobody else. Nobody on his tape is within a foot of him, which is the problem — your staff cannot tell from it how good he actually is.'
+        };
+      },
+      won: function () { return 'He is on campus. First time in his life he has lifted next to people his own size.'; },
+      lost: function () { return 'He stayed at the level he knew, close to home.'; }
+    },
+    {
+      id: 'secondsport', kind: 'back',
+      fit: function () { return 4; },
+      make: function (c) {
+        return {
+          title: 'The other sport',
+          hook: 'He is the best basketball player in his school and two programs want him for that instead. Nobody has been able to get him to say which one he actually loves.'
+        };
+      },
+      won: function (c) { return 'He picked football. ' + c.first + ' still has not said why.'; },
+      lost: function () { return 'He took the other offer. You will see him on a different channel in March.'; }
+    },
+    {
+      id: 'latebloomer', kind: 'back',
+      fit: function () { return 4; },
+      make: function (c) {
+        return {
+          title: 'He grew five inches',
+          hook: c.first + ' did not start a game until his junior year. He grew five inches between seasons and the recruiting services never caught up. Your staff think there are two more years of that coming.'
+        };
+      },
+      won: function () { return 'You got him before the growth showed up in the rankings.'; },
+      lost: function () { return 'By the end everybody had noticed. He was never really yours.'; }
+    },
+    {
+      id: 'filmroom', kind: 'back',
+      fit: function () { return 4; },
+      make: function (c) {
+        return {
+          title: 'He sends his own tape back',
+          hook: 'Unasked, ' + c.first + ' sends your position coach breakdowns of his own film with his mistakes circled. Your coach has started looking forward to them, which he will not admit out loud.'
+        };
+      },
+      won: function () { return 'He turned up already knowing the install. Your coach is insufferable about it.'; },
+      lost: function () { return 'Somebody else gets the emails now.'; }
+    },
+    {
+      id: 'family', kind: 'back',
+      fit: function () { return 4; },
+      make: function (c) {
+        return {
+          title: 'Ninety minutes each way',
+          hook: 'His grandfather drives him to every seven-on-seven, ninety minutes each way, and has not missed one in three years. When you visit the house it is the grandfather who asks the real questions.'
+        };
+      },
+      won: function () { return 'The grandfather cried at the signing. So, reportedly, did your area recruiter.'; },
+      lost: function () { return 'They chose closer to home. Ninety minutes is a long way at that age.'; }
+    },
+    {
+      id: 'camp', kind: 'back',
+      fit: function (c) { return (c.r.stars || 0) <= 3 ? 6 : 3; },
+      make: function (c) {
+        return {
+          title: 'You saw him first',
+          hook: 'You offered in June, off one camp, before anyone else had. Your staff still have the video of that morning and they still show it to each other. Everybody else showed up eight months late.'
+        };
+      },
+      won: function () { return 'You were first and you stayed first. That is how this is supposed to work.'; },
+      lost: function () { return 'You found him and somebody with a bigger stadium took him. It happens; it still stings.'; }
+    },
+    {
+      id: 'quiet', kind: 'back',
+      fit: function () { return 3; },
+      make: function (c) {
+        return {
+          title: 'Forty words in a year',
+          hook: c.first + ' has said maybe forty words to your staff in twelve months. Every coach who meets him reports the same thing: he is not shy, he is just finished talking about it.'
+        };
+      },
+      won: function () { return 'He signed without a ceremony and went to training. Nobody found out for a day.'; },
+      lost: function () { return 'He never said no either. You found out with everybody else.'; }
+    },
+    {
+      id: 'legacy', kind: 'back',
+      fit: function (c) { return lastName(c.r.name) ? 4 : 0; },
       make: function (c) {
         return {
           title: 'His father’s jersey',
-          hook: 'A ' + lastName(c.r.name) + ' played here, a long time ago, and there is a photograph of him in the hallway outside the team room. ' + c.first + ' has walked past it on every visit since he was small. Nobody in the family will say out loud that it matters.'
+          hook: 'A ' + lastName(c.r.name) + ' played here a long time ago, and the photograph is still in the hallway outside the team room. ' + c.first + ' has walked past it on every visit since he was small. Nobody in the family will say out loud that it matters.'
         };
       },
       won: function (c) { return 'Two ' + lastName(c.r.name) + 's in the same hallway now.'; },
-      lost: function () { return 'He wanted his own thing. You cannot argue with it.'; }
+      lost: function () { return 'He wanted to be his own thing somewhere else. You cannot argue with it.'; }
+    },
+
+    /* ---------- drama: rationed on purpose ---------- */
+    {
+      id: 'injury', kind: 'drama', phase: 'chase',
+      fit: function () { return 6; },
+      make: function (c) {
+        return {
+          title: 'The knee',
+          hook: c.first + ' went down in the playoffs and the MRI came back the way everyone feared. He will not play a snap next season, and it is the second time on that side.',
+          choice: {
+            question: 'The offer is still on the table. Is it staying there?',
+            options: [
+              { id: 'keep', label: 'Keep the offer' },
+              { id: 'pull', label: 'Pull it', status: 'lost', confirm: 'Pull the offer from ' }
+            ]
+          }
+        };
+      },
+      won: function () { return 'You kept it. He will remember that a great deal longer than he remembers the injury.'; },
+      lost: function (c) {
+        return c.chosen === 'pull'
+          ? 'You pulled it. He signed elsewhere and he has your name written down somewhere.'
+          : 'You stayed in and he still went elsewhere. The knee frightened everybody.';
+      }
     },
     {
-      id: 'grades',
-      fit: function () { return 2; },
+      id: 'badnight', kind: 'drama', phase: 'chase',
+      fit: function () { return 5; },
+      make: function (c) {
+        return {
+          title: 'A bad night',
+          hook: 'There was an incident at a party' + (c.r.state ? ' in ' + c.r.state : '') + '. No charges were filed, but there is a report with his name on it and your compliance office has now read it twice.',
+          choice: {
+            question: 'Two coaches want him off the board.',
+            options: [
+              { id: 'stand', label: 'Stand by him' },
+              { id: 'drop', label: 'Take him off the board', status: 'lost', confirm: 'Drop ' }
+            ]
+          }
+        };
+      },
+      won: function () { return 'You stood by him. If it happens again on your campus, that is now your problem too.'; },
+      lost: function (c) {
+        return c.chosen === 'drop'
+          ? 'Off the board. Somebody else took him and nothing ever came of it.'
+          : 'He went somewhere that never asked about the report.';
+      }
+    },
+    {
+      id: 'money', kind: 'drama', phase: 'chase',
+      fit: function (c) { return (c.r.stars || 0) >= 4 ? 6 : 3; },
+      make: function (c) {
+        return {
+          title: 'Somebody with a number',
+          hook: 'There is a man around him with a figure in mind. Not a collective, a person, and nobody on your staff can work out who is actually paying. ' + c.first + ' has stopped answering questions about his timeline.'
+        };
+      },
+      won: function () { return 'He came anyway. Whoever that was is still out there.'; },
+      lost: function () { return 'The number won. You are not going to find out what it was.'; }
+    },
+    {
+      id: 'flip', kind: 'drama', phase: 'committed',
+      fit: function () { return 6; },
+      make: function (c) {
+        return {
+          title: 'They have been in the living room',
+          hook: 'A rival has been in his house twice in three weeks. ' + c.first + ' is still committed to you on paper. Everybody in your building knows how soft that is.'
+        };
+      },
+      won: function () { return 'He held. Somebody wasted two trips and a lot of petrol.'; },
+      lost: function () { return 'Flipped, nine days out. You saw it coming and could not stop it.'; }
+    },
+    {
+      id: 'father', kind: 'drama', phase: 'chase',
+      fit: function () { return 4; },
+      make: function (c) {
+        return {
+          title: 'Who is actually running this',
+          hook: 'His father is running the recruitment and he has a list of things he wants said out loud. Your compliance office has quietly ruled out about half of them.'
+        };
+      },
+      won: function () { return 'Signed. You will be hearing from the father about playing time in roughly nine months.'; },
+      lost: function () { return 'The list got longer. Somebody agreed to more of it than you would.'; }
+    },
+    {
+      id: 'blowup', kind: 'drama', phase: 'chase',
+      fit: function () { return 4; },
+      make: function (c) {
+        return {
+          title: 'Week seven',
+          hook: c.first + ' walked off his high school team in week seven and was back the following Friday. Nobody involved will say what it was about, including him, and his coach changes the subject.'
+        };
+      },
+      won: function () { return 'He signed. Your staff have quietly agreed on who handles him when it goes wrong.'; },
+      lost: function () { return 'You passed in the end, and so did most people. Somebody will get a bargain.'; }
+    },
+    {
+      id: 'bust', kind: 'drama', phase: 'chase',
+      fit: function (c) { return c.r.bust ? 8 : 0; },
+      make: function (c) {
+        return {
+          title: 'The room is split',
+          hook: 'Two of your coaches think he is the best player on the board. One thinks the tape is all bad competition and that ' + c.first + ' will never see the field here. The argument has stopped being polite.'
+        };
+      },
+      won: function () { return 'He is yours. One of your coaches has gone very quiet about it.'; },
+      lost: function () { return 'You let him go. Somebody in that room feels vindicated and somebody feels sick.'; }
+    },
+    {
+      id: 'grades', kind: 'drama',
+      fit: function () { return 4; },
       make: function (c) {
         return {
           title: 'The qualifying question',
           hook: 'The tape was never the problem. Compliance flagged ' + c.first + '’s transcript and he needs one clean semester to qualify. Your academic people say it is close, and they mean close.'
         };
       },
-      won: function () { return 'He qualified. It went to the last week and it was never comfortable.'; },
-      lost: function () { return 'It did not come together. Somebody will get him out of junior college in two years.'; }
+      won: function () { return 'He qualified. It went to the final week and it was never once comfortable.'; },
+      lost: function () { return 'It did not come together. Somebody will take him out of junior college in two years.'; }
     }
   ];
 
@@ -451,30 +642,46 @@
     if (pool.length < 2) return 0;
 
     var rnd = seededRnd(hashStr(state.season + '|' + (nonce || '') + '|' + pool.map(function (r) { return r.id; }).join(',')));
-    /* interesting first — stars, then a jitter so it is not the same three
-       every single season */
-    /* A live chase is a better story than a done deal, so board status
-       outweighs a star. */
+    /* Interesting first — stars, plus a jitter so it is not the same three
+       every season. A live chase beats a done deal, so board status outweighs
+       a star. */
     var live = function (r) { return r.status === 'board' ? 2.5 : 0; };
     pool = pool.slice().sort(function (a, b) {
       return ((b.stars || 0) + live(b) + rnd() * 1.5) - ((a.stars || 0) + live(a) + rnd() * 1.5);
     });
 
+    /* The season's mix. Usually one situation and two backstories; about a
+       third of seasons one of those becomes drama. Rationing it here rather
+       than per recruit is what stops every year reading like a charge sheet. */
+    var slots = ['situation', 'back', rnd() < 0.35 ? 'drama' : 'back'];
+
     var used = {}, made = 0;
     pool.forEach(function (r) {
-      if (made >= 3) return;
+      if (made >= slots.length) return;
       var c = storyContext(r);
       var committed = isIncoming(r);
-      var best = null, bestFit = 0;
-      STORY_TEMPLATES.forEach(function (t) {
-        if (used[t.id]) return;
-        /* Chasing someone who has already said yes reads as nonsense, and
-           "will he stay quiet" means nothing for a kid still on the board.
-           Each template belongs to one phase or the other. */
-        if (!!t.committed !== committed) return;
-        var f = t.fit(c);
-        if (f > bestFit) { bestFit = f; best = t; }
-      });
+
+      /* A template only applies at the right point in the recruitment.
+         Backstory has no phase — who he is does not change when he commits. */
+      var eligible = function (t) {
+        if (used[t.id]) return false;
+        if (t.phase === 'chase' && committed) return false;
+        if (t.phase === 'committed' && !committed) return false;
+        return true;
+      };
+      var pickOf = function (kind) {
+        var b = null, bf = 0;
+        STORY_TEMPLATES.forEach(function (t) {
+          if (t.kind !== kind || !eligible(t)) return;
+          var f = t.fit(c);
+          if (f > bf) { bf = f; b = t; }
+        });
+        return b;
+      };
+      /* Take the kind this slot asked for; fall back rather than leave him
+         without a story at all. */
+      var want = slots[made];
+      var best = pickOf(want) || pickOf('back') || pickOf('situation') || pickOf('drama');
       if (!best) return;
       used[best.id] = true;
       var built = best.make(c);
@@ -500,8 +707,16 @@
       var t = templateById(s.tpl);
       if (!t) return;
       var done = null;
-      if (isIncoming(r)) done = 'won';
-      else if (r.status === 'lost') done = 'lost';
+      if (t.phase === 'committed') {
+        /* These start from a recruit who has already said yes, so "he
+           committed" cannot be the ending — signing day is. Decommitting back
+           to the board is the story going wrong. */
+        if (r.status === 'signed') done = 'won';
+        else if (r.status === 'lost' || r.status === 'board') done = 'lost';
+      } else {
+        if (isIncoming(r)) done = 'won';
+        else if (r.status === 'lost') done = 'lost';
+      }
       if (!done) return;
       s.state = done;
       s.outcome = t[done](storyContext(r, s.chosen));
@@ -513,21 +728,34 @@
     return changed;
   }
 
-  function chooseStory(storyId, optId) {
+  function chooseStory(storyId, optId, confirmed) {
     var s = null;
     state.storylines.forEach(function (x) { if (x.id === storyId) s = x; });
     if (!s || s.chosen || !s.choice) return;
     var opt = null;
     s.choice.options.forEach(function (o) { if (o.id === optId) opt = o; });
     if (!opt) return;
-    s.chosen = optId;
     var r = storyRecruit(s);
-    /* Some choices are only colour. The athlete one actually moves him, which
-       is the point — a decision that changes nothing is a quiz, not a story. */
+
+    /* Some of these actually end the recruitment, so they ask first. */
+    if (opt.confirm && !confirmed) {
+      openModal('<h2>' + esc(opt.confirm + (r ? r.name : 'him')) + '?</h2>' +
+        '<p style="color:var(--ink-2);font-size:var(--t-small)">He goes down as lost and comes off your board. Whatever he was filling counts as open again.</p>' +
+        '<div class="modal-actions"><span class="spacer"></span>' +
+        '<button class="btn" data-action="close">Cancel</button>' +
+        '<button class="btn danger" data-action="story-choice" data-id="' + s.id + '" data-opt="' + opt.id + '" data-confirmed="1">' + esc(opt.label) + '</button></div>');
+      return;
+    }
+
+    s.chosen = optId;
+    /* A decision that changes nothing is a quiz, not a story: these move the
+       recruit for real. */
     if (opt.pos && r) r.pos = opt.pos;
+    if (opt.status && r) r.status = opt.status;
+    closeModal();
     save();
     render();
-    toast(opt.pos && r ? r.name + ' is a ' + opt.pos + ' now.' : 'Noted.');
+    toast(opt.status && r ? r.name + ' is off the board.' : 'Noted.');
   }
 
   /* Closes whatever the season did not, and hands back a summary for the
@@ -582,7 +810,7 @@
         } else {
           choiceHtml = '<div class="story-choice"><span class="story-q">' + esc(s.choice.question) + '</span>' +
             s.choice.options.map(function (o) {
-              return '<button class="btn small" data-action="story-choice" data-id="' + s.id + '" data-opt="' + o.id + '">' + esc(o.label) + '</button>';
+              return '<button class="btn small' + (o.status ? ' danger' : '') + '" data-action="story-choice" data-id="' + s.id + '" data-opt="' + o.id + '">' + esc(o.label) + '</button>';
             }).join('') + '</div>';
         }
       }
@@ -739,6 +967,10 @@
       verdict = Math.abs(open) + ' ' + plural(Math.abs(open), 'player has', 'players have') + ' to go before next season — mark cuts on the roster to fix the count.';
     }
     if (t.ath) verdict += ' <span class="chip outline">' + t.ath + ' ATH not counted to a position</span>';
+    if (t.atRisk) {
+      verdict += ' ' + t.atRisk + ' ' + plural(t.atRisk, 'player says', 'players say') +
+        ' they might transfer — if they all go it is <b>' + t.openIfRisk + '</b>.';
+    }
 
     /* 85 cells: returning, incoming, leaving (dimmed), open */
     var cells = '';
@@ -805,7 +1037,10 @@
     return '<button class="item' + (isLeaving(p) ? ' leaving' : '') + '" data-action="edit-player" data-id="' + p.id + '">' +
       '<span class="pos-badge">' + esc(p.pos) + '</span>' +
       '<span class="who"><b>' + esc(p.name || 'Unnamed') + '</b><span>' + yearLabel(p) + (p.redshirtNow ? ' · redshirting' : '') + (p.dev && p.dev !== 'Normal' ? ' · ' + esc(p.dev) : '') + (p.note ? ' · ' + esc(p.note) : '') + '</span></span>' +
-      '<span class="meta">' + (ex ? '<span class="chip ' + (p.exit === 'cut' ? 'crit' : 'warn') + '">' + ex + '</span>' : '') + '<span class="ovr' + ((p.ovr || 0) >= 85 ? ' hot' : '') + '">' + (p.ovr ? p.ovr : '—') + '</span></span>' +
+      '<span class="meta">' +
+        (ex ? '<span class="chip ' + (p.exit === 'cut' ? 'crit' : 'warn') + '">' + ex + '</span>' : '') +
+        (!ex && p.risk ? '<span class="chip warn" title="Says he might transfer — still counts">Might go</span>' : '') +
+        '<span class="ovr' + ((p.ovr || 0) >= 85 ? ' hot' : '') + '">' + (p.ovr ? p.ovr : '—') + '</span></span>' +
     '</button>';
   }
 
@@ -868,6 +1103,70 @@
     '</button>';
   }
 
+  /* ---------- players going the other way ----------
+     The portal is two directions and only one of them was here. Marking a
+     wave of departures one modal at a time is the sort of chore that stops
+     people keeping the count honest, so this is a single tick-list. */
+
+  function renderOutgoing() {
+    var out = state.players.filter(function (p) { return p.exit === 'portal'; }).sort(byOvr);
+    var risk = state.players.filter(function (p) { return p.risk && !isLeaving(p); }).sort(byOvr);
+    var n = computeNeeds();
+
+    var html = '<div class="card"><div class="card-head"><h2>Out of the portal</h2>' +
+      '<span class="hint">' + (out.length ? out.length + ' gone, and the count already reflects it.' : 'Nobody has entered the portal yet.') + '</span>' +
+      '<span class="spacer"></span>' +
+      '<button class="btn small primary" data-action="portal-picker">' + icon('users') + 'Mark transfers</button></div>';
+
+    if (!out.length && !risk.length) {
+      html += '<div class="empty"><b>Nobody is leaving</b>When players enter the portal, tick them here and the number you need to recruit goes up to match.</div>';
+    } else {
+      if (out.length) {
+        html += '<div class="list">';
+        out.forEach(function (p) { html += playerRow(p); });
+        html += '</div>';
+      }
+      if (risk.length) {
+        html += '<div class="side-title">Might go</div>' +
+          '<div class="banner" style="margin:0 0 8px">These ' + risk.length + ' still count as yours. If they all leave you would need <b>' + n.totals.openIfRisk + '</b> instead of ' + n.totals.open + '.</div>' +
+          '<div class="list">';
+        risk.forEach(function (p) { html += playerRow(p); });
+        html += '</div>';
+      }
+    }
+    return html + '</div>';
+  }
+
+  /* One screen, every player, two ticks each. */
+  function portalPickerModal() {
+    if (!state.players.length) {
+      toast('Add your roster first.');
+      return;
+    }
+    var body = '';
+    GROUPS.concat([ATH_GROUP]).forEach(function (g) {
+      var ps = state.players.filter(function (p) { return groupOf(p.pos) === g.id; }).sort(byOvr);
+      if (!ps.length) return;
+      body += '<div class="pick-group"><div class="pick-head">' + esc(g.name) + '</div>';
+      ps.forEach(function (p) {
+        var gone = p.exit === 'portal';
+        var mayGo = !!p.risk;
+        body += '<div class="pick-row' + (isSenior(p) ? ' is-senior' : '') + '">' +
+          '<span class="pos-badge">' + esc(p.pos) + '</span>' +
+          '<span class="pick-who"><b>' + esc(p.name) + '</b><span>' + yearLabel(p) + (p.ovr ? ' · ' + p.ovr + ' OVR' : '') + (isSenior(p) ? ' · graduating anyway' : '') + '</span></span>' +
+          '<label class="pick-box" title="Entered the portal"><input type="checkbox" data-portal="out" data-id="' + p.id + '"' + (gone ? ' checked' : '') + (isSenior(p) ? ' disabled' : '') + '><span>Gone</span></label>' +
+          '<label class="pick-box" title="Says he might leave"><input type="checkbox" data-portal="risk" data-id="' + p.id + '"' + (mayGo ? ' checked' : '') + (isSenior(p) ? ' disabled' : '') + '><span>Might</span></label>' +
+        '</div>';
+      });
+      body += '</div>';
+    });
+
+    openModal('<h2>Who is leaving?</h2>' +
+      '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:10px"><b>Gone</b> means he is in the portal — he stops counting and the spot opens. <b>Might</b> is just a warning; he still counts until you tick Gone. Seniors are already leaving, so they are not listed as options.</p>' +
+      '<div class="pick-list">' + body + '</div>' +
+      '<div class="modal-actions"><span class="spacer"></span><button class="btn primary" data-action="close">Done</button></div>');
+  }
+
   function renderRecruits(type) {
     var f = filters[type === 'hs' ? 'board' : 'portal'];
     var all = state.recruits.filter(function (r) { return (r.type || 'hs') === type; });
@@ -885,7 +1184,9 @@
     all.forEach(function (r) { if (r.status === 'board' || r.status === 'committed') hoursUsed += int(r.hours, 0, 999); });
 
     var html = '<div class="view-head"><h1>' + (type === 'hs' ? 'Recruiting board' : 'Transfer portal') + '</h1>' +
-      '<div class="actions">' + (type === 'hs' ? '<button class="btn" data-action="paste-recruits" data-type="hs">' + icon('paste') + 'Paste</button>' : '<button class="btn" data-action="paste-recruits" data-type="portal">' + icon('paste') + 'Paste</button>') +
+      '<div class="actions">' +
+      (type === 'hs' ? '<button class="btn" data-action="scan-recruits">' + icon('camera') + 'Screenshot</button>' : '') +
+      (type === 'hs' ? '<button class="btn" data-action="paste-recruits" data-type="hs">' + icon('paste') + 'Paste</button>' : '<button class="btn" data-action="paste-recruits" data-type="portal">' + icon('paste') + 'Paste</button>') +
       '<button class="btn primary" data-action="add-recruit" data-type="' + type + '">' + icon('plus') + (type === 'hs' ? 'Add recruit' : 'Add target') + '</button></div>' +
       '<p class="sub">' + (type === 'hs'
         ? 'High-school recruits. ' + committed + ' committed or signed, ' + onBoard + ' still on the board, ' + n.totals.open + ' ' + plural(n.totals.open, 'spot') + ' open.'
@@ -910,6 +1211,9 @@
     /* Storylines sit above the board: they are about these same players, and
        below the needs banner, because the count is still the point. */
     if (type === 'hs') html += renderStorylines();
+    /* The portal screen shows both directions, departures first — they are
+       what changes how many you have to sign. */
+    if (type === 'portal') html += renderOutgoing();
 
     html += '<div class="card">';
     if (!list.length) {
@@ -1027,6 +1331,8 @@
       '</div>' +
       '<label class="check"><input type="checkbox" id="p-rs"' + (p.rs ? ' checked' : '') + '> Has used a redshirt (shows as RS)</label>' +
       '<label class="check"><input type="checkbox" id="p-rsnow"' + (p.redshirtNow ? ' checked' : '') + '> Redshirting this season (year does not advance)</label>' +
+      '<label class="check"><input type="checkbox" id="p-risk"' + (p.risk ? ' checked' : '') + '> Says he might transfer (still counts until he goes)</label>' +
+
       '<div class="field"><label for="p-exit">Next season</label><select id="p-exit"' + (p.year === 'SR' ? ' disabled' : '') + '>' + options(EXITS, p.exit || '', function (e) { return e.label; }, function (e) { return e.id; }) + '</select>' + (p.year === 'SR' ? '<div class="help">Seniors graduate. Change the year if the game shows otherwise.</div>' : '<div class="help">Anything but “Returning” frees a scholarship in the count.</div>') + '</div>' +
       '<div class="field"><label for="p-note">Note</label><input type="text" id="p-note" value="' + esc(p.note || '') + '" placeholder="Starter, injured, wants out…"></div>' +
       '<div class="modal-actions">' +
@@ -1053,6 +1359,9 @@
     p.rs = $('#p-rs').checked;
     p.redshirtNow = $('#p-rsnow').checked;
     p.exit = p.year === 'SR' ? '' : $('#p-exit').value;
+    /* "Might go" and "has gone" are different things, and only one of them
+       changes the count. He cannot be both. */
+    p.risk = $('#p-risk').checked && !p.exit;
     p.note = $('#p-note').value.trim();
     return p;
   }
@@ -1211,10 +1520,12 @@
 
   var scanRows = [];
   var scanBusy = false;
+  var scanKind = 'players';   /* 'players' or 'recruits' */
 
   function scanSupported() { return location.protocol.indexOf('http') === 0; }
 
-  function scanModal() {
+  function scanModal(kind) {
+    scanKind = kind === 'recruits' ? 'recruits' : 'players';
     if (!scanSupported()) {
       openModal('<h2>Reading screenshots needs the local server</h2>' +
         '<p style="color:var(--ink-2);font-size:var(--t-small)">The text recogniser runs as a WebAssembly worker, and browsers refuse to load those from a file opened directly off the disk. Everything else in War Room works this way, just not this.</p>' +
@@ -1223,8 +1534,13 @@
       return;
     }
     scanRows = [];
-    openModal('<h2>Read a roster screenshot</h2>' +
-      '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:12px">Take a screenshot of the roster or depth chart and drop it here. A photo of the TV works too. It is read on this machine and never uploaded, and you get to check every row before anything is added.</p>' +
+    var recruits = scanKind === 'recruits';
+    openModal('<h2>' + (recruits ? 'Read a recruiting board' : 'Read a roster screenshot') + '</h2>' +
+      '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:12px">' +
+        (recruits
+          ? 'Screenshot your recruiting board and drop it here — it reads name, position, stars and home state. Send the roster and the board as <b>separate</b> images: they are different screens with different columns, and one picture of both reads worse than two of each.'
+          : 'Take a screenshot of the roster or depth chart and drop it here. A photo of the TV works too. It is read on this machine and never uploaded, and you get to check every row before anything is added.') +
+      '</p>' +
       '<div class="dropzone" id="dropzone" tabindex="0">' + icon('camera') +
         '<b>Drop images here</b><span>or click to choose · paste with Ctrl+V · several pages at once is fine</span>' +
       '</div>' +
@@ -1300,7 +1616,7 @@
       }
       window.WarRoomOCR.recognize(files[i], function (status, p) {
         show(status.replace(/^\w/, function (c) { return c.toUpperCase(); }), p);
-      }).then(function (res) {
+      }, scanKind).then(function (res) {
         res.rows.forEach(function (r) {
           var dup = scanRows.some(function (x) {
             return x.name.toLowerCase() === r.name.toLowerCase() && x.pos === r.pos;
@@ -1322,34 +1638,48 @@
   function renderScanReview() {
     if (!scanRows.length) {
       openModal('<h2>Nothing readable in that image</h2>' +
-        '<p style="color:var(--ink-2);font-size:var(--t-small)">No rows came back that looked like players. A tighter crop of just the roster table, taken straight from the console rather than photographed at an angle, reads far better.</p>' +
-        '<div class="modal-actions"><span class="spacer"></span><button class="btn" data-action="close">Close</button><button class="btn primary" data-action="scan-roster">Try another image</button></div>');
+        '<p style="color:var(--ink-2);font-size:var(--t-small)">No rows came back that looked like ' + (scanKind === 'recruits' ? 'recruits' : 'players') + '. A tighter crop of just the table, taken straight from the console rather than photographed at an angle, reads far better.</p>' +
+        '<div class="modal-actions"><span class="spacer"></span><button class="btn" data-action="close">Close</button><button class="btn primary" data-action="scan-' + (scanKind === 'recruits' ? 'recruits' : 'roster') + '">Try another image</button></div>');
       return;
     }
+    var recruits = scanKind === 'recruits';
     var rows = scanRows.map(function (r, i) {
-      var needsYear = !r.year;
-      return '<tr class="' + (needsYear ? 'needs' : '') + (r.suspect ? ' suspect' : '') + '" data-scan-row="' + i + '" data-conf="' + (r.conf == null ? '' : r.conf) + '">' +
-        '<td><input type="checkbox" data-scan="use" data-i="' + i + '" checked aria-label="Include ' + esc(r.name) + '"></td>' +
+      var needs = recruits ? false : !r.year;
+      var cells = '<td><input type="checkbox" data-scan="use" data-i="' + i + '" checked aria-label="Include ' + esc(r.name) + '"></td>' +
         '<td><input type="text" data-scan="name" data-i="' + i + '" value="' + esc(r.name) + '"' + (r.suspect ? ' title="This one looks misread — check it against the screen"' : '') + '></td>' +
-        '<td>' + posSelect('scan-pos-' + i, r.pos, true).replace('<select', '<select data-scan="pos" data-i="' + i + '"') + '</td>' +
-        '<td><select data-scan="year" data-i="' + i + '"><option value="">—</option>' + options(YEARS, r.year) + '</select></td>' +
-        '<td style="text-align:center"><input type="checkbox" data-scan="rs" data-i="' + i + '"' + (r.rs ? ' checked' : '') + ' aria-label="Redshirt"></td>' +
-        '<td><input type="number" data-scan="ovr" data-i="' + i + '" value="' + (r.ovr || '') + '" min="0" max="99" placeholder="—"></td>' +
-      '</tr>';
+        '<td>' + posSelect('scan-pos-' + i, r.pos, true).replace('<select', '<select data-scan="pos" data-i="' + i + '"') + '</td>';
+
+      if (recruits) {
+        cells += '<td class="' + (r.starsRead ? '' : 'stars-guess') + '"><select data-scan="stars" data-i="' + i + '"' + (r.starsRead ? '' : ' title="Not read from the image — this is a guess"') + '>' + options([5, 4, 3, 2, 1], int(r.stars, 1, 5), function (s) { return s + '★'; }) + '</select></td>' +
+          '<td><select data-scan="state" data-i="' + i + '"><option value="">—</option>' + options(STATES, r.state || '') + '</select></td>' +
+          '<td><select data-scan="status" data-i="' + i + '">' + options(STATUSES, r.status || 'board', function (s) { return s.label; }, function (s) { return s.id; }) + '</select></td>';
+      } else {
+        cells += '<td><select data-scan="year" data-i="' + i + '"><option value="">—</option>' + options(YEARS, r.year) + '</select></td>' +
+          '<td style="text-align:center"><input type="checkbox" data-scan="rs" data-i="' + i + '"' + (r.rs ? ' checked' : '') + ' aria-label="Redshirt"></td>' +
+          '<td><input type="number" data-scan="ovr" data-i="' + i + '" value="' + (r.ovr || '') + '" min="0" max="99" placeholder="—"></td>';
+      }
+      return '<tr class="' + (needs ? 'needs' : '') + (r.suspect ? ' suspect' : '') + '" data-scan-row="' + i + '" data-conf="' + (r.conf == null ? '' : r.conf) + '">' + cells + '</tr>';
     }).join('');
 
-    var missing = scanRows.filter(function (r) { return !r.year; }).length;
+    var missing = recruits ? 0 : scanRows.filter(function (r) { return !r.year; }).length;
     var suspect = scanRows.filter(function (r) { return r.suspect; }).length;
+    var guessedStars = recruits ? scanRows.filter(function (r) { return !r.starsRead; }).length : 0;
+    var head = recruits
+      ? '<tr><th></th><th>Name</th><th>Pos</th><th>Stars</th><th>State</th><th>Status</th></tr>'
+      : '<tr><th></th><th>Name</th><th>Pos</th><th>Year</th><th>RS</th><th class="num">Ovr</th></tr>';
+
     openModal('<h2>Check what it read</h2>' +
-      '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:10px">' + scanRows.length + ' ' + plural(scanRows.length, 'row') + ' found. Fix anything wrong here, untick anyone you do not want, then add them.</p>' +
+      '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:10px">' + scanRows.length + ' ' + plural(scanRows.length, 'row') + ' found. Fix anything wrong here, untick anyone you do not want, then add them.' +
+        '</p>' +
+      (guessedStars ? '<div class="banner">The star column is icons, not text, so it does not survive a screenshot at all. ' + guessedStars + ' ' + plural(guessedStars, 'row', 'rows') + ' came in as 3 stars — the amber cells. Set the ones you care about; stars do not affect the scholarship count either way.</div>' : '') +
       (suspect ? '<div class="banner">' + suspect + ' ' + plural(suspect, 'name looks', 'names look') + ' misread and ' + (suspect === 1 ? 'is' : 'are') + ' marked below. Expect roughly one bad row in every ten or fifteen.</div>' : '') +
       (missing ? '<div class="banner" id="scanWarn">' + missing + ' ' + plural(missing, 'row has', 'rows have') + ' no year. A year decides who graduates, so fill it in or untick the row.</div>' : '') +
-      '<div class="table-wrap"><table class="plain scan-table"><thead><tr><th></th><th>Name</th><th>Pos</th><th>Year</th><th>RS</th><th class="num">Ovr</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<div class="table-wrap"><table class="plain scan-table"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table></div>' +
       '<div class="modal-actions">' +
-        '<button class="btn" data-action="scan-roster">' + icon('camera') + 'Another image</button>' +
+        '<button class="btn" data-action="scan-' + (recruits ? 'recruits' : 'roster') + '">' + icon('camera') + 'Another image</button>' +
         '<span class="spacer"></span>' +
         '<button class="btn" data-action="close">Cancel</button>' +
-        '<button class="btn primary" data-action="import-scan" id="scanAdd">Add players</button>' +
+        '<button class="btn primary" data-action="import-scan" id="scanAdd">Add</button>' +
       '</div>');
     updateScanAdd();
   }
@@ -1363,41 +1693,58 @@
       if (k === 'use') r.use = el.checked;
       else if (k === 'rs') r.rs = el.checked;
       else if (k === 'ovr') r.ovr = int(el.value, 0, 99);
+      else if (k === 'stars') r.stars = int(el.value, 1, 5);
       else if (k === 'name') r.name = el.value.trim();
       else r[k] = el.value;
     });
   }
   function updateScanAdd() {
     readScanTable();
+    var recruits = scanKind === 'recruits';
     var use = scanRows.filter(function (r) { return r.use !== false && r.name; });
-    var blocked = use.filter(function (r) { return !r.year; }).length;
+    /* A recruit has no year to be missing, so nothing blocks that import. */
+    var blocked = recruits ? 0 : use.filter(function (r) { return !r.year; }).length;
     var btn = $('#scanAdd');
     if (!btn) return;
     btn.disabled = !use.length || blocked > 0;
-    btn.textContent = blocked ? 'Set ' + blocked + ' missing ' + plural(blocked, 'year') : 'Add ' + use.length + ' ' + plural(use.length, 'player');
+    btn.textContent = blocked
+      ? 'Set ' + blocked + ' missing ' + plural(blocked, 'year')
+      : 'Add ' + use.length + ' ' + plural(use.length, recruits ? 'recruit' : 'player');
     $$('[data-scan-row]').forEach(function (tr) {
       var r = scanRows[parseInt(tr.getAttribute('data-scan-row'), 10)];
-      tr.classList.toggle('needs', !!r && r.use !== false && !r.year);
+      tr.classList.toggle('needs', !recruits && !!r && r.use !== false && !r.year);
     });
   }
   function doImportScan() {
     readScanTable();
+    var recruits = scanKind === 'recruits';
     var added = 0;
     scanRows.forEach(function (r) {
-      if (r.use === false || !r.name || !r.year) return;
-      state.players.push({
-        id: uid(), name: r.name, pos: r.pos, year: r.year, rs: !!r.rs,
-        redshirtNow: false, ovr: r.ovr || 0, dev: r.dev || 'Normal', exit: '',
-        note: ''
-      });
+      if (r.use === false || !r.name) return;
+      if (recruits) {
+        state.recruits.push({
+          id: uid(), type: 'hs', name: r.name, pos: r.pos,
+          stars: int(r.stars, 1, 5), gem: !!r.gem, bust: !!r.bust,
+          rank: r.rank || 0, state: r.state || '', standing: 0, hours: 0,
+          archetype: '', dealbreaker: '', ovr: 0, year: 'FR', rs: false, from: '',
+          status: r.status || 'board', note: '', dev: 'Normal'
+        });
+      } else {
+        if (!r.year) return;
+        state.players.push({
+          id: uid(), name: r.name, pos: r.pos, year: r.year, rs: !!r.rs,
+          redshirtNow: false, ovr: r.ovr || 0, dev: r.dev || 'Normal', exit: '',
+          note: ''
+        });
+      }
       added++;
     });
     scanRows = [];
     save();
     closeModal();
-    view = 'roster';
+    view = recruits ? 'board' : 'roster';
     render();
-    toast('Added ' + added + ' ' + plural(added, 'player') + ' from the screenshot.');
+    toast('Added ' + added + ' ' + plural(added, recruits ? 'recruit' : 'player') + ' from the screenshot.');
   }
 
   /* ---------- advance the season ---------- */
@@ -1438,6 +1785,7 @@
       else { p.year = nextYear(p.year); }
       p.redshirtNow = false;
       p.exit = '';
+      p.risk = false;   /* last season's worry is not this season's */
       return p;
     });
     incoming.forEach(function (r) {
@@ -1595,12 +1943,14 @@
       case 'delete-recruit':
         state.recruits = state.recruits.filter(function (x) { return x.id !== id; });
         save(); closeModal(); render(); toast('Removed.'); break;
-      case 'story-choice': chooseStory(id, t.getAttribute('data-opt')); break;
+      case 'story-choice': chooseStory(id, t.getAttribute('data-opt'), t.getAttribute('data-confirmed')); break;
+      case 'portal-picker': portalPickerModal(); break;
       case 'reroll-stories':
         if (rollStorylines(uid())) { save(); render(); toast('A different set of storylines.'); }
         else toast('Add a couple more recruits first.');
         break;
-      case 'scan-roster': scanModal(); break;
+      case 'scan-roster': scanModal('players'); break;
+      case 'scan-recruits': scanModal('recruits'); break;
       case 'import-scan': doImportScan(); break;
       case 'paste-players': pasteModal('players'); break;
       case 'paste-recruits': pasteModal('recruits', type || 'hs'); break;
@@ -1650,6 +2000,23 @@
     } else if (t.id === 'scanFiles' && t.files && t.files.length) {
       runScan(t.files);
       t.value = '';
+    } else if (t.matches('[data-portal]')) {
+      var pid = t.getAttribute('data-id'), pl = null;
+      state.players.forEach(function (x) { if (x.id === pid) pl = x; });
+      if (pl) {
+        if (t.getAttribute('data-portal') === 'out') {
+          pl.exit = t.checked ? 'portal' : '';
+          /* In the portal is not "might leave" any more, it is leaving. */
+          if (t.checked) {
+            pl.risk = false;
+            var mate = $('[data-portal="risk"][data-id="' + pid + '"]');
+            if (mate) mate.checked = false;
+          }
+        } else {
+          pl.risk = t.checked;
+        }
+        save();
+      }
     } else if (t.matches('[data-scan]')) {
       updateScanAdd();
     } else if (t.matches('[data-target]')) {
