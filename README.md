@@ -136,13 +136,42 @@ Double-click `index.html`. Nothing to install. Everything is stored in the
 browser's localStorage, so export a backup from Settings before clearing
 site data.
 
-If a browser is fussy about local files, serve it instead:
+For reading screenshots -- and for the phone -- run the server instead:
 
 ```
 powershell -ExecutionPolicy Bypass -File serve.ps1
 ```
 
 Then open http://localhost:8123/.
+
+## On your phone
+
+The server prints a second address when it starts, something like
+`http://192.168.1.173:8123/`. Type that into the phone's browser while it is
+on the same Wi-Fi and the app loads. The PC has to stay awake with the script
+running.
+
+If the page will not load, Windows Firewall is blocking the port. Run this in
+an **Administrator** PowerShell once:
+
+```
+New-NetFirewallRule -DisplayName "War Room" -Direction Inbound -Protocol TCP -LocalPort 8123 -Action Allow
+```
+
+Two things this route cannot do, because a plain `http://` address on a LAN is
+not a secure origin:
+
+- **No install and no offline.** Service workers need HTTPS, so there is no
+  Add to Home Screen and nothing is cached.
+- **iOS may bin your data.** Safari clears storage for a site you have not
+  opened in seven days. Export a backup from Settings, or use the hosted
+  route below.
+
+For a phone you actually keep using, publish it: put the folder on GitHub and
+turn on Pages, exactly like Cense. That gives an HTTPS address that installs
+to the home screen, works offline, and keeps its data. The data lives per
+device either way -- Settings has export and restore for moving a dynasty
+between them.
 
 ## Checking it
 

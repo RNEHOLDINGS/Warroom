@@ -1,18 +1,42 @@
-# Serves this folder at http://localhost:8123
+# Serves this folder at http://localhost:8123, and to your phone on the same
+# Wi-Fi at http://<this-pc>:8123
+#
 # Run with:  powershell -ExecutionPolicy Bypass -File serve.ps1
 # Stop with: Ctrl+C
 #
-# You do not need this to use the app -- double-clicking index.html works too.
-# It is here for when a browser is fussy about local files.
+# You do not need this to use the app on this PC -- double-clicking index.html
+# works too. You DO need it for reading screenshots, and for the phone.
+#
+# -LocalOnly goes back to answering only this machine.
 
-param([int]$Port = 8123)
+param([int]$Port = 8123, [switch]$LocalOnly)
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
+
+# Loopback answers only this PC, so a phone on the same Wi-Fi gets nothing and
+# it looks like the address is wrong. Any listens on the network too.
+$bind = if ($LocalOnly) { [System.Net.IPAddress]::Loopback } else { [System.Net.IPAddress]::Any }
+$listener = [System.Net.Sockets.TcpListener]::new($bind, $Port)
 $listener.Start()
 
+$lan = $null
+if (-not $LocalOnly) {
+  try {
+    $lan = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+      Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.PrefixOrigin -ne 'WellKnown' } |
+      Sort-Object -Property @{ Expression = { $_.InterfaceAlias -like '*Wi-Fi*' } } -Descending |
+      Select-Object -First 1).IPAddress
+  } catch {}
+}
+
 Write-Host ""
-Write-Host "  War Room is running at http://localhost:$Port/" -ForegroundColor Green
+Write-Host "  War Room is running." -ForegroundColor Green
+Write-Host "    On this PC:  http://localhost:$Port/"
+if ($lan) {
+  Write-Host "    On a phone:  http://${lan}:$Port/" -ForegroundColor Cyan
+  Write-Host "                 (same Wi-Fi. If it will not load, Windows Firewall"
+  Write-Host "                  is blocking it -- see the README.)"
+}
 Write-Host "  Press Ctrl+C to stop."
 Write-Host ""
 
