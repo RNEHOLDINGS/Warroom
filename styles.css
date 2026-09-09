@@ -444,6 +444,35 @@ table.plain td.num, table.plain th.num { text-align: right; }
 .story-log-item b { display: block; color: var(--ink); }
 .story-log-item span { color: var(--ink-muted); text-wrap: pretty; }
 
+/* ---------- holding a spot ---------- */
+
+.slot-adder { padding: 12px 16px; margin-bottom: 14px; }
+.slot-adder .card-head { margin-bottom: 8px; }
+.slot-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.slot-chips .btn {
+  min-width: 46px; justify-content: center;
+  font-family: var(--font-num); font-weight: 600; letter-spacing: 0;
+}
+
+/* An unnamed entry is a placeholder and should read as one. NOT called
+   ".slot": that class already belongs to the little 16x22 position-board
+   indicators, and these rows inherited its height and collapsed on top of
+   each other. */
+.item.held .who b { color: var(--ink-2); font-weight: 600; }
+.item.held .pos-badge { background: var(--ink-2); }
+
+/* the fields that are not the count, folded away */
+.more { margin: 4px 0 2px; border-top: 1px solid var(--border); padding-top: 10px; }
+.more > summary {
+  cursor: pointer; font-size: var(--t-small); font-weight: 700; color: var(--ink-2);
+  list-style: none; padding: 4px 0; user-select: none;
+}
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::before { content: "▸ "; color: var(--ink-muted); }
+.more[open] > summary::before { content: "▾ "; }
+.more > summary:hover { color: var(--ink); }
+.more[open] > summary { margin-bottom: 8px; }
+
 /* ---------- the transfer tick-list ---------- */
 
 .pick-list { max-height: 52vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }

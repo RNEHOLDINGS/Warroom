@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Slot test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function hits(el) {
+    el.scrollIntoView({ block: 'center' });
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return 'zero-size';
+    var t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!t) return 'nothing at point';
+    return (t === el || el.contains(t)) ? true : 'covered by ' + t.tagName.toLowerCase();
+  }
+  function click(sel) {
+    var el = q(sel);
+    if (!el) { out.push('NOEL ' + sel); fails++; render(); return false; }
+    var h = hits(el); ok(h === true, 'clickable: ' + sel, h); el.click(); return true;
+  }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom;
+  try {
+    click('[data-action="load-sample"]');
+    click('[data-view="board"]');
+
+    /* --- one tap holds a spot --- */
+    ok(!!q('.slot-adder'), 'the hold-a-spot strip renders');
+    var chip = q('[data-action="add-slot"][data-pos="WR"]');
+    ok(!!chip, 'a position chip exists');
+    ok(hits(chip) === true, 'chip is clickable', hits(chip));
+    var before = W.state().recruits.length;
+    chip.click();
+    ok(W.state().recruits.length === before + 1, 'one tap adds one recruit');
+    var slot = W.state().recruits[W.state().recruits.length - 1];
+    ok(slot.name === '' && slot.pos === 'WR' && slot.status === 'board', 'it is an unnamed WR on the board', JSON.stringify({ n: slot.name, p: slot.pos, s: slot.status }));
+
+    /* it counts at its position like anybody else */
+    var wrBoard = W.needs().rows.filter(function (r) { return r.group.id === 'WR'; })[0].board;
+    q('[data-action="add-slot"][data-pos="WR"]').click();
+    var wrBoard2 = W.needs().rows.filter(function (r) { return r.group.id === 'WR'; })[0].board;
+    ok(wrBoard2 === wrBoard + 1, 'a held spot counts on the position board', wrBoard + ' -> ' + wrBoard2);
+
+    /* --- it reads as a placeholder, not a person --- */
+    click('[data-view="board"]');
+    ok(document.querySelectorAll('.item.held').length >= 2, 'held spots render as slots', document.querySelectorAll('.item.held').length);
+    ok(/WR spot/.test(q('#view').textContent), 'shown as "WR spot" rather than a blank name');
+
+    /* --- committing a held spot still moves the count --- */
+    var open0 = W.needs().totals.open;
+    slot.status = 'committed';
+    var addBtn = q('[data-action="add-recruit"]');
+    if (addBtn) { addBtn.click(); q('#r-pos').value = 'CB'; click('[data-action="save-recruit"]'); }
+    /* the added CB defaults to "on the board", which correctly consumes
+       nothing; only the committed spot closes a place */
+    ok(W.needs().totals.open === open0 - 1, 'committing a held spot closes a place', open0 + ' -> ' + W.needs().totals.open);
+
+    /* --- a nameless save is allowed and the form is short --- */
+    click('[data-view="board"]');
+    click('[data-action="add-recruit"]');
+    ok(!!q('#r-pos') && !!q('#r-status') && !!q('#r-stars'), 'position, status and stars are up front');
+    ok(!!q('details.more'), 'the rest is folded away');
+    ok(q('details.more').open === false, 'and folded shut for a new one');
+    ok(!!q('#r-state') && !!q('#r-note'), 'the folded fields are still in the form');
+    var n0 = W.state().recruits.length;
+    q('#r-pos').value = 'TE';
+    click('[data-action="save-recruit"]');
+    ok(W.state().recruits.length === n0 + 1, 'saving with no name works');
+    ok(q('#modal').hidden === true, 'and the modal closes');
+
+    /* --- naming one later promotes it --- */
+    var held = W.state().recruits.filter(function (r) { return !r.name && r.pos === 'TE'; })[0];
+    ok(!!held, 'the held TE exists');
+    q('[data-action="edit-recruit"][data-id="' + held.id + '"]').click();
+    ok(q('details.more').open === false, 'a plain held spot opens folded too');
+    q('#r-name').value = 'Real Recruit';
+    click('[data-action="save-recruit"]');
+    var named = W.state().recruits.filter(function (r) { return r.id === held.id; })[0];
+    ok(named.name === 'Real Recruit', 'naming it sticks');
+    click('[data-view="board"]');
+    ok(/Real Recruit/.test(q('#view').textContent), 'and it now shows as a person');
+
+    /* --- a recruit with detail opens with the detail showing --- */
+    var withDetail = W.state().recruits.filter(function (r) { return r.gem || r.dealbreaker || r.state; })[0];
+    if (withDetail) {
+      q('[data-action="edit-recruit"][data-id="' + withDetail.id + '"]').click();
+      ok(q('details.more').open === true, 'a recruit that has detail opens with it shown');
+      click('[data-action="close"]');
+    }
+
+    /* --- a held spot that signs still becomes somebody --- */
+    var heldSigned = W.state().recruits.filter(function (r) { return !r.name; })[0];
+    ok(!!heldSigned, 'a held spot remains to sign');
+    heldSigned.status = 'signed';
+    var pos = heldSigned.pos;
+    click('[data-view="class"]');
+    click('[data-action="advance"]');
+    click('[data-action="do-advance"]');
+    var enrolled = W.state().players.filter(function (p) { return p.name === pos + ' signee'; })[0];
+    ok(!!enrolled, 'it enrols with a usable name rather than a blank', pos + ' signee');
+    ok(W.state().players.every(function (p) { return !!p.name; }), 'no player on the roster is nameless');
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

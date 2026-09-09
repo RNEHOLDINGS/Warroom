@@ -16,9 +16,8 @@ always the real one.
 - **Roster** — every player with class, redshirt, overall and dev trait. Mark
   anyone as declaring for the draft, entering the portal, or being cut, and
   the count updates. Seniors are counted as leaving automatically.
-- **Board** — high-school recruits with stars, state, national rank, your
-  spot on their list, gem/bust, dealbreakers, and the hours you are spending
-  each week against your weekly budget.
+- **Board** — high-school recruits. One tap holds an unnamed spot at a
+  position; the full detail is there for the ones you are really chasing.
 - **Portal** — both directions. Players you are losing to the portal, ticked
   off a single list so the count stays honest, and transfer targets coming in.
 - **Class** — this season's commits summarised by position and star average,
@@ -72,6 +71,21 @@ one tick-list of the whole roster with two boxes per player:
 Seniors are not offered either box, because they are already leaving. Ticking
 Gone clears Might automatically. Advancing the season clears every Might, on
 the grounds that last season's worry is not this season's.
+
+## Holding a spot
+
+Most of what sits on a recruiting board is "I am chasing somebody here" long
+before it is a name, and the board turns over every week. So **Hold a spot** on
+the Board and Portal is a row of position buttons: one tap adds an unnamed
+recruit at that position. It counts at that spot like anybody else, shows as
+`WR spot`, and sinks below the people you do know. Tap it later to give him a
+name, or never.
+
+The form behind **Add recruit** is down to what the count is actually built
+from — position, status, stars — with the name optional and the other nine
+fields folded behind **More detail**. That opens by itself for anyone who
+already has some, so nothing is hidden from the recruits you are really
+chasing.
 
 ## Reading a roster off a screenshot
 
@@ -218,7 +232,7 @@ between them.
 
 ## Checking it
 
-There are six suites, all driven through real DOM clicks with hit testing:
+There are seven suites, all driven through real DOM clicks with hit testing:
 
 - `selftest.html` — the app: counting, roster editing, season rollover.
 - `ocrtest.html` — recognition accuracy, scored against a known roster, plus
@@ -230,6 +244,8 @@ There are six suites, all driven through real DOM clicks with hit testing:
 - `storytest.html` — storylines: generation, the drama ration, destructive
   choices, self-resolution, archiving, and that a render never mutates state.
 - `portaltest.html` — outgoing transfers and what they do to the count.
+- `slottest.html` — held spots, the shortened form, and that a nameless
+  signee still becomes somebody on the roster.
 - `boardtest.html` — recruiting-board recognition, scored against a known board.
 
 `rostermock.html` and `boardmock.html` render the fake game screens the OCR

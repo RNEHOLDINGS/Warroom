@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>slot shot</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script>localStorage.clear();</script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  document.querySelector('[data-action="load-sample"]').click();
+  var st = WarRoom.state();
+  st.recruits = st.recruits.filter(function (r) { return (r.type||'hs') === 'hs'; }).slice(0, 3);
+  ['WR','WR','CB','OL','EDGE'].forEach(function (p) {
+    st.recruits.push({ id:'s'+Math.random(), type:'hs', name:'', pos:p, stars:3, gem:false, bust:false,
+      rank:0, state:'', standing:0, hours:0, archetype:'', dealbreaker:'', ovr:0, year:'SO', rs:false,
+      from:'', status:'board', note:'', dev:'Normal' });
+  });
+  WarRoom.setView('board');
+  if (q.get('form')) document.querySelector('[data-action="add-recruit"]').click();
+})();
+</script>
+</body></html>

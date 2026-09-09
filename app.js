@@ -1100,10 +1100,12 @@
     if (r.note) sub.push(esc(r.note));
     var st = r.status;
     var stCls = st === 'signed' ? 'team' : st === 'committed' ? 'good' : st === 'lost' ? 'crit' : 'outline';
-    return '<button class="item" data-action="edit-recruit" data-id="' + r.id + '">' +
+    var unnamed = !r.name;
+    if (unnamed && !sub.length) sub.push('tap to name him');
+    return '<button class="item' + (unnamed ? ' held' : '') + '" data-action="edit-recruit" data-id="' + r.id + '">' +
       '<span class="pos-badge">' + esc(r.pos) + '</span>' +
-      '<span class="who"><b>' + esc(r.name || 'Unnamed') + (r.gem ? ' <span class="chip good" title="Gem">Gem</span>' : '') + (r.bust ? ' <span class="chip crit" title="Bust">Bust</span>' : '') + storyBadge(r.id) + '</b><span>' + sub.filter(Boolean).join(' · ') + '</span></span>' +
-      '<span class="meta"><span class="chip ' + stCls + '">' + statusLabel(st) + '</span>' + (r.type === 'portal' && r.ovr ? '<span class="ovr">' + r.ovr + '</span>' : '') + stars(r.stars || 0) + '</span>' +
+      '<span class="who"><b>' + (unnamed ? esc(r.pos) + ' spot' : esc(r.name)) + (r.gem ? ' <span class="chip good" title="Gem">Gem</span>' : '') + (r.bust ? ' <span class="chip crit" title="Bust">Bust</span>' : '') + storyBadge(r.id) + '</b><span>' + sub.filter(Boolean).join(' · ') + '</span></span>' +
+      '<span class="meta"><span class="chip ' + stCls + '">' + statusLabel(st) + '</span>' + (r.type === 'portal' && r.ovr ? '<span class="ovr">' + r.ovr + '</span>' : '') + (unnamed ? '' : stars(r.stars || 0)) + '</span>' +
     '</button>';
   }
 
@@ -1179,7 +1181,10 @@
     if (f.status) list = list.filter(function (r) { return r.status === f.status; });
     list.sort(function (a, b) {
       var order = { signed: 0, committed: 1, board: 2, lost: 3 };
-      return (order[a.status] - order[b.status]) || byStars(a, b);
+      /* held spots sink below the people you actually know the names of */
+      return (order[a.status] - order[b.status]) ||
+        ((a.name ? 0 : 1) - (b.name ? 0 : 1)) ||
+        byStars(a, b);
     });
     var n = computeNeeds();
     var committed = all.filter(isIncoming).length;
@@ -1211,6 +1216,17 @@
     if (holes.length) {
       html += '<div class="banner info">Still need: ' + holes.map(function (r) { return '<b>' + r.need + ' ' + r.group.id + '</b>'; }).join(', ') + '.</div>';
     }
+
+    /* One tap holds a spot at a position. The board turns over constantly and
+       most of what is on it is "I am chasing somebody here" long before it is
+       a name, so that has to cost one tap rather than a form. */
+    html += '<div class="card slot-adder"><div class="card-head"><h2>Hold a spot</h2>' +
+      '<span class="hint">One tap adds an unnamed ' + (type === 'hs' ? 'recruit' : 'target') + ' at that position. Name him later, or never.</span></div>' +
+      '<div class="slot-chips">' +
+      GROUPS.map(function (g) {
+        return '<button class="btn small" data-action="add-slot" data-pos="' + g.id + '" data-type="' + type + '" title="' + esc(g.name) + '">' + g.id + '</button>';
+      }).join('') +
+      '</div></div>';
 
     /* Storylines sit above the board: they are about these same players, and
        below the needs banner, because the count is still the point. */
@@ -1259,7 +1275,7 @@
       n.rows.concat([{ group: ATH_GROUP, need: 0, incoming: n.totals.ath }]).forEach(function (r) {
         var who = commits.filter(function (c) { return groupOf(c.pos) === r.group.id; });
         if (!who.length) return;
-        html += '<tr><td><b>' + esc(r.group.name) + '</b></td><td class="num">' + who.length + '</td><td class="num">' + (r.group.id === 'ATH' ? '—' : needChip(r.need)) + '</td><td>' + who.map(function (c) { return esc(c.name) + ' <span style="color:var(--ink-muted)">' + (c.type === 'portal' ? (c.ovr ? c.ovr + ' OVR' : 'portal') : (c.stars || 0) + '★') + '</span>'; }).join(', ') + '</td></tr>';
+        html += '<tr><td><b>' + esc(r.group.name) + '</b></td><td class="num">' + who.length + '</td><td class="num">' + (r.group.id === 'ATH' ? '—' : needChip(r.need)) + '</td><td>' + who.map(function (c) { return esc(c.name || c.pos + ' spot') + ' <span style="color:var(--ink-muted)">' + (c.type === 'portal' ? (c.ovr ? c.ovr + ' OVR' : 'portal') : (c.stars || 0) + '★') + '</span>'; }).join(', ') + '</td></tr>';
       });
       html += '</tbody></table></div></div>';
     }
@@ -1375,32 +1391,48 @@
     type = r ? (r.type || 'hs') : type;
     r = r || { name: '', pos: 'QB', stars: 3, gem: false, bust: false, rank: '', state: '', standing: 0, hours: 0, archetype: '', dealbreaker: '', ovr: '', year: 'SO', rs: false, from: '', status: 'board', note: '', dev: 'Normal' };
     var portal = type === 'portal';
+    /* Position and status are the only two fields the count is built from.
+       Everything else is colour, so it folds away: a board that turns over
+       every week cannot be worth thirteen fields a head. The details are
+       still there for the handful of recruits actually being chased. */
+    var hasDetail = !!(r.state || r.rank || r.standing || r.hours || r.archetype ||
+      r.dealbreaker || r.gem || r.bust || r.note || r.from || r.rs || r.ovr);
+
     openModal('<h2>' + (isNew ? (portal ? 'Add portal target' : 'Add recruit') : (portal ? 'Portal target' : 'Recruit')) + '</h2>' +
-      '<div class="field"><label for="r-name">Name</label><input type="text" id="r-name" value="' + esc(r.name) + '" placeholder="Name"></div>' +
       '<div class="row">' +
         '<div class="field"><label for="r-pos">Position</label>' + posSelect('r-pos', r.pos) + '</div>' +
-        '<div class="field"><label for="r-stars">Stars</label><select id="r-stars">' + options([5, 4, 3, 2, 1], int(r.stars, 1, 5), function (s) { return s + '-star'; }) + '</select></div>' +
         '<div class="field"><label for="r-status">Status</label><select id="r-status">' + options(STATUSES.filter(function (s) { return !portal || s.id !== 'signed'; }), r.status, function (s) { return s.label; }, function (s) { return s.id; }) + '</select></div>' +
+        '<div class="field"><label for="r-stars">Stars</label><select id="r-stars">' + options([5, 4, 3, 2, 1], int(r.stars, 1, 5), function (s) { return s + '-star'; }) + '</select></div>' +
       '</div>' +
+      '<div class="field"><label for="r-name">Name <span style="font-weight:400;color:var(--ink-muted)">— optional</span></label>' +
+        '<input type="text" id="r-name" value="' + esc(r.name) + '" placeholder="Leave blank to hold the spot"></div>' +
       (portal
         ? '<div class="row">' +
           '<div class="field"><label for="r-year">Class next season</label><select id="r-year">' + options(YEARS, r.year || 'SO') + '</select></div>' +
-          '<div class="field"><label for="r-ovr">Overall</label><input type="number" id="r-ovr" value="' + (r.ovr || '') + '" min="0" max="99"></div>' +
-          '<div class="field"><label for="r-from">Coming from</label><input type="text" id="r-from" value="' + esc(r.from || '') + '" placeholder="School"></div>' +
-          '</div>' +
-          '<label class="check"><input type="checkbox" id="r-rs"' + (r.rs ? ' checked' : '') + '> Has used a redshirt</label>'
-        : '<div class="row">' +
-          '<div class="field"><label for="r-state">State</label><select id="r-state"><option value="">—</option>' + options(STATES, r.state) + '</select></div>' +
-          '<div class="field"><label for="r-rank">National rank</label><input type="number" id="r-rank" value="' + (r.rank || '') + '" min="1" max="9999" placeholder="—"></div>' +
-          '<div class="field"><label for="r-standing">Your spot on the list</label><select id="r-standing"><option value="0">Not on it / unknown</option>' + options([1, 2, 3, 4, 5, 6, 7, 8], int(r.standing, 0, 8), function (n) { return '#' + n; }) + '</select></div>' +
-          '<div class="field"><label for="r-hours">Hours per week</label><input type="number" id="r-hours" value="' + (r.hours || '') + '" min="0" max="99" placeholder="0"></div>' +
-          '</div>') +
-      '<div class="row">' +
-        '<div class="field"><label for="r-arch">Archetype</label><input type="text" id="r-arch" value="' + esc(r.archetype || '') + '" placeholder="Field General, Speedster…"></div>' +
-        '<div class="field"><label for="r-deal">Dealbreaker</label><input type="text" id="r-deal" value="' + esc(r.dealbreaker || '') + '" placeholder="Playing time, proximity…"></div>' +
-      '</div>' +
-      '<div class="row"><label class="check"><input type="checkbox" id="r-gem"' + (r.gem ? ' checked' : '') + '> Gem</label><label class="check"><input type="checkbox" id="r-bust"' + (r.bust ? ' checked' : '') + '> Bust</label></div>' +
-      '<div class="field"><label for="r-note">Note</label><input type="text" id="r-note" value="' + esc(r.note || '') + '" placeholder="Visit scheduled, leaning elsewhere…"></div>' +
+          '<div class="field"><label for="r-ovr">Overall</label><input type="number" id="r-ovr" value="' + (r.ovr || '') + '" min="0" max="99" placeholder="—"></div>' +
+          '</div>'
+        : '') +
+
+      '<details class="more"' + (hasDetail ? ' open' : '') + '><summary>More detail</summary>' +
+        (portal
+          ? '<div class="row">' +
+            '<div class="field"><label for="r-from">Coming from</label><input type="text" id="r-from" value="' + esc(r.from || '') + '" placeholder="School"></div>' +
+            '</div>' +
+            '<label class="check"><input type="checkbox" id="r-rs"' + (r.rs ? ' checked' : '') + '> Has used a redshirt</label>'
+          : '<div class="row">' +
+            '<div class="field"><label for="r-state">State</label><select id="r-state"><option value="">—</option>' + options(STATES, r.state) + '</select></div>' +
+            '<div class="field"><label for="r-rank">National rank</label><input type="number" id="r-rank" value="' + (r.rank || '') + '" min="1" max="9999" placeholder="—"></div>' +
+            '<div class="field"><label for="r-standing">Your spot on his list</label><select id="r-standing"><option value="0">Unknown</option>' + options([1, 2, 3, 4, 5, 6, 7, 8], int(r.standing, 0, 8), function (n) { return '#' + n; }) + '</select></div>' +
+            '<div class="field"><label for="r-hours">Hours per week</label><input type="number" id="r-hours" value="' + (r.hours || '') + '" min="0" max="99" placeholder="0"></div>' +
+            '</div>') +
+        '<div class="row">' +
+          '<div class="field"><label for="r-arch">Archetype</label><input type="text" id="r-arch" value="' + esc(r.archetype || '') + '" placeholder="Field General, Speedster…"></div>' +
+          '<div class="field"><label for="r-deal">Dealbreaker</label><input type="text" id="r-deal" value="' + esc(r.dealbreaker || '') + '" placeholder="Playing time, proximity…"></div>' +
+        '</div>' +
+        '<div class="row"><label class="check"><input type="checkbox" id="r-gem"' + (r.gem ? ' checked' : '') + '> Gem</label><label class="check"><input type="checkbox" id="r-bust"' + (r.bust ? ' checked' : '') + '> Bust</label></div>' +
+        '<div class="field"><label for="r-note">Note</label><input type="text" id="r-note" value="' + esc(r.note || '') + '" placeholder="Visit scheduled, leaning elsewhere…"></div>' +
+      '</details>' +
+
       '<div class="modal-actions">' +
         (isNew ? '' : '<button class="btn danger" data-action="delete-recruit" data-id="' + r.id + '">' + icon('trash') + 'Remove</button>') +
         '<span class="spacer"></span>' +
@@ -1807,7 +1839,8 @@
     });
     incoming.forEach(function (r) {
       state.players.push({
-        id: uid(), name: r.name, pos: r.pos,
+        /* a held spot that signed still has to be somebody on the roster */
+        id: uid(), name: r.name || (r.pos + ' signee'), pos: r.pos,
         year: r.type === 'portal' ? (r.year || 'SO') : 'FR',
         rs: r.type === 'portal' ? !!r.rs : false,
         redshirtNow: false,
@@ -1954,9 +1987,18 @@
         if (r) recruitModal(r);
         break;
       case 'save-recruit':
-        r = readRecruitForm(id, type);
-        if (!r.name) { $('#r-name').focus(); return; }
+        /* No name required. A nameless entry is a held spot: it counts at its
+           position like anyone else and gets a name if and when he earns one. */
+        readRecruitForm(id, type);
         save(); closeModal(); render(); break;
+      case 'add-slot':
+        state.recruits.push({
+          id: uid(), type: t.getAttribute('data-type') || 'hs', name: '',
+          pos: t.getAttribute('data-pos'), stars: 3, gem: false, bust: false,
+          rank: 0, state: '', standing: 0, hours: 0, archetype: '', dealbreaker: '',
+          ovr: 0, year: 'SO', rs: false, from: '', status: 'board', note: '', dev: 'Normal'
+        });
+        save(); render(); break;
       case 'delete-recruit':
         state.recruits = state.recruits.filter(function (x) { return x.id !== id; });
         save(); closeModal(); render(); toast('Removed.'); break;
