@@ -424,6 +424,7 @@
       if (seen[key]) return;
       seen[key] = true;
       r.conf = Math.round(conf);
+      r.bbox = (typeof l === 'string') ? null : ((l && l.bbox) || null);
       /* 60, from measurement rather than taste: on the test roster the one
          mangled row scored 26 while every correctly read row scored 77 to 97.
          An earlier 80 flagged a perfectly good row, and a flag that fires on
@@ -465,7 +466,11 @@
     var out = [];
     var push = function (l) {
       if (l && typeof l.text === 'string' && l.text.trim()) {
-        out.push({ text: l.text, confidence: typeof l.confidence === 'number' ? l.confidence : 100 });
+        out.push({
+          text: l.text,
+          confidence: typeof l.confidence === 'number' ? l.confidence : 100,
+          bbox: l.bbox || null
+        });
       }
     };
     if (data && Array.isArray(data.lines) && data.lines.length) {
@@ -583,19 +588,99 @@
     return rows;
   }
 
+  /* ---------- who is actually at this position ----------
+
+     A depth chart is not a roster. The rows with a number down the left are
+     the players at that spot; the rows marked "-" underneath are people who
+     could fill in there in an emergency and who are counted properly on their
+     own position's page. Importing those is where the duplicates came from.
+
+     The depth number itself is the obvious thing to read and the wrong one:
+     across the test pages it misread as ")ec" on a starter and as a stray "4"
+     on two reserves. The game greys the reserve rows out instead, and that
+     survives beautifully. Measured over the name and position columns of the
+     ORIGINAL image, the brightest 2% of pixels come out 245-255 on a live row
+     and 103-106 on a greyed one. Nothing else here separates so cleanly.
+
+     Thresholding is relative rather than fixed at some absolute grey, so a
+     dim photo of a television still splits in the right place, and a page
+     where every row is live is left alone. */
+  function brightness(raw, w, h, y0, y1, xa, xb) {
+    var hist = new Uint32Array(256), total = 0, x, y, px, lum;
+    y0 = Math.max(0, y0); y1 = Math.min(h - 1, y1);
+    for (y = y0; y <= y1; y++) {
+      for (x = xa; x <= xb; x += 2) {
+        px = (y * w + x) * 4;
+        lum = (0.299 * raw[px] + 0.587 * raw[px + 1] + 0.114 * raw[px + 2]) | 0;
+        hist[lum]++; total++;
+      }
+    }
+    if (!total) return 255;
+    var acc = 0, v;
+    for (v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= total * 0.02) return v; }
+    return 0;
+  }
+
+  function dropReserveRows(rows, img, scale) {
+    var usable = rows.filter(function (r) { return r.bbox; });
+    if (usable.length < 3) return 0;
+
+    var c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    var cx = c.getContext('2d');
+    cx.drawImage(img, 0, 0);
+    var raw = cx.getImageData(0, 0, img.width, img.height).data;
+    var xa = Math.round(img.width * 0.12), xb = Math.round(img.width * 0.55);
+
+    usable.forEach(function (r) {
+      r.lum = brightness(raw, img.width, img.height,
+        Math.round(r.bbox.y0 / scale), Math.round(r.bbox.y1 / scale), xa, xb);
+    });
+
+    var vals = usable.map(function (r) { return r.lum; }).sort(function (a, b) { return a - b; });
+    var lo = vals[0], hi = vals[vals.length - 1];
+    /* every row lit the same way: nothing to separate */
+    if (hi - lo <= 60) return 0;
+
+    var gap = 0, at = 0, i;
+    for (i = 1; i < vals.length; i++) {
+      if (vals[i] - vals[i - 1] > gap) { gap = vals[i] - vals[i - 1]; at = i; }
+    }
+    if (gap < (hi - lo) * 0.3) return 0;
+
+    var cut = (vals[at] + vals[at - 1]) / 2;
+    var dropped = 0;
+    rows.forEach(function (r) {
+      if (r.lum != null && r.lum < cut) { r.reserve = true; dropped++; }
+    });
+    return dropped;
+  }
+
   /* ---------- public ---------- */
 
   function recognize(fileOrUrl, onProgress, kind) {
-    var canvas;
+    var canvas, source, scale = 1;
     return toImage(fileOrUrl)
-      .then(function (img) { canvas = preprocess(img); return getWorker(onProgress); })
+      .then(function (img) {
+        source = img;
+        canvas = preprocess(img);
+        scale = canvas.width / img.width;
+        return getWorker(onProgress);
+      })
       .then(function (w) { return w.recognize(canvas, {}, { text: true, blocks: true }); })
       .then(function (res) {
         var data = (res && res.data) || {};
         var lines = linesFrom(data);
+        var rows = kind === 'recruits' ? parseRecruitLines(lines) : parseRosterLines(lines);
+        var ignored = 0;
+        if (kind !== 'recruits') {
+          ignored = dropReserveRows(rows, source, scale);
+          rows = rows.filter(function (r) { return !r.reserve; });
+        }
         return {
           text: data.text || lines.map(function (l) { return l.text; }).join('\n'),
-          rows: kind === 'recruits' ? parseRecruitLines(lines) : parseRosterLines(lines),
+          rows: rows,
+          ignored: ignored,
           confidence: data.confidence || 0
         };
       });

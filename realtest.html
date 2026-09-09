@@ -8,24 +8,20 @@
 (function () {
   /* Transcribed by eye from the four screenshots in testshots/.
      [name, year, redshirt, position, overall] */
+  /* Only the rows carrying a depth number. The greyed "-" rows underneath
+     are emergency fill-ins who are counted on their own position's page, and
+     importing them is what produced duplicates. */
   var TRUTH = {
     ol: [
       ['J.Carty',     'SO', true,  'LT', 86],
       ['C.Hamm',      'SR', true,  'RT', 83],
-      ['J.Bliss',     'FR', true,  'LT', 83],
-      ['T.Brady',     'SR', true,  'RT', 92],
-      ['C.Doucet',    'SO', false, 'LG', 85],
-      ['K.Campanaro', 'JR', true,  'LT', 83],
-      ['K.McGahee',   'FR', true,  'C',  83],
-      ['E.Lamar',     'SO', true,  'LG', 83],
-      ['N.Montez',    'FR', true,  'RT', 81]
+      ['J.Bliss',     'FR', true,  'LT', 83]
     ],
     hb: [
       ['D.Jewell',     'JR', false, 'HB', 86],
       ['J.Oruwariye',  'SO', true,  'HB', 84],
       ['D.Tuten',      'SO', false, 'HB', 78],
-      ['B.Brightwell', 'FR', true,  'HB', 73],
-      ['C.Spillman',   'JR', false, 'HB', 87]
+      ['B.Brightwell', 'FR', true,  'HB', 73]
     ],
     p: [
       ['B.Chavez', 'JR', true,  'P', 82],
@@ -34,13 +30,7 @@
     edge: [
       ['D.Drango',    'JR', true,  'REDG', 81],
       ['L.Redman',    'SR', true,  'LEDG', 82],
-      ['J.Manderino', 'FR', false, 'REDG', 67],
-      ['F.Osborne',   'SR', false, 'DT',   85],
-      ['I.Cameron',   'SR', true,  'REDG', 84],
-      ['J.Kashama',   'FR', true,  'REDG', 83],
-      ['J.Queen',     'SO', true,  'DT',   83],
-      ['S.Exum',      'SO', true,  'DT',   82],
-      ['M.Dillard',   'SO', true,  'WILL', 81]
+      ['J.Manderino', 'FR', false, 'REDG', 67]
     ]
   };
 
@@ -58,7 +48,9 @@
     return pv[n];
   }
 
-  var tot = { players: 0, found: 0, exactName: 0, year: 0, rs: 0, pos: 0, ovr: 0, perfect: 0, spurious: 0 };
+  var tot = { players: 0, found: 0, exactName: 0, year: 0, rs: 0, pos: 0, ovr: 0, perfect: 0, spurious: 0, ignored: 0 };
+  /* the greyed fill-ins that must NOT come through */
+  var RESERVES = ['T.Brady','C.Doucet','K.Campanaro','K.McGahee','E.Lamar','N.Montez','C.Spillman','F.Osborne','I.Cameron','J.Kashama','J.Queen','S.Exum','M.Dillard'];
 
   function score(key, rows) {
     var truth = TRUTH[key], used = {};
@@ -90,7 +82,10 @@
         (nameOK ? '' : ' nameEdits=' + bd));
     });
     rows.forEach(function (r, i) {
-      if (!used[i]) { tot.spurious++; say('  SPURIOUS  ' + r.name + ' ' + r.year + ' ' + r.pos + ' ' + r.ovr + '   <<< ' + r.raw); }
+      if (used[i]) return;
+      tot.spurious++;
+      var isReserve = RESERVES.some(function (nm) { return dist(nm, r.name) <= 2; });
+      say('  ' + (isReserve ? 'RESERVE LEAKED' : 'SPURIOUS     ') + ' ' + r.name + ' ' + r.year + ' ' + r.pos + ' ' + r.ovr);
     });
   }
 
@@ -101,7 +96,7 @@
       var t0 = Date.now();
       return window.WarRoomOCR.recognize('testshots/' + k + '.png').then(function (res) {
         score(k, res.rows);
-        say('  (' + Math.round((Date.now() - t0) / 100) / 10 + 's)');
+        say('  (' + Math.round((Date.now() - t0) / 100) / 10 + 's, ' + (res.ignored || 0) + ' backup rows ignored)');
       });
     });
   });

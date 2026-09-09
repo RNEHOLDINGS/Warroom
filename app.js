@@ -1525,6 +1525,7 @@
   var scanRows = [];
   var scanBusy = false;
   var scanKind = 'players';   /* 'players' or 'recruits' */
+  var scanIgnored = 0;        /* greyed depth-chart fill-ins left out */
 
   function scanSupported() { return location.protocol.indexOf('http') === 0; }
 
@@ -1538,6 +1539,7 @@
       return;
     }
     scanRows = [];
+    scanIgnored = 0;
     var recruits = scanKind === 'recruits';
     openModal('<h2>' + (recruits ? 'Read a recruiting board' : 'Read a roster screenshot') + '</h2>' +
       '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:12px">' +
@@ -1621,9 +1623,13 @@
       window.WarRoomOCR.recognize(files[i], function (status, p) {
         show(status.replace(/^\w/, function (c) { return c.toUpperCase(); }), p);
       }, scanKind).then(function (res) {
+        scanIgnored += res.ignored || 0;
         res.rows.forEach(function (r) {
+          /* Name alone. A lineman is numbered on more than one depth-chart
+             page, and if his position cell read differently on two of them,
+             matching on name-and-position would import him twice. */
           var dup = scanRows.some(function (x) {
-            return x.name.toLowerCase() === r.name.toLowerCase() && x.pos === r.pos;
+            return x.name.toLowerCase() === r.name.toLowerCase();
           });
           if (!dup) scanRows.push(r);
         });
@@ -1676,6 +1682,7 @@
       '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:10px">' + scanRows.length + ' ' + plural(scanRows.length, 'row') + ' found. Fix anything wrong here, untick anyone you do not want, then add them.' +
         '</p>' +
       (guessedStars ? '<div class="banner">The star column is icons, not text, so it does not survive a screenshot at all. ' + guessedStars + ' ' + plural(guessedStars, 'row', 'rows') + ' came in as 3 stars — the amber cells. Set the ones you care about; stars do not affect the scholarship count either way.</div>' : '') +
+      (scanIgnored ? '<div class="banner info">' + scanIgnored + ' greyed ' + plural(scanIgnored, 'row', 'rows') + ' left out — the ones marked “-” who could fill in here but play somewhere else. They are counted on their own position’s page, which is where the duplicates were coming from.</div>' : '') +
       (suspect ? '<div class="banner">' + suspect + ' ' + plural(suspect, 'row is', 'rows are') + ' worth a second look — outlined below. Either the name came back odd or the position had to be guessed from the rest of the page.</div>' : '') +
       (missing ? '<div class="banner" id="scanWarn">' + missing + ' ' + plural(missing, 'row is', 'rows are') + ' missing a year or a position — the amber cells. Both feed the count, so they are asked for rather than guessed. Fill them in or untick the row.</div>' : '') +
       '<div class="table-wrap"><table class="plain scan-table"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table></div>' +

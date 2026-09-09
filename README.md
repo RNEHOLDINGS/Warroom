@@ -87,22 +87,29 @@ if the image is on your clipboard. Several pages at once is fine.
 The text is recognised on this machine by Tesseract compiled to WebAssembly,
 from the files in `ocr/`. Nothing is uploaded and no network is used.
 
+**A depth chart is not a roster.** The rows with a number down the left are the
+players at that spot. The greyed rows marked `-` underneath are people who
+could fill in there in an emergency, and they are already counted on their own
+position's page — importing those is what produced duplicates. War Room leaves
+them out and tells you how many it left.
+
 Measured against **real CFB 27 screenshots** — four depth-chart pages holding
-25 players between them, in `testshots/`, scored by `realtest.html`:
+12 numbered players and 13 greyed fill-ins, in `testshots/`, scored by
+`realtest.html`:
 
 | Field | Right |
 | --- | --- |
-| Players found | 25 of 25 |
-| Year | 25 of 25 |
-| Redshirt | 24 of 25 |
-| Position | 21 of 25 |
-| Name exactly | 20 of 25 |
-| Overall | 17 of 25 |
-| Junk rows imported | 0 |
+| Players found | 12 of 12 |
+| Year | 12 of 12 |
+| Redshirt | 11 of 12 |
+| Position | 11 of 12 |
+| Name exactly | 8 of 12 |
+| Overall | 8 of 12 |
+| Fill-ins wrongly imported | 0 of 13 |
 
-The five name misses are all one or two characters out. Every row worth
-checking is outlined red or amber, so you are looking at four or five rows on
-a page rather than proof-reading all nine.
+The name misses are all one or two characters out. Every row worth checking is
+outlined red or amber, so you are looking at two or three rows on a page rather
+than proof-reading the lot.
 
 Three things had to be got right for that, and each was wrong first:
 
@@ -117,6 +124,12 @@ Three things had to be got right for that, and each was wrong first:
 - **An unreadable cell must not delete the player.** A missing position used
   to throw the whole row away, which is how somebody vanishes off a roster
   without anyone noticing. Blank fields are kept, marked, and asked for.
+- **The greyed fill-in rows are told apart by brightness, not by the depth
+  number.** Reading the number is the obvious approach and the wrong one: it
+  misread as `)ec` on a starter and as a stray `4` on two reserves. Over the
+  name and position columns of the original image the brightest 2% of pixels
+  come out 245-255 on a live row and 103-106 on a greyed one, and the split is
+  taken relative to the page so a dim photo still lands in the right place.
 
 The recruiting board, scored against a mock board:
 
