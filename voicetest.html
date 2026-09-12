@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Voice test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>
+  /* Seed storage before the app loads, the way a phone that used the first
+     cast would look. ?custom=1 seeds a cast somebody actually typed. */
+  localStorage.clear();
+  var CUSTOM = location.search.indexOf('custom=1') >= 0;
+  localStorage.setItem('warroom.v1', JSON.stringify({
+    v: 1, school: { name: 'North Dakota State', mascot: 'Bison', state: 'ND', color: '#115740' },
+    season: 2027, cap: 85, hours: 35, players: [], recruits: [], storylines: [], games: [], history: [],
+    show: CUSTOM
+      ? { title: 'MY SHOW', host: 'Jo Host', player: 'Big Lineman', analyst: 'Stat Nerd', insider: 'Scoop Guy', useInsider: true }
+      : { title: 'HARD COUNT', host: 'Ray Okonkwo', player: 'Marcus Boone', analyst: 'Erin Vasquez', insider: 'Gabe Sandoval', useInsider: true }
+  }));
+</script>
+<script src="ocr.js"></script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function hits(el) {
+    el.scrollIntoView({ block: 'center' });
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return 'zero-size';
+    var t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!t) return 'nothing at point';
+    return (t === el || el.contains(t)) ? true : 'covered by ' + t.tagName.toLowerCase();
+  }
+  function click(sel) {
+    var el = q(sel);
+    if (!el) { out.push('NOEL ' + sel); fails++; render(); return false; }
+    var h = hits(el); ok(h === true, 'clickable: ' + sel, h); el.click(); return true;
+  }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function waitFor(fn, ms) {
+    var t0 = Date.now();
+    return new Promise(function (res) {
+      (function tick() { if (fn() || Date.now() - t0 > (ms || 8000)) res(); else setTimeout(tick, 50); })();
+    });
+  }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom, V = window.WarRoomVoice;
+
+  if (CUSTOM) {
+    ok(W.state().show.host === 'Jo Host' && W.state().show.player === 'Big Lineman', 'a cast somebody typed is left alone', JSON.stringify(W.state().show));
+    return finish();
+  }
+
+  /* ---------- a stand-in for Google ---------- */
+  var REAL_FETCH = window.fetch.bind(window);
+  var calls = [], mode = 'ok', delay = 0;
+  function pcmB64(samples) {
+    var bin = '';
+    for (var i = 0; i < samples; i++) { var v = (i * 97) & 0x7fff; bin += String.fromCharCode(v & 255, (v >> 8) & 255); }
+    return btoa(bin);
+  }
+  window.fetch = function (url, init) {
+    if (String(url).indexOf('generativelanguage.googleapis.com') < 0) return REAL_FETCH(url, init);
+    var body = JSON.parse(init.body);
+    calls.push({ url: String(url), headers: init.headers, body: body, signal: init.signal });
+    var n = calls.length;
+    return new Promise(function (res, rej) {
+      if (init.signal) init.signal.addEventListener('abort', function () { var e = new Error('aborted'); e.name = 'AbortError'; rej(e); });
+      setTimeout(function () {
+        if (init.signal && init.signal.aborted) return;
+        var reply = function (status, obj) {
+          res(new Response(JSON.stringify(obj), { status: status, headers: { 'Content-Type': 'application/json' } }));
+        };
+        if (mode === 'badkey') return reply(400, { error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT' } });
+        if (mode === 'ratelimit' && n === 1) return reply(429, { error: { code: 429, message: 'Resource exhausted', details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '0s' }] } });
+        reply(200, { candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: pcmB64(2400) } }] }, finishReason: 'STOP' }] });
+      }, delay);
+    });
+  };
+
+  var game;
+  Promise.resolve().then(function () {
+    /* ---------- the cast moved on from the old defaults ---------- */
+    var sh = W.state().show;
+    ok(sh.host === 'Dale Whitcomb' && sh.player === 'Terrance Mabry' && sh.analyst === 'Kelsey Harlan' && sh.insider === 'Nate Ridenour',
+      'a phone still holding the old default cast gets the new one', JSON.stringify(sh));
+    ok(sh.title === 'HARD COUNT', 'and keeps its show name');
+
+    /* ---------- a real script ---------- */
+    game = { id: 'vg1', season: 2027, week: 4, opponent: 'Kansas State', home: true, result: 'W',
+      scoreFor: 38, scoreAgainst: 17, yardsFor: 505, yardsAgainst: 288, toFor: 1, toAgainst: 3, thirdDown: '9 of 14', penalties: '5 for 40',
+      performances: [
+        { name: 'D.Jewell', pos: 'HB', line: '168 yards and 2 scores', verdict: 'standout' },
+        { name: 'L.Clark', pos: 'K', line: 'missed two field goals', verdict: 'struggled' }
+      ], notes: '', script: '' };
+    W.state().games.push(game);
+    game.script = W.buildScript(game);
+    var s = game.script;
+    ok(/^WHITCOMB:/m.test(s) && /^MABRY:/m.test(s) && /^HARLAN:/m.test(s) && /^RIDENOUR:/m.test(s), 'the new cast speaks by surname');
+    ok(/Mountain West/.test(s) && /charting film/.test(s) && /walk-on safety/.test(s), 'and the script carries their backgrounds');
+    ok(!/Okonkwo|Boone|Vasquez|Sandoval/.test(s), 'no old name survives in a fresh script');
+
+    /* ---------- what gets voiced ---------- */
+    var turns = V.parseDialogue(s);
+    var spoken = s.split('PRODUCER NOTES')[0].split('\n').filter(function (l) { return /^[A-Z][A-Z'.\-]{1,30}:\s+\S/.test(l); }).length;
+    ok(turns.length === spoken && turns.length > 20, 'every spoken line is picked up', turns.length + ' vs ' + spoken);
+    ok(turns.every(function (t) { return ['WHITCOMB', 'MABRY', 'HARLAN', 'RIDENOUR'].indexOf(t.speaker) >= 0; }), 'and only the cast speaks');
+    ok(!turns.some(function (t) { return /Yards|Opponent|give each one its own voice/.test(t.text); }), 'stats, cast notes and producer notes are not read aloud');
+
+    var chunks = V.chunkTurns(turns);
+    ok(chunks.every(function (c) { return c.speakers.length <= 2; }), 'no request has more than two voices — Google’s limit', chunks.map(function (c) { return c.speakers.length; }).join(''));
+    ok(chunks.every(function (c) { return c.turns.slice(1).every(function (t) { return !t.segmentBreak; }); }), 'no request straddles two segments');
+    ok([].concat.apply([], chunks.map(function (c) { return c.turns; })).map(function (t) { return t.text; }).join('|') === turns.map(function (t) { return t.text; }).join('|'), 'splitting keeps every line, in order');
+
+    /* ---------- no key: tell them how to get one ---------- */
+    W.setView('show');
+    click('[data-action="script"][data-id="vg1"]');
+    ok(!!q('[data-action="voice-script"]'), 'the script dialog has Voice it');
+    click('[data-action="voice-script"]');
+    ok(/needs a Gemini API key/.test(q('#voiceArea').textContent), 'with no key it explains, instead of failing');
+    ok(calls.length === 0, 'and Google is not called');
+    click('#voiceArea [data-view="settings"]');
+
+    /* ---------- settings ---------- */
+    ok(!!q('#sh-key') && q('#sh-key').type === 'password', 'Settings has a hidden key field');
+    q('#sh-key').value = 'TEST-KEY-123';
+    q('#sh-model').value = 'gemini-2.5-flash-preview-tts';
+    q('#sh-v-player').value = 'Algenib';
+    click('[data-action="save-show"]');
+    ok(localStorage.getItem('warroom.geminiKey') === 'TEST-KEY-123', 'the key is saved in this browser');
+    ok(JSON.stringify(W.state()).indexOf('TEST-KEY-123') < 0, 'and is not in the app state, so never in a backup');
+    ok(W.state().show.voices.player === 'Algenib' && W.state().show.model === 'gemini-2.5-flash-preview-tts', 'voice and model choices are saved');
+
+    /* ---------- voice it ---------- */
+    W.setView('show');
+    click('[data-action="script"][data-id="vg1"]');
+    click('[data-action="voice-script"]');
+    return waitFor(function () { return q('#voiceArea audio'); });
+  }).then(function () {
+    var audio = q('#voiceArea audio');
+    ok(!!audio && /^blob:/.test(audio.src), 'finished audio is playable in the dialog', audio && audio.src);
+    var expect = V.chunkTurns(V.parseDialogue(game.script)).length;
+    ok(calls.length === expect, 'one request per part', calls.length + ' vs ' + expect);
+
+    var c0 = calls[0];
+    ok(/\/v1beta\/models\/gemini-2\.5-flash-preview-tts:generateContent$/.test(c0.url), 'uses generateContent on the chosen model — the endpoint that works from a browser', c0.url);
+    ok(c0.headers['x-goog-api-key'] === 'TEST-KEY-123', 'the key goes in the header, not the URL');
+    ok(calls.every(function (c) { return JSON.stringify(c.body.generationConfig.responseModalities) === '["AUDIO"]'; }), 'every request asks for audio');
+    ok(calls.every(function (c) { return !/Opponent:|PRODUCER/.test(c.body.contents[0].parts[0].text); }), 'producer notes never leave the device');
+
+    var multi = calls.filter(function (c) { return c.body.generationConfig.speechConfig.multiSpeakerVoiceConfig; });
+    var single = calls.filter(function (c) { return c.body.generationConfig.speechConfig.voiceConfig; });
+    ok(multi.length + single.length === calls.length, 'each request is either one voice or two');
+    ok(multi.every(function (c) { return c.body.generationConfig.speechConfig.multiSpeakerVoiceConfig.speakerVoiceConfigs.length === 2; }), 'two-voice requests configure exactly two');
+    ok(single.every(function (c) { return !/^[A-Z]+:/m.test(c.body.contents[0].parts[0].text); }), 'a one-voice request does not have the label read out');
+
+    var used = {};
+    multi.forEach(function (c) {
+      c.body.generationConfig.speechConfig.multiSpeakerVoiceConfig.speakerVoiceConfigs.forEach(function (v) { used[v.speaker] = v.voiceConfig.prebuiltVoiceConfig.voiceName; });
+    });
+    ok(used.MABRY === 'Algenib', 'the voice picked in Settings is the one sent for him', JSON.stringify(used));
+    ok(used.WHITCOMB === 'Algieba' && used.HARLAN === 'Kore', 'the others keep their defaults', JSON.stringify(used));
+    ok(Object.keys(used).length >= 3, 'the cast gets distinct voices', JSON.stringify(used));
+
+    var save = q('#voiceArea a[download]');
+    ok(!!save && /\.wav$/.test(save.getAttribute('download')) && /^hard-count-week-4/.test(save.getAttribute('download')), 'Save audio downloads a named .wav', save && save.getAttribute('download'));
+
+    /* ---------- the WAV itself ---------- */
+    return fetch(audio.src).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+      var v = new DataView(buf);
+      var tag = function (o) { return String.fromCharCode(v.getUint8(o), v.getUint8(o + 1), v.getUint8(o + 2), v.getUint8(o + 3)); };
+      ok(tag(0) === 'RIFF' && tag(8) === 'WAVE' && tag(36) === 'data', 'a valid WAV header');
+      ok(v.getUint32(24, true) === 24000 && v.getUint16(22, true) === 1 && v.getUint16(34, true) === 16, '24 kHz, mono, 16-bit, as Google returns it');
+      var pieces = calls.length * 4800;
+      ok(v.getUint32(40, true) > pieces && v.getUint32(40, true) === buf.byteLength - 44, 'every part plus the pauses between them made it in', v.getUint32(40, true) + ' of ' + (buf.byteLength - 44));
+    });
+  }).then(function () {
+    /* ---------- reopening does not pay twice ---------- */
+    var before = calls.length;
+    click('[data-action="close"]');
+    click('[data-action="script"][data-id="vg1"]');
+    ok(!!q('#voiceArea audio'), 'reopening the same script shows the audio already made');
+    ok(calls.length === before, 'without calling Google again');
+
+    /* ---------- an edit makes it stale ---------- */
+    q('#scriptBox').value = game.script.replace('WHITCOMB: ', 'WHITCOMB: Edited. ');
+    click('[data-action="close"]');
+    click('[data-action="script"][data-id="vg1"]');
+    ok(!q('#voiceArea audio'), 'after an edit the old audio is not passed off as current');
+
+    /* ---------- a rate limit is waited out ---------- */
+    calls = []; mode = 'ratelimit';
+    click('[data-action="voice-script"]');
+    return waitFor(function () { return q('#voiceArea audio') || q('#voiceArea .banner'); }, 12000);
+  }).then(function () {
+    ok(!!q('#voiceArea audio'), 'a "slow down" from Google is retried, not reported as a failure', q('#voiceArea') && q('#voiceArea').textContent);
+    ok(calls[0].body && calls.length === V.chunkTurns(V.parseDialogue(W.state().games[0].script)).length + 1, 'with exactly one extra request', calls.length);
+
+    /* ---------- a bad key says so plainly ---------- */
+    mode = 'badkey'; calls = [];
+    q('#scriptBox').value = W.state().games[0].script + '\nWHITCOMB: One more line.';
+    click('[data-action="close"]');
+    click('[data-action="script"][data-id="vg1"]');
+    click('[data-action="voice-script"]');
+    return waitFor(function () { return q('#voiceArea .banner'); });
+  }).then(function () {
+    ok(/rejected the API key/.test(q('#voiceArea').textContent), 'a bad key is reported in plain words', q('#voiceArea').textContent);
+    ok(calls.length === 1, 'and it stops at the first refusal instead of spending on the rest', calls.length);
+
+    /* ---------- closing stops it ---------- */
+    mode = 'ok'; delay = 400; calls = [];
+    click('[data-action="close"]');
+    click('[data-action="script"][data-id="vg1"]');
+    click('[data-action="voice-script"]');
+    return sleep(150);
+  }).then(function () {
+    ok(/Voicing part/.test(q('#voiceArea').textContent), 'progress shows while it works', q('#voiceArea').textContent);
+    click('[data-action="close"]');
+    return sleep(1200);
+  }).then(function () {
+    ok(calls.length === 1 && calls[0].signal.aborted, 'closing the dialog aborts the request in flight', calls.length + ' calls, aborted=' + (calls[0] && calls[0].signal.aborted));
+    ok(q('#modal').hidden, 'and nothing reopens afterwards');
+    ok(!/Stopped/.test(q('#view').textContent + q('#modal').textContent), 'no stray message appears on the page behind');
+    finish();
+  }).catch(function (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); });
+})();
+</script>
+</body></html>

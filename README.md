@@ -81,17 +81,24 @@ the grounds that last season's worry is not this season's.
 Type in what happened in a game and get a debate-show script out. The show is
 **HARD COUNT** and it has a cast:
 
-- **Ray Okonkwo** — host. Keeps time, sets the question, needles both of them
-  and enjoys the fight. Never takes a side.
-- **Marcus Boone** — played nine years on the offensive line. Argues from
-  having been in the huddle: defends players, blames coaches and scheme, has
-  no patience for analytics. Loud, personal, interrupts.
-- **Erin Vasquez** — analyst. Argues from the evidence. Dry, precise, and will
-  defend a player everybody hates if the numbers say so.
-- **Gabe Sandoval** — recruiting insider. Speaks in hedged certainties and
-  never reveals a source.
+- **Dale Whitcomb** — host. Called Group of Five games on regional TV for years
+  before taking the studio chair. Keeps time, sets the question, needles both
+  of them. Never takes a side.
+- **Terrance Mabry** — former player turned analyst. Three years starting at
+  guard in the Mountain West and two on NFL practice squads. Argues from having
+  been in the huddle: defends players, blames coaches and scheme, no patience
+  for analytics. Loud, interrupts.
+- **Kelsey Harlan** — college football analyst. Spent a decade charting film
+  for a recruiting service before TV. Argues from the evidence; dry, precise,
+  and will defend a player everybody hates if the numbers say so.
+- **Nate Ridenour** — former walk-on safety turned recruiting reporter. Speaks
+  in hedged certainties and never reveals a source.
 
-Boone and Vasquez argue from **different sources of authority** rather than at
+They are **fictional on purpose**. They are meant to sound like people you half
+recognise from a conference network, not to put invented opinions in real
+analysts' mouths — which matters more now that the script can be voiced.
+
+Mabry and Harlan argue from **different sources of authority** rather than at
 different volumes. That is the whole design: "I was in that huddle" against
 "the sample says otherwise" lets them clash over the same fact, and either one
 can be right on a given play. Loud-versus-calm runs out after two episodes.
@@ -118,6 +125,53 @@ the print dialogue and prints the script alone, without the app around it.
 Your edits are kept however you close the box. Change the score or the stats
 and a script you have not touched rewrites itself to match; one you have
 edited stays as it is until you ask for a rewrite.
+
+## Voice it
+
+**Voice it** in the script dialog reads the script aloud with the whole cast,
+each in their own voice, using Google's Gemini text-to-speech. You get a
+player in the dialog and **Save audio** for a `.wav` named after the game.
+
+The app still writes the script — Gemini only does the voices. Only the
+spoken lines are sent: the masthead, the cast notes, the stat lines and the
+producer notes stay on the device.
+
+**Setting it up (once):**
+
+1. Create a key at [Google AI Studio](https://aistudio.google.com).
+2. In Google Cloud, restrict the key to the *Generative Language API* and to
+   the website `rneholdings.github.io`, so a copied key is useless elsewhere.
+3. Paste it into **Settings → The show → Gemini API key** and save.
+
+The key lives in this browser only and is deliberately kept out of the app
+state, so it is never in an exported backup. Google bills per use; check
+their pricing. Voicing sends the script's names, scores and notes to Google —
+the only thing in War Room that leaves the device.
+
+Pick each person's voice and the voice model in the same place. The defaults
+were chosen from Google's one-word descriptions and have **not been listened
+to**, so if a voice sounds wrong for someone, that is the first thing to
+change.
+
+How it works, and why:
+
+- It calls `models/*:generateContent`. Google's newer Interactions endpoint
+  fails from a browser — its SDK sends a header their servers reject on the
+  CORS preflight. A probe from a real browser confirmed `generateContent`
+  answers normally.
+- One request can voice **at most two speakers** and the show has four, so the
+  script is split into runs of one or two voices, never across a segment, each
+  voiced separately and stitched into one WAV with short pauses between
+  (longer at a segment break).
+- A "slow down" from Google is waited out and retried; a bad key or a
+  retired model is reported in plain words and stops before spending more.
+- Closing the dialog stops the voicing. Reopening an unchanged script shows
+  the audio already made rather than paying for it again; edit it and the old
+  audio is not passed off as current.
+
+`voicetest.html` checks all of this against a stand-in for Google. The one
+thing it cannot check is Google itself: until it is run with a real key, the
+audio quality and the exact reply format are untested.
 
 ## Holding a spot
 
@@ -281,7 +335,7 @@ between them.
 
 ## Checking it
 
-There are nine suites, all driven through real DOM clicks with hit testing:
+There are ten suites, all driven through real DOM clicks with hit testing:
 
 - `selftest.html` — the app: counting, roster editing, season rollover,
   restoring a backup.
@@ -298,6 +352,10 @@ There are nine suites, all driven through real DOM clicks with hit testing:
   signee still becomes somebody on the roster.
 - `showtest.html` — game entry, every segment of the generated script, that a
   loss argues differently from a win, and that no real broadcaster is named.
+- `voicetest.html` — Voice it against a stand-in for Google: what is sent, the
+  two-voice limit, the stitched WAV, retries, a bad key, cancelling, and that
+  the key never reaches a backup. Run with `?custom=1` too, to check a cast
+  someone typed survives the change of default names.
 - `boardtest.html` — recruiting-board recognition, scored against a known board.
 
 `rostermock.html` and `boardmock.html` render the fake game screens the OCR

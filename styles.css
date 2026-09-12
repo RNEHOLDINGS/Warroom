@@ -255,7 +255,7 @@ svg.ic.sm { width: 14px; height: 14px; }
   padding: 3px 6px; border-radius: 5px; background: var(--ink); color: var(--plane);
 }
 
-input[type="text"], input[type="number"], input[type="color"], select, textarea {
+input[type="text"], input[type="password"], input[type="number"], input[type="color"], select, textarea {
   font: inherit; font-size: var(--t-body); color: var(--ink);
   background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-sm);
   padding: 8px 10px; width: 100%;
@@ -464,6 +464,22 @@ table.plain td.num, table.plain th.num { text-align: right; }
   font-family: var(--font-num); font-size: 12px; line-height: 1.55;
   white-space: pre; overflow-wrap: normal; overflow-x: auto;
 }
+
+.voice-area:empty { display: none; }
+.voice-area { margin-top: 10px; }
+.voice-progress {
+  display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--wash);
+}
+.voice-progress b { font-size: var(--t-small); grid-column: 1; }
+.voice-progress .meter { grid-column: 1; min-width: 0; }
+.voice-progress .btn { grid-column: 2; grid-row: 1 / span 2; }
+.voice-done {
+  display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center;
+  padding: 10px 12px; border: 1px solid var(--team); border-radius: var(--r-sm);
+}
+.voice-done audio { width: 100%; grid-column: 1 / -1; }
+.voice-meta { font-size: var(--t-small); color: var(--ink-2); }
 
 /* The printed page is the script and nothing else — no app chrome, no
    modal, black on white whatever theme the screen is in. */

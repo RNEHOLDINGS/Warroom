@@ -12,7 +12,7 @@
    miss.
    --------------------------------------------------------------- */
 
-var CACHE = 'warroom-v12';
+var CACHE = 'warroom-v14';
 
 var ASSETS = [
   './',
@@ -20,6 +20,7 @@ var ASSETS = [
   './styles.css',
   './app.js',
   './ocr.js',
+  './voice.js',
   './manifest.webmanifest',
   /* If these are missing here the installed app renders in system-ui offline
      forever, on a machine that has them cached and therefore looks fine. */

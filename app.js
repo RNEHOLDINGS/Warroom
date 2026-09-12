@@ -180,7 +180,7 @@
       recruits: [],
       storylines: [],
       games: [],
-      show: { title: 'HARD COUNT', host: 'Ray Okonkwo', player: 'Marcus Boone', analyst: 'Erin Vasquez', insider: 'Gabe Sandoval', useInsider: true },
+      show: { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true },
       history: []
     };
   }
@@ -200,7 +200,19 @@
           s.recruits = Array.isArray(parsed.recruits) ? parsed.recruits : [];
           s.storylines = Array.isArray(parsed.storylines) ? parsed.storylines : [];
           s.games = Array.isArray(parsed.games) ? parsed.games : [];
-          if (parsed.show && typeof parsed.show === 'object') s.show = Object.assign(s.show, parsed.show);
+          if (parsed.show && typeof parsed.show === 'object') {
+            var ps = parsed.show;
+            /* Every save writes the cast into storage, so a phone that has
+               been used since the first cast shipped holds those names and
+               would never see a change of defaults. If it still has exactly
+               the old default line-up, nobody chose it -- move it on. A cast
+               anybody actually edited is left alone. */
+            if (ps.host === 'Ray Okonkwo' && ps.player === 'Marcus Boone' &&
+                ps.analyst === 'Erin Vasquez' && ps.insider === 'Gabe Sandoval') {
+              ps = Object.assign({}, ps, { host: s.show.host, player: s.show.player, analyst: s.show.analyst, insider: s.show.insider });
+            }
+            s.show = Object.assign(s.show, ps);
+          }
           s.history = Array.isArray(parsed.history) ? parsed.history : [];
         }
       }
@@ -317,7 +329,7 @@
   }
 
   /* The cast. The two who argue do it from different sources of authority
-     rather than at different volumes — Boone from having played, Vasquez from
+     rather than at different volumes — Mabry from having played, Harlan from
      the evidence — which is what lets them clash over the same fact instead
      of simply disagreeing louder. Plain names on purpose: these have to sound
      like people on a Tuesday morning panel, not characters. All of them live
@@ -326,14 +338,25 @@
     var s = state.show || {};
     return {
       title:   s.title   || 'HARD COUNT',
-      host:    s.host    || 'Ray Okonkwo',
-      player:  s.player  || 'Marcus Boone',
-      analyst: s.analyst || 'Erin Vasquez',
-      insider: s.insider || 'Gabe Sandoval',
-      useInsider: s.useInsider !== false
+      host:    s.host    || 'Dale Whitcomb',
+      player:  s.player  || 'Terrance Mabry',
+      analyst: s.analyst || 'Kelsey Harlan',
+      insider: s.insider || 'Nate Ridenour',
+      useInsider: s.useInsider !== false,
+      /* Picked from Google's own one-word descriptions: a smooth host, an
+         excitable ex-lineman, a firm analyst, a knowledgeable insider. None
+         of the voices could be auditioned without a key, so these are the
+         first thing to change if one sounds wrong for the person. */
+      voices: {
+        host:    (s.voices && s.voices.host)    || 'Algieba',
+        player:  (s.voices && s.voices.player)  || 'Fenrir',
+        analyst: (s.voices && s.voices.analyst) || 'Kore',
+        insider: (s.voices && s.voices.insider) || 'Sadaltager'
+      },
+      model: s.model || 'gemini-3.1-flash-tts-preview'
     };
   }
-  /* "Marcus Boone" speaks as BOONE. */
+  /* "Terrance Mabry" speaks as MABRY. */
   function speakerLabel(name) {
     var parts = String(name || '').replace(/"[^"]*"/g, ' ').trim().split(/\s+/);
     return (parts[parts.length - 1] || 'HOST').toUpperCase();
@@ -346,7 +369,7 @@
     var ANALYST = speakerLabel(cast.analyst);
     var INSIDER = speakerLabel(cast.insider);
     /* Speakers are labelled by surname but addressed by first name, because
-       nobody on a panel says "BOONE, sixty seconds". */
+       nobody on a panel says "MABRY, sixty seconds". */
     var firstOf = function (n) { return String(n || '').trim().split(' ')[0] || n; };
     var hostF = firstOf(cast.host), playerF = firstOf(cast.player), analystF = firstOf(cast.analyst);
 
@@ -375,21 +398,29 @@
     w('');
     w('CAST — give each one its own voice.');
     w('');
-    w('  ' + HOST + ' (' + cast.host + ') — host. Keeps time, sets the question,');
-    w('    needles both of them and enjoys the fight. Never takes a side.');
+    /* Backgrounds for a regional college football panel: two former players
+       who went into broadcasting, two who came up through film rooms and
+       recruiting services. Deliberately fictional -- the names are meant to
+       sound like people you half-recognise from a conference network, not to
+       put invented opinions in real mouths. */
+    w('  ' + HOST + ' (' + cast.host + ') — host. Called Group of Five games on');
+    w('    regional TV for years before taking the studio chair. Keeps time,');
+    w('    sets the question, needles both of them. Never takes a side.');
     w('');
-    w('  ' + PLAYER + ' (' + cast.player + ') — played nine years on the offensive');
-    w('    line. Argues from having been in the huddle. Defends players,');
-    w('    blames coaches and scheme, has no time for analytics. Loud, personal,');
-    w('    interrupts.');
+    w('  ' + PLAYER + ' (' + cast.player + ') — former player. Three years starting');
+    w('    at guard in the Mountain West, two on NFL practice squads, then into');
+    w('    broadcasting. Argues from having been in the huddle: defends players,');
+    w('    blames coaches and scheme, no time for analytics. Loud, interrupts.');
     w('');
-    w('  ' + ANALYST + ' (' + cast.analyst + ') — analyst. Argues from evidence.');
-    w('    Dry, precise, never raises the volume, and will defend a player');
-    w('    everybody hates if the numbers say so.');
+    w('  ' + ANALYST + ' (' + cast.analyst + ') — college football analyst. Spent a');
+    w('    decade charting film for a recruiting service before TV. Argues from');
+    w('    evidence. Dry, precise, and will defend a player everybody hates if');
+    w('    the numbers say so.');
     if (cast.useInsider) {
       w('');
-      w('  ' + INSIDER + ' (' + cast.insider + ') — recruiting insider. Speaks in');
-      w('    hedged certainties. Never reveals a source.');
+      w('  ' + INSIDER + ' (' + cast.insider + ') — former walk-on safety turned');
+      w('    recruiting reporter. Speaks in hedged certainties. Never reveals a');
+      w('    source.');
     }
     w('');
     w('');
@@ -1321,6 +1352,9 @@
     /* Closing the dialog is cancelling the scan. Left running, it opened its
        review table later over whatever you had moved on to. */
     if (scanBusy) { scanBusy = false; scanRun++; }
+    /* Closing it also stops a voicing, so nothing keeps calling Google for a
+       dialog nobody is looking at. */
+    cancelVoicing();
   }
 
   /* compact drops the spelled-out group name, which a narrow table column
@@ -1883,16 +1917,114 @@
     var g = state.games.filter(function (x) { return x.id === id; })[0];
     if (!g) return;
     if (!g.script) writeScript(g);
+    /* reopening or rewriting the script makes a voicing in flight stale */
+    cancelVoicing();
     openModal('<h2>' + esc(gameLabel(g)) + '</h2>' +
-      '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:10px">Edit anything. <b>Copy</b> is the one you want for pasting into an AI — plain text travels better than a PDF. <b>Save as PDF</b> opens your print dialogue.</p>' +
+      '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:10px">Edit anything. <b>Voice it</b> reads it aloud with the whole cast. <b>Copy</b> gives you the plain text.</p>' +
       '<textarea id="scriptBox" class="script-box" spellcheck="false" data-id="' + g.id + '">' + esc(g.script) + '</textarea>' +
+      '<div id="voiceArea" class="voice-area" data-id="' + g.id + '"></div>' +
       '<div class="modal-actions">' +
         '<button class="btn" data-action="rewrite-script" data-id="' + g.id + '">Rewrite from the stats</button>' +
         '<span class="spacer"></span>' +
         '<button class="btn" data-action="close">Close</button>' +
         '<button class="btn" data-action="print-script" data-id="' + g.id + '">Save as PDF</button>' +
-        '<button class="btn primary" data-action="copy-script" data-id="' + g.id + '">Copy</button>' +
+        '<button class="btn" data-action="copy-script" data-id="' + g.id + '">Copy</button>' +
+        (window.WarRoomVoice ? '<button class="btn primary" data-action="voice-script" data-id="' + g.id + '">' + icon('mic') + 'Voice it</button>' : '') +
       '</div>');
+    /* Audio already made this session for exactly this script and cast is
+       shown again rather than paid for twice. */
+    var hit = voiceCache[g.id];
+    if (hit && hit.hash === voiceHash(g)) showVoiced(g, hit);
+  }
+
+  /* ---------- Voice it ---------- */
+
+  var voiceJob = null;     /* { ctrl, id } while a script is being voiced */
+  var voiceCache = {};     /* game id -> the last audio made for it this session */
+
+  function cancelVoicing() {
+    if (voiceJob) { voiceJob.ctrl.abort(); voiceJob = null; }
+  }
+
+  function voiceHash(g) {
+    var c = showCfg();
+    return hashStr(g.script + '|' + JSON.stringify(c.voices) + '|' + c.model + '|' + c.host + c.player + c.analyst + c.insider);
+  }
+
+  /* Only write into the dialog if it is still the dialog for this game. */
+  function voiceArea(id) {
+    var a = $('#voiceArea');
+    return a && a.getAttribute('data-id') === id ? a : null;
+  }
+
+  function showVoiced(g, hit) {
+    var a = voiceArea(g.id);
+    if (!a) return;
+    var mins = Math.floor(hit.seconds / 60), secs = Math.round(hit.seconds % 60);
+    var file = (showCfg().title + '-week-' + (g.week || 1) + '-' + (g.opponent || 'game'))
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.wav';
+    a.innerHTML = '<div class="voice-done">' +
+      '<audio controls preload="auto" src="' + hit.url + '"></audio>' +
+      '<div class="voice-meta"><span class="num">' + mins + ':' + (secs < 10 ? '0' : '') + secs + '</span> · ' + hit.requests + ' ' + plural(hit.requests, 'part') + ' stitched</div>' +
+      '<a class="btn small" href="' + hit.url + '" download="' + esc(file) + '">' + icon('download') + 'Save audio</a>' +
+    '</div>';
+  }
+
+  function voiceIt(id) {
+    var g = saveScriptBox(id);
+    var V = window.WarRoomVoice;
+    var a = voiceArea(id);
+    if (!g || !V || !a) return;
+    if (voiceJob) return;
+
+    var key = V.getKey();
+    if (!key) {
+      a.innerHTML = '<div class="banner">Voicing needs a Gemini API key. It takes a minute to make one in Google AI Studio, and it stays in this browser.' +
+        '<div style="margin-top:8px"><button class="btn small primary" data-view="settings">Add a key in Settings</button></div></div>';
+      return;
+    }
+
+    var c = showCfg();
+    var voices = {}, styles = {};
+    var role = function (name, voice, style) { var L = speakerLabel(name); voices[L] = voice; styles[L] = style; };
+    role(c.host, c.voices.host, 'a smooth, wry studio host who keeps the show moving');
+    role(c.player, c.voices.player, 'a loud, emphatic former offensive lineman who talks over people');
+    role(c.analyst, c.voices.analyst, 'a dry, precise analyst who stays calm and cutting');
+    role(c.insider, c.voices.insider, 'a low-key, confident recruiting reporter passing on what sources say');
+
+    var ctrl = new AbortController();
+    voiceJob = { ctrl: ctrl, id: id };
+    var progress = function (p) {
+      var area = voiceArea(id);
+      if (!area) return;
+      var pct = p.total ? Math.round(p.done / p.total * 100) : 0;
+      area.innerHTML = '<div class="voice-progress">' +
+        '<b>' + (p.waiting ? 'Google asked us to slow down — waiting ' + p.waiting + 's' : p.done >= p.total ? 'Stitching it together' : 'Voicing part ' + (p.done + 1) + ' of ' + p.total) + '</b>' +
+        '<div class="meter"><i style="width:' + pct + '%"></i></div>' +
+        '<button class="btn small" data-action="voice-cancel">Stop</button>' +
+      '</div>';
+    };
+    progress({ done: 0, total: 0 });
+
+    V.voiceScript({
+      script: g.script, key: key, model: c.model,
+      voices: voices, styles: styles, fallbackVoice: c.voices.host,
+      signal: ctrl.signal, onProgress: progress
+    }).then(function (wav) {
+      var old = voiceCache[id];
+      if (old) URL.revokeObjectURL(old.url);
+      var hit = { hash: voiceHash(g), url: URL.createObjectURL(wav.blob), seconds: wav.seconds, requests: wav.requests };
+      voiceCache[id] = hit;
+      showVoiced(g, hit);
+      toast('Voiced. Press play.');
+    }).catch(function (err) {
+      var area = voiceArea(id);
+      if (!area) return;
+      if (err && err.name === 'AbortError') { area.innerHTML = '<p class="help">Stopped.</p>'; return; }
+      area.innerHTML = '<div class="banner crit">' + esc((err && err.message) || 'Voicing failed.') + '</div>';
+    }).then(function () {
+      if (voiceJob && voiceJob.ctrl === ctrl) voiceJob = null;
+    });
   }
 
   /* navigator.clipboard needs a secure origin and is not there on a plain
@@ -1963,6 +2095,22 @@
       '<div class="field"><label for="sh-insider">The insider</label><input type="text" id="sh-insider" value="' + esc(sh.insider) + '"><div class="help">Recruiting news</div></div>' +
     '</div>' +
     '<label class="check"><input type="checkbox" id="sh-useins"' + (sh.useInsider ? ' checked' : '') + '> Include the recruiting segment, built from your own board</label>' +
+
+    '<div class="side-title">Voices</div>' +
+    (window.WarRoomVoice
+      ? '<div class="row">' +
+          '<div class="field" style="grid-column:1/-1"><label for="sh-key">Gemini API key</label>' +
+            '<input type="password" id="sh-key" autocomplete="off" spellcheck="false" value="' + esc(window.WarRoomVoice.getKey()) + '" placeholder="Paste the key from Google AI Studio">' +
+            '<div class="help">Create one at aistudio.google.com. It is kept in this browser only and is never put in a backup. In Google Cloud, restrict it to the Generative Language API and to rneholdings.github.io so a leaked copy is useless. Google bills per use — check their pricing.</div></div>' +
+          '<div class="field"><label for="sh-model">Voice model</label><select id="sh-model">' + options(window.WarRoomVoice.MODELS, sh.model, function (m) { return m.label; }, function (m) { return m.id; }) + '</select></div>' +
+          ['host', 'player', 'analyst', 'insider'].map(function (role) {
+            return '<div class="field"><label for="sh-v-' + role + '">' + esc(sh[role]) + '</label><select id="sh-v-' + role + '">' +
+              options(window.WarRoomVoice.VOICES, sh.voices[role], function (v) { return v.label; }, function (v) { return v.id; }) + '</select></div>';
+          }).join('') +
+        '</div>' +
+        '<p class="help" style="margin:0 0 8px">Voicing sends the script — names, scores, notes — to Google. Everything else in War Room stays on this device.</p>'
+      : '') +
+
     '<div class="modal-actions"><button class="btn primary" data-action="save-show">Save the cast</button></div></div>';
 
     html += '<div class="card"><div class="card-head"><h2>Targets by position</h2><span class="hint">How many you want on the roster at each spot. Sum: <b id="targetSum">' + sumTargets() + '</b> of ' + state.cap + '.</span></div><div class="targets-grid">';
@@ -2802,6 +2950,8 @@
         break;
       case 'copy-script': copyScript(id); break;
       case 'print-script': printScript(id); break;
+      case 'voice-script': voiceIt(id); break;
+      case 'voice-cancel': cancelVoicing(); break;
       case 'scan-roster': scanModal('players'); break;
       case 'scan-recruits': scanModal('recruits'); break;
       case 'scan-more':
@@ -2838,12 +2988,21 @@
       case 'save-show':
         state.show = {
           title: $('#sh-title').value.trim() || 'HARD COUNT',
-          host: $('#sh-host').value.trim() || 'Ray Okonkwo',
-          player: $('#sh-player').value.trim() || 'Marcus Boone',
-          analyst: $('#sh-analyst').value.trim() || 'Erin Vasquez',
-          insider: $('#sh-insider').value.trim() || 'Gabe Sandoval',
-          useInsider: $('#sh-useins').checked
+          host: $('#sh-host').value.trim() || 'Dale Whitcomb',
+          player: $('#sh-player').value.trim() || 'Terrance Mabry',
+          analyst: $('#sh-analyst').value.trim() || 'Kelsey Harlan',
+          insider: $('#sh-insider').value.trim() || 'Nate Ridenour',
+          useInsider: $('#sh-useins').checked,
+          voices: {
+            host: ($('#sh-v-host') || {}).value || 'Algieba',
+            player: ($('#sh-v-player') || {}).value || 'Fenrir',
+            analyst: ($('#sh-v-analyst') || {}).value || 'Kore',
+            insider: ($('#sh-v-insider') || {}).value || 'Sadaltager'
+          },
+          model: ($('#sh-model') || {}).value || 'gemini-3.1-flash-tts-preview'
         };
+        /* the key is not part of the state, so it never rides along in a backup */
+        if (window.WarRoomVoice && $('#sh-key')) window.WarRoomVoice.setKey($('#sh-key').value.trim());
         save(); render(); toast('Cast saved. Rewrite a script to hear them.'); break;
       case 'save-targets':
         $$('[data-target]').forEach(function (inp) { state.targets[inp.getAttribute('data-target')] = int(inp.value, 0, 99); });

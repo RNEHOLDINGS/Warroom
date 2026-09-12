@@ -19,6 +19,7 @@
 <pre id="out">RUNNING</pre>
 <script>localStorage.clear();</script>
 <script src="ocr.js"></script>
+<script src="voice.js"></script>
 <script src="app.js"></script>
 <script>
 (function () {
@@ -91,8 +92,8 @@
     ['COLD OPEN', 'THE QUESTION', 'STOCK UP', 'THE HOT SEAT', 'THE NUMBERS', 'THE INSIDER', 'FINAL TAKE', 'PRODUCER NOTES'].forEach(function (seg) {
       ok(s.indexOf(seg) >= 0, 'has the ' + seg + ' segment');
     });
-    ok(/^OKONKWO:/m.test(s) && /^BOONE:/m.test(s) && /^VASQUEZ:/m.test(s), 'the cast speaks by name');
-    ok(/^SANDOVAL:/m.test(s), 'the insider files his segment');
+    ok(/^WHITCOMB:/m.test(s) && /^MABRY:/m.test(s) && /^HARLAN:/m.test(s), 'the cast speaks by name');
+    ok(/^RIDENOUR:/m.test(s), 'the insider files his segment');
     ok(s.indexOf('HARD COUNT') >= 0, 'the show is branded');
     ok(/CAST —/.test(s), 'the script tells you who each voice is');
     ok(s.indexOf(hero) >= 0, 'the standout is named', hero);
@@ -180,15 +181,15 @@
 
     /* --- rename the ex-player and nobody hard-coded is left in the script.
        Fixed names and no insider segment: the sample roster has Marcuses. --- */
-    W.state().show = { title: 'HARD COUNT', host: 'Ray Okonkwo', player: 'Dan Pierce', analyst: 'Erin Vasquez', insider: 'Gabe Sandoval', useInsider: false };
+    W.state().show = { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Dan Pierce', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: false };
     var leftovers = 0;
     for (var i = 0; i < 40; i++) {
       var gx = { id: 'mx' + i, season: W.state().season, week: 1, opponent: 'Opp' + i, home: true, result: i % 2 ? 'W' : 'L', scoreFor: 20 + i, scoreAgainst: 17,
         yardsFor: 400, yardsAgainst: 300, toFor: i % 3, toAgainst: 1, thirdDown: '', penalties: '', notes: '',
         performances: [{ name: 'Star Guy', pos: 'QB', line: '3 TD', verdict: 'standout' }, { name: 'Bad Guy', pos: 'WR', line: '2 drops', verdict: 'struggled' }] };
-      if (/Marcus|BOONE/.test(W.buildScript(gx))) leftovers++;
+      if (/Terrance|MABRY/.test(W.buildScript(gx))) leftovers++;
     }
-    ok(leftovers === 0, 'a renamed ex-player is never called Marcus', leftovers + ' of 40 scripts');
+    ok(leftovers === 0, 'a renamed ex-player is never called Terrance', leftovers + ' of 40 scripts');
 
     /* --- the numbers segment argues only what was typed in --- */
     var base = { season: W.state().season, week: 6, opponent: 'Nebraska', home: true, thirdDown: '', penalties: '', notes: '', performances: [] };
