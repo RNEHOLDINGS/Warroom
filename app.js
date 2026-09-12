@@ -146,6 +146,7 @@
     flag: '<path d="M5 21V4M5 4h12l-2 4 2 4H5"/>',
     /* a bookmark, not a book: at 14px the book's spine turns to mush */
     book: '<path d="M7 4h10v16l-5-4-5 4z"/>',
+    mic: '<path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/>',
     users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4.5-6.2"/>',
     camera: '<path d="M3 8a2 2 0 0 1 2-2h2.5l1.2-2h6.6l1.2 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/>',
     spin: '<path d="M12 3a9 9 0 1 0 9 9" />'
@@ -178,6 +179,7 @@
       players: [],
       recruits: [],
       storylines: [],
+      games: [],
       history: []
     };
   }
@@ -196,6 +198,7 @@
           s.players = Array.isArray(parsed.players) ? parsed.players : [];
           s.recruits = Array.isArray(parsed.recruits) ? parsed.recruits : [];
           s.storylines = Array.isArray(parsed.storylines) ? parsed.storylines : [];
+          s.games = Array.isArray(parsed.games) ? parsed.games : [];
           s.history = Array.isArray(parsed.history) ? parsed.history : [];
         }
       }
@@ -250,6 +253,263 @@
     t.portalOut = state.players.filter(function (p) { return p.exit === 'portal'; }).length;
     t.openIfRisk = t.open + t.atRisk;   /* if everyone unhappy actually goes */
     return { rows: rows, totals: t };
+  }
+
+  /* ---------- the show ----------
+     Type in what happened in a game and get a debate-show script out, the
+     shape of the shouting-panel format: a host who sets it up, one voice that
+     goes too far, one that pulls it back. The roles are deliberately generic
+     -- no real broadcaster is having words put in their mouth -- and every
+     name is editable before it leaves.
+
+     The output is plain text in a box you can edit, because what it is
+     actually for is being pasted into something that makes audio. Print is
+     there for the PDF; Copy is the button that gets used. */
+
+  var VERDICTS = [
+    { id: 'standout',  label: 'Balled out' },
+    { id: 'solid',     label: 'Did his job' },
+    { id: 'struggled', label: 'Rough day' }
+  ];
+
+  function gameLabel(g) {
+    return (g.home ? 'vs ' : 'at ') + (g.opponent || 'Opponent') + ' · ' +
+      (g.result || 'W') + ' ' + int(g.scoreFor, 0, 999) + '–' + int(g.scoreAgainst, 0, 999);
+  }
+  function gameMargin(g) { return Math.abs(int(g.scoreFor, 0, 999) - int(g.scoreAgainst, 0, 999)); }
+  function recordThrough(g) {
+    var w = 0, l = 0, t = 0;
+    state.games.forEach(function (x) {
+      if (x.season !== g.season || int(x.week, 0, 99) > int(g.week, 0, 99)) return;
+      if (x.result === 'W') w++; else if (x.result === 'L') l++; else t++;
+    });
+    return w + '-' + l + (t ? '-' + t : '');
+  }
+
+  /* A stat line gets typed as a fragment -- "168 yards on 19 carries" -- and
+     then dropped into the middle of somebody's speech, so it has to be turned
+     into a sentence or it reads as "want from the man? did not give up a
+     pressure". */
+  function sentence(s) {
+    s = String(s || '').trim();
+    if (!s) return '';
+    s = s.charAt(0).toUpperCase() + s.slice(1);
+    return /[.!?]$/.test(s) ? s : s + '.';
+  }
+
+  /* Seeded, so one game always reads the same way but two in a row do not
+     open with the same sentence. */
+  function picker(seed) {
+    var s = (seed >>> 0) || 1;
+    return function (arr) {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return arr[Math.floor(s / 4294967296 * arr.length)];
+    };
+  }
+
+  function buildScript(g) {
+    var pick = picker(hashStr(g.id + '|' + g.opponent + '|' + g.scoreFor));
+    var us = state.school.name || 'Our team';
+    var mascot = state.school.mascot || '';
+    var them = g.opponent || 'the opponent';
+    var m = gameMargin(g);
+    var won = g.result === 'W', tied = g.result === 'T';
+    var blowout = m >= 21, comfortable = m >= 11 && m < 21, tight = m <= 10;
+    var score = int(g.scoreFor, 0, 999) + '-' + int(g.scoreAgainst, 0, 999);
+    var rec = recordThrough(g);
+    var perf = (g.performances || []).filter(function (p) { return p.name; });
+    var stars = perf.filter(function (p) { return p.verdict === 'standout'; });
+    var rough = perf.filter(function (p) { return p.verdict === 'struggled'; });
+    var L = [];
+    var w = function (s) { L.push(s == null ? '' : s); };
+    var rule = function () { w('============================================================'); };
+
+    rule();
+    w('  ' + (mascot ? us + ' ' + mascot : us).toUpperCase() + '  ' + (g.home ? 'VS' : 'AT') + '  ' + them.toUpperCase());
+    w('  ' + g.season + ' · Week ' + (g.week || 1) + ' · ' + (won ? 'WIN' : tied ? 'TIE' : 'LOSS') + ' ' + score + ' · Now ' + rec);
+    rule();
+    w('');
+    w('FORMAT: three voices. HOST sets it up and keeps time. TAKE argues the');
+    w('hot side and never hedges. COUNTER argues the other side with the');
+    w('context. Rename them to whatever your show calls them.');
+    w('');
+    w('');
+
+    w('--- COLD OPEN -------------------------------------------');
+    w('');
+    w('HOST: ' + pick([
+      'Good morning. ' + us + ' ' + (won ? 'got it done' : tied ? 'did not lose, which is the kindest thing I can say' : 'did not get it done') + ', ' + score + ', ' + (g.home ? 'at home' : 'on the road') + ' against ' + them + '. I already know where this is going.',
+      'We start where we have to. ' + score + ', ' + (g.home ? 'at home' : 'on the road') + ', ' + (won ? 'a win' : tied ? 'a tie' : 'a loss') + ' against ' + them + '. That puts them ' + rec + '.',
+      us + ' and ' + them + '. Final ' + score + '. ' + (blowout ? 'It was over early.' : tight ? 'It came down to the last possession.' : 'It was settled in the second half.') + ' Let us get into it.'
+    ]));
+    w('');
+    w('TAKE: ' + (won
+      ? pick([
+        (blowout ? 'THAT is what I have been waiting on. ' : '') + 'I do not want to hear about style points. You put ' + int(g.scoreFor, 0, 999) + ' on somebody ' + (g.home ? 'in your own building' : 'on the road') + ', that is a statement.',
+        'Everybody wanted to tell me what this team could not do. ' + score + '. Next question.'
+      ])
+      : tied
+        ? 'A tie is a loss with better manners. Nobody hangs a banner for this.'
+        : pick([
+          'No. Not today. You do not lose ' + (tight ? 'a game that close' : 'like that') + ' and then tell me the arrow is pointing up.',
+          'I have been patient with this football team. ' + score + ' is where the patience runs out.'
+        ])));
+    w('');
+    w('COUNTER: ' + pick([
+      'And there it is. One game, and the whole thing is either a dynasty or a disaster.',
+      'Take a breath. Let me give people some context before you bury anybody.',
+      'You are doing it again. Can we look at what actually happened first?'
+    ]));
+    w('');
+    w('');
+
+    w('--- SEGMENT 1: THE BIG QUESTION -------------------------');
+    w('');
+    var q = won
+      ? (blowout ? 'Is ' + us + ' actually this good, or is ' + them + ' just that bad?'
+                 : 'A win is a win — but should ' + (mascot ? 'the ' + mascot : us) + ' be winning this one by more?')
+      : tied ? 'What does a tie tell you about where this team really is?'
+             : (tight ? 'Who loses ' + us + ' this football game — the players or the plan?'
+                      : 'Was this a bad day, or is this simply who ' + us + ' is?');
+    w('HOST: Question on the board — ' + q);
+    w('');
+    w('TAKE: ' + (won
+      ? 'I am not doing the thing where we win and still go looking for something to cry about. They are ' + rec + '. ' + (blowout ? 'They did not just win, they embarrassed somebody.' : 'You bank it and you move on.')
+      : 'Both, and anybody telling you otherwise is selling something. ' + (tight ? 'Close losses still go in the same column.' : 'Nobody gets beaten by that much by accident.')));
+    w('');
+    w('COUNTER: ' + (won
+      ? (blowout || comfortable ? 'Winning by ' + m + ' hides a lot. Enjoy it — the tape will still have notes.' : 'A ' + m + '-point game is a ' + m + '-point game. They found a way, and finding a way is a skill.')
+      : (tight ? 'They were one play from a completely different conversation. I am not burning the season over that.' : 'Ugly games happen to good teams. What matters is what shows up next week.')));
+    w('');
+    w('HOST: Hold that thought. We are coming back to it.');
+    w('');
+    w('');
+
+    w('--- SEGMENT 2: STOCK UP ---------------------------------');
+    w('');
+    if (stars.length) {
+      stars.slice(0, 3).forEach(function (p, i) {
+        w('HOST: ' + (i === 0 ? 'Start me with ' : 'Next. ') + p.name + (p.pos ? ', ' + p.pos : '') + '. ' + sentence(p.line || 'Big afternoon'));
+        w('');
+        w('TAKE: ' + pick([
+          'Put some RESPECT on it. ' + p.name + ' did that ' + (won ? 'in a winning effort' : 'while everybody around him was drowning') + '. ' + (p.line ? sentence(p.line) + ' ' : '') + 'That is not a good game, that is a statement game.',
+          'I told everybody about ' + p.name + '. I have been telling you for weeks. ' + (p.line ? sentence(p.line) + ' ' : '') + 'Nobody wanted to hear it.',
+          'What more do you want from the man? ' + (p.line ? sentence(p.line) + ' ' : '') + 'He carried people today.'
+        ]));
+        w('');
+        w('COUNTER: ' + pick([
+          'No argument, and I will go further — that is the version of him you build the whole thing around.',
+          'Agreed, and the part people will miss is that he did it without much help.',
+          'Best player on the field. I do not need talking into it.'
+        ]));
+        w('');
+      });
+    } else {
+      w('HOST: Nobody got flagged as a standout this week. Who are we giving it to?');
+      w('');
+      w('TAKE: That is the story right there. ' + (won ? 'You won and you cannot name a hero.' : 'You lost and not one man stood up.'));
+      w('');
+      w('COUNTER: Some games are just eleven people doing their job. Not everything needs a headline.');
+      w('');
+    }
+    w('');
+
+    w('--- SEGMENT 3: THE HOT SEAT -----------------------------');
+    w('');
+    if (rough.length) {
+      rough.slice(0, 3).forEach(function (p, i) {
+        w('HOST: ' + (i === 0 ? 'Now the other side of it. ' : 'One more. ') + p.name + (p.pos ? ' at ' + p.pos : '') + '. ' + sentence(p.line || 'It was not his day'));
+        w('');
+        w('TAKE: ' + pick([
+          'I am not going to sit here and protect him. ' + (p.line ? sentence(p.line) + ' ' : '') + 'At some point you are what the tape says you are.',
+          'Somebody has to say it. ' + p.name + ' cost them ' + (won ? 'points they were fortunate not to need' : 'this football game') + '. ' + (p.line ? sentence(p.line) + ' ' : ''),
+          'You cannot win at this level with that. ' + (p.line ? sentence(p.line) + ' ' : '') + 'That is the whole take.'
+        ]));
+        w('');
+        w('COUNTER: ' + pick([
+          'And what is the plan — bench him? Who is behind him? This is where the take falls apart.',
+          'One bad afternoon from a kid who has been fine all year.',
+          'I will take the heat for defending him. He was not helped. Look at what was going on around him.'
+        ]));
+        w('');
+        w('TAKE: That is an excuse.');
+        w('');
+        w('COUNTER: That is context. There is a difference.');
+        w('');
+      });
+    } else {
+      w('HOST: Nobody on the hot seat this week.');
+      w('');
+      w('TAKE: Then somebody is not being honest with the film.');
+      w('');
+      w('COUNTER: Or — and hear me out — everybody played fine.');
+      w('');
+    }
+    w('');
+
+    var nums = [];
+    if (g.yardsFor || g.yardsAgainst) nums.push('Yards: ' + (g.yardsFor || '?') + ' for, ' + (g.yardsAgainst || '?') + ' against');
+    if (g.toFor || g.toAgainst) nums.push('Turnovers: ' + int(g.toFor, 0, 99) + ' given away, ' + int(g.toAgainst, 0, 99) + ' taken');
+    if (g.thirdDown) nums.push('Third down: ' + g.thirdDown);
+    if (g.penalties) nums.push('Penalties: ' + g.penalties);
+    if (nums.length) {
+      w('--- SEGMENT 4: THE NUMBERS ------------------------------');
+      w('');
+      nums.forEach(function (n) { w('   ' + n); });
+      w('');
+      var toDiff = int(g.toAgainst, 0, 99) - int(g.toFor, 0, 99);
+      w('HOST: The numbers behind it.');
+      w('');
+      w('TAKE: ' + (toDiff < 0
+        ? 'You lost the turnover battle by ' + Math.abs(toDiff) + '. That is not bad luck, that is carelessness, and it gets you beaten in November.'
+        : toDiff > 0
+          ? 'Plus ' + toDiff + ' in takeaways. That is coaching, that is want-to, and that is why the scoreboard reads the way it does.'
+          : 'Even in turnovers, so nobody gets to hide behind the football. This was decided by who was better.'));
+      w('');
+      w('COUNTER: ' + (g.thirdDown
+        ? 'Third down is the number I care about — ' + g.thirdDown + '. That tells you whether the plan worked. The highlight does not.'
+        : 'Yardage is a vanity number. Points are the only one that pays.'));
+      w('');
+      w('');
+    }
+
+    w('--- SEGMENT 5: FINAL TAKE -------------------------------');
+    w('');
+    w('HOST: Ten seconds each. Where is this team going?');
+    w('');
+    w('TAKE: ' + (won
+      ? 'They are ' + rec + ' and I am not apologising for being excited. Book it.'
+      : 'Until I see it fixed, I am off the bandwagon. ' + rec + ' is ' + rec + '.'));
+    w('');
+    w('COUNTER: ' + (won
+      ? 'Good win. Next week tells us whether it meant anything.'
+      : 'One football game. Ask me again in three weeks and I will give you a real answer.'));
+    w('');
+    if (g.notes) { w('HOST: One more before we go — ' + g.notes); w(''); }
+    w('HOST: That is the show.');
+    w('');
+    w('');
+
+    rule();
+    w('  PRODUCER NOTES — raw facts, not to be read aloud');
+    rule();
+    w('Team:        ' + (us + (mascot ? ' ' + mascot : '')));
+    w('Opponent:    ' + them + (g.home ? ' (home)' : ' (away)'));
+    w('Season/Week: ' + g.season + ' / ' + (g.week || 1));
+    w('Result:      ' + (won ? 'WIN' : tied ? 'TIE' : 'LOSS') + ' ' + score + '  (margin ' + m + ')');
+    w('Record:      ' + rec);
+    nums.forEach(function (n) { w(n); });
+    if (perf.length) {
+      w('');
+      w('Players:');
+      perf.forEach(function (p) {
+        var v = VERDICTS.filter(function (x) { return x.id === p.verdict; })[0];
+        w('  ' + p.name + (p.pos ? ' (' + p.pos + ')' : '') + ' — ' + (v ? v.label : '') + (p.line ? ' — ' + p.line : ''));
+      });
+    }
+    if (g.notes) { w(''); w('Notes: ' + g.notes); }
+    w('');
+    return L.join('\n');
   }
 
   /* ---------- storylines ----------
@@ -931,6 +1191,7 @@
     else if (view === 'board') html = renderRecruits('hs');
     else if (view === 'portal') html = renderRecruits('portal');
     else if (view === 'class') html = renderClass();
+    else if (view === 'show') html = renderShow();
     else if (view === 'settings') html = renderSettings();
     el.innerHTML = html;
     window.scrollTo(0, 0);
@@ -1298,6 +1559,193 @@
       html += '</div>';
     }
     return html;
+  }
+
+  function renderShow() {
+    var games = state.games.slice().sort(function (a, b) {
+      return (b.season - a.season) || (int(b.week, 0, 99) - int(a.week, 0, 99));
+    });
+    var html = '<div class="view-head"><h1>The show</h1>' +
+      '<div class="actions"><button class="btn primary" data-action="add-game">' + icon('plus') + 'Add a game</button></div>' +
+      '<p class="sub">Put in what happened and get a debate-show script out — a host, a hot take and a counter, arguing about your players. Edit it, then copy it into whatever makes your audio, or save it as a PDF.</p></div>';
+
+    if (!games.length) {
+      return html + '<div class="card"><div class="empty"><b>No games yet</b>Add one and the script writes itself from the score, the stats and who played well.</div>' +
+        '<div class="modal-actions" style="justify-content:center;margin-top:0"><button class="btn primary" data-action="add-game">' + icon('plus') + 'Add a game</button></div></div>';
+    }
+
+    html += '<div class="card"><div class="list">';
+    games.forEach(function (g) {
+      var perf = (g.performances || []).filter(function (p) { return p.name; });
+      var good = perf.filter(function (p) { return p.verdict === 'standout'; }).length;
+      var bad = perf.filter(function (p) { return p.verdict === 'struggled'; }).length;
+      var sub = ['Week ' + (g.week || 1)];
+      if (good) sub.push(good + ' stood out');
+      if (bad) sub.push(bad + ' struggled');
+      if (g.script) sub.push('script edited');
+      html += '<div class="item game-row">' +
+        '<span class="chip ' + (g.result === 'W' ? 'good' : g.result === 'L' ? 'crit' : 'outline') + '">' + (g.result || 'W') + '</span>' +
+        '<span class="who"><b>' + esc(gameLabel(g)) + '</b><span>' + esc(sub.join(' · ')) + '</span></span>' +
+        '<span class="meta">' +
+          '<button class="btn small" data-action="edit-game" data-id="' + g.id + '">Edit</button>' +
+          '<button class="btn small primary" data-action="script" data-id="' + g.id + '">' + icon('mic') + 'Script</button>' +
+        '</span>' +
+      '</div>';
+    });
+    html += '</div></div>';
+    return html;
+  }
+
+  function gameModal(g) {
+    var isNew = !g;
+    g = g || {
+      id: '', season: state.season, week: (state.games.filter(function (x) { return x.season === state.season; }).length + 1),
+      opponent: '', home: true, result: 'W', scoreFor: '', scoreAgainst: '',
+      yardsFor: '', yardsAgainst: '', toFor: '', toAgainst: '', thirdDown: '', penalties: '',
+      performances: [], notes: '', script: ''
+    };
+    var perf = (g.performances || []).slice();
+    while (perf.length < 3) perf.push({ name: '', pos: '', line: '', verdict: 'standout' });
+
+    var rosterNames = state.players.slice().sort(byOvr).map(function (p) { return p.name; });
+
+    openModal('<h2>' + (isNew ? 'Add a game' : 'Edit the game') + '</h2>' +
+      '<div class="row">' +
+        '<div class="field"><label for="g-opp">Opponent</label><input type="text" id="g-opp" value="' + esc(g.opponent) + '" placeholder="Kansas State"></div>' +
+        '<div class="field"><label for="g-where">Where</label><select id="g-where"><option value="1"' + (g.home ? ' selected' : '') + '>Home</option><option value="0"' + (g.home ? '' : ' selected') + '>Away</option></select></div>' +
+        '<div class="field"><label for="g-week">Week</label><input type="number" id="g-week" value="' + int(g.week, 1, 25) + '" min="1" max="25"></div>' +
+      '</div>' +
+      '<div class="row">' +
+        '<div class="field"><label for="g-result">Result</label><select id="g-result">' + options([['W', 'Win'], ['L', 'Loss'], ['T', 'Tie']], g.result, function (x) { return x[1]; }, function (x) { return x[0]; }) + '</select></div>' +
+        '<div class="field"><label for="g-sf">Our points</label><input type="number" id="g-sf" value="' + (g.scoreFor === '' ? '' : int(g.scoreFor, 0, 999)) + '" min="0" max="999"></div>' +
+        '<div class="field"><label for="g-sa">Their points</label><input type="number" id="g-sa" value="' + (g.scoreAgainst === '' ? '' : int(g.scoreAgainst, 0, 999)) + '" min="0" max="999"></div>' +
+      '</div>' +
+
+      '<div class="side-title">Who to talk about</div>' +
+      '<datalist id="rosterNames">' + rosterNames.map(function (n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>' +
+      '<div id="perfRows">' + perf.map(function (p, i) { return perfRow(p, i); }).join('') + '</div>' +
+      '<button class="btn small" data-action="add-perf" style="margin-top:6px">' + icon('plus') + 'Another player</button>' +
+
+      '<details class="more"><summary>Team stats — optional, they feed a segment</summary>' +
+        '<div class="row">' +
+          '<div class="field"><label for="g-yf">Our yards</label><input type="number" id="g-yf" value="' + esc(g.yardsFor) + '" min="0" max="1200"></div>' +
+          '<div class="field"><label for="g-ya">Their yards</label><input type="number" id="g-ya" value="' + esc(g.yardsAgainst) + '" min="0" max="1200"></div>' +
+          '<div class="field"><label for="g-tof">We gave away</label><input type="number" id="g-tof" value="' + esc(g.toFor) + '" min="0" max="20"></div>' +
+          '<div class="field"><label for="g-toa">We took</label><input type="number" id="g-toa" value="' + esc(g.toAgainst) + '" min="0" max="20"></div>' +
+        '</div>' +
+        '<div class="row">' +
+          '<div class="field"><label for="g-3d">Third down</label><input type="text" id="g-3d" value="' + esc(g.thirdDown) + '" placeholder="7 of 14"></div>' +
+          '<div class="field"><label for="g-pen">Penalties</label><input type="text" id="g-pen" value="' + esc(g.penalties) + '" placeholder="8 for 65"></div>' +
+        '</div>' +
+        '<div class="field"><label for="g-notes">Anything else worth a mention</label><input type="text" id="g-notes" value="' + esc(g.notes) + '" placeholder="Fourth-down call at the end, injury, weather…"></div>' +
+      '</details>' +
+
+      '<div class="modal-actions">' +
+        (isNew ? '' : '<button class="btn danger" data-action="delete-game" data-id="' + g.id + '">' + icon('trash') + 'Remove</button>') +
+        '<span class="spacer"></span>' +
+        '<button class="btn" data-action="close">Cancel</button>' +
+        '<button class="btn primary" data-action="save-game" data-id="' + (g.id || '') + '">' + (isNew ? 'Add and write it' : 'Save') + '</button>' +
+      '</div>');
+  }
+
+  function perfRow(p, i) {
+    return '<div class="perf-row">' +
+      '<input type="text" list="rosterNames" data-perf="name" data-i="' + i + '" value="' + esc(p.name) + '" placeholder="Player">' +
+      '<input type="text" data-perf="line" data-i="' + i + '" value="' + esc(p.line) + '" placeholder="24 of 31, 312 yards, 3 TD">' +
+      '<select data-perf="verdict" data-i="' + i + '">' + options(VERDICTS, p.verdict || 'standout', function (v) { return v.label; }, function (v) { return v.id; }) + '</select>' +
+    '</div>';
+  }
+
+  function readGameForm(id) {
+    var g = id ? state.games.filter(function (x) { return x.id === id; })[0] : null;
+    if (!g) { g = { id: uid(), season: state.season, script: '' }; state.games.push(g); }
+    g.opponent = $('#g-opp').value.trim();
+    g.home = $('#g-where').value === '1';
+    g.week = int($('#g-week').value, 1, 25);
+    g.result = $('#g-result').value;
+    g.scoreFor = int($('#g-sf').value, 0, 999);
+    g.scoreAgainst = int($('#g-sa').value, 0, 999);
+    g.yardsFor = int($('#g-yf').value, 0, 1200) || '';
+    g.yardsAgainst = int($('#g-ya').value, 0, 1200) || '';
+    g.toFor = int($('#g-tof').value, 0, 20) || '';
+    g.toAgainst = int($('#g-toa').value, 0, 20) || '';
+    g.thirdDown = $('#g-3d').value.trim();
+    g.penalties = $('#g-pen').value.trim();
+    g.notes = $('#g-notes').value.trim();
+
+    var rows = {};
+    $$('[data-perf]').forEach(function (el) {
+      var i = el.getAttribute('data-i');
+      rows[i] = rows[i] || { name: '', line: '', verdict: 'standout', pos: '' };
+      rows[i][el.getAttribute('data-perf')] = el.value.trim();
+    });
+    g.performances = Object.keys(rows).map(function (k) { return rows[k]; })
+      .filter(function (p) { return p.name; })
+      .map(function (p) {
+        /* fill the position in from the roster so the script can say
+           "at quarterback" without anyone typing it twice */
+        var hit = state.players.filter(function (x) { return x.name.toLowerCase() === p.name.toLowerCase(); })[0];
+        if (hit) p.pos = hit.pos;
+        return p;
+      });
+    return g;
+  }
+
+  function scriptModal(id) {
+    var g = state.games.filter(function (x) { return x.id === id; })[0];
+    if (!g) return;
+    if (!g.script) g.script = buildScript(g);
+    openModal('<h2>' + esc(gameLabel(g)) + '</h2>' +
+      '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:10px">Edit anything. <b>Copy</b> is the one you want for pasting into an AI — plain text travels better than a PDF. <b>Save as PDF</b> opens your print dialogue.</p>' +
+      '<textarea id="scriptBox" class="script-box" spellcheck="false">' + esc(g.script) + '</textarea>' +
+      '<div class="modal-actions">' +
+        '<button class="btn" data-action="rewrite-script" data-id="' + g.id + '">Rewrite from the stats</button>' +
+        '<span class="spacer"></span>' +
+        '<button class="btn" data-action="close">Close</button>' +
+        '<button class="btn" data-action="print-script" data-id="' + g.id + '">Save as PDF</button>' +
+        '<button class="btn primary" data-action="copy-script" data-id="' + g.id + '">Copy</button>' +
+      '</div>');
+  }
+
+  /* navigator.clipboard needs a secure origin and is not there on a plain
+     http LAN address, so fall back to the old selection trick rather than
+     silently doing nothing. */
+  function copyScript(id) {
+    var g = saveScriptBox(id);
+    if (!g) return;
+    var done = function () { toast('Script copied. Paste it into your AI.'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(g.script).then(done, function () { legacyCopy(g.script, done); });
+    } else {
+      legacyCopy(g.script, done);
+    }
+  }
+  function legacyCopy(text, done) {
+    var box = $('#scriptBox');
+    if (box) {
+      box.focus();
+      box.select();
+      try {
+        if (document.execCommand('copy')) { done(); return; }
+      } catch (e) {}
+    }
+    toast('Could not copy — select the text and copy it by hand.');
+  }
+
+  function printScript(id) {
+    var g = saveScriptBox(id);
+    if (!g) return;
+    var area = $('#printArea');
+    area.textContent = g.script;
+    /* Chromium will not paint a print job for content added in the same tick */
+    setTimeout(function () { window.print(); }, 60);
+  }
+
+  function saveScriptBox(id) {
+    var box = $('#scriptBox');
+    var g = state.games.filter(function (x) { return x.id === id; })[0];
+    if (box && g) { g.script = box.value; save(); }
+    return g;
   }
 
   function renderSettings() {
@@ -2008,6 +2456,35 @@
         if (rollStorylines(uid())) { save(); render(); toast('A different set of storylines.'); }
         else toast('Add a couple more recruits first.');
         break;
+      case 'add-game': gameModal(null); break;
+      case 'edit-game':
+        var eg = state.games.filter(function (x) { return x.id === id; })[0];
+        if (eg) gameModal(eg);
+        break;
+      case 'save-game':
+        var sg = readGameForm(id);
+        if (!sg.opponent) { $('#g-opp').focus(); return; }
+        /* a fresh game gets its script now; an edited one keeps whatever the
+           user has already reworded until they ask for a rewrite */
+        if (!sg.script) sg.script = buildScript(sg);
+        save(); closeModal(); view = 'show'; render(); scriptModal(sg.id); break;
+      case 'delete-game':
+        state.games = state.games.filter(function (x) { return x.id !== id; });
+        save(); closeModal(); render(); toast('Removed.'); break;
+      case 'add-perf':
+        var rows = $('#perfRows');
+        if (rows) {
+          var n = rows.querySelectorAll('.perf-row').length;
+          rows.insertAdjacentHTML('beforeend', perfRow({ name: '', line: '', verdict: 'standout' }, n));
+        }
+        break;
+      case 'script': scriptModal(id); break;
+      case 'rewrite-script':
+        var rg = state.games.filter(function (x) { return x.id === id; })[0];
+        if (rg) { rg.script = buildScript(rg); save(); scriptModal(id); toast('Rewritten from the stats.'); }
+        break;
+      case 'copy-script': copyScript(id); break;
+      case 'print-script': printScript(id); break;
       case 'scan-roster': scanModal('players'); break;
       case 'scan-recruits': scanModal('recruits'); break;
       case 'import-scan': doImportScan(); break;
@@ -2119,6 +2596,8 @@
     /* lets a screenshot harness show the review table without waiting on the
        recogniser */
     showScanReview: function (rows) { scanRows = rows; renderScanReview(); },
+    buildScript: buildScript,
+    saveScriptBox: saveScriptBox,
     stories: currentStories,
     rollStorylines: rollStorylines,
     syncStorylines: syncStorylines

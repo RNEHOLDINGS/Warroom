@@ -24,6 +24,8 @@ always the real one.
   plus every past class after you advance.
 - **Storylines** — two or three recruits a season get a story that generates
   itself from your board and closes itself when you commit or lose them.
+- **Show** — put in a game and get an ESPN-style debate script out, ready to
+  paste into whatever makes your podcast audio.
 - **Advance season** — one click does the offseason: seniors and marked exits
   leave, everyone else moves up a year (redshirts keep theirs), commits enroll
   as freshmen or at their portal class, and the board resets.
@@ -71,6 +73,24 @@ one tick-list of the whole roster with two boxes per player:
 Seniors are not offered either box, because they are already leaving. Ticking
 Gone clears Might automatically. Advancing the season clears every Might, on
 the grounds that last season's worry is not this season's.
+
+## The show
+
+Type in what happened in a game and get a debate-show script out: a HOST who
+sets it up, a TAKE who goes too far, and a COUNTER who pulls it back. Six
+segments — cold open, the big question, stock up, the hot seat, the numbers,
+final take — followed by producer notes holding the raw facts.
+
+It is written from your data, so it names your players, quotes the stat lines
+you typed, argues the turnover margin the right way round for a win or a loss,
+and works out your running record. The roles are generic on purpose: no real
+broadcaster has words put in their mouth, and you can rename them to whatever
+your show calls them.
+
+The script lands in a box you can edit. **Copy** is the button you want —
+plain text pastes into an AI far better than a PDF does. **Save as PDF** opens
+the print dialogue and prints the script alone, without the app around it.
+**Rewrite from the stats** throws your edits away and regenerates.
 
 ## Holding a spot
 
@@ -232,7 +252,7 @@ between them.
 
 ## Checking it
 
-There are seven suites, all driven through real DOM clicks with hit testing:
+There are eight suites, all driven through real DOM clicks with hit testing:
 
 - `selftest.html` — the app: counting, roster editing, season rollover.
 - `ocrtest.html` — recognition accuracy, scored against a known roster, plus
@@ -246,6 +266,8 @@ There are seven suites, all driven through real DOM clicks with hit testing:
 - `portaltest.html` — outgoing transfers and what they do to the count.
 - `slottest.html` — held spots, the shortened form, and that a nameless
   signee still becomes somebody on the roster.
+- `showtest.html` — game entry, every segment of the generated script, that a
+  loss argues differently from a win, and that no real broadcaster is named.
 - `boardtest.html` — recruiting-board recognition, scored against a known board.
 
 `rostermock.html` and `boardmock.html` render the fake game screens the OCR

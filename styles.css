@@ -175,7 +175,7 @@ svg.ic.sm { width: 14px; height: 14px; }
 @media (max-width: 640px) {
   .nav {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; margin: 0; gap: 0;
-    display: grid; grid-template-columns: repeat(5, 1fr);
+    display: grid; grid-template-columns: repeat(6, 1fr);
     background: var(--surface-1); border-top: 1px solid var(--border);
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
   }
@@ -443,6 +443,44 @@ table.plain td.num, table.plain th.num { text-align: right; }
 .story-log-item.lost { border-left-color: var(--critical); }
 .story-log-item b { display: block; color: var(--ink); }
 .story-log-item span { color: var(--ink-muted); text-wrap: pretty; }
+
+/* ---------- the show ---------- */
+
+.game-row { cursor: default; }
+.game-row .meta { gap: 6px; }
+
+.perf-row {
+  display: grid; grid-template-columns: 1.1fr 1.6fr auto; gap: 6px;
+  margin-bottom: 6px;
+}
+.perf-row input, .perf-row select { padding: 6px 8px; font-size: var(--t-small); }
+@media (max-width: 560px) {
+  .perf-row { grid-template-columns: 1fr 1fr; }
+  .perf-row input[data-perf="line"] { grid-column: 1 / -1; }
+}
+
+.script-box {
+  width: 100%; min-height: 46vh; resize: vertical;
+  font-family: var(--font-num); font-size: 12px; line-height: 1.55;
+  white-space: pre; overflow-wrap: normal; overflow-x: auto;
+}
+
+/* The printed page is the script and nothing else — no app chrome, no
+   modal, black on white whatever theme the screen is in. */
+.print-only { display: none; }
+
+@media print {
+  body > *:not(#printArea) { display: none !important; }
+  body { background: #fff; color: #000; display: block; }
+  .print-only {
+    display: block !important;
+    font-family: "Plex Mono", ui-monospace, Consolas, monospace;
+    font-size: 10.5pt; line-height: 1.5; color: #000;
+    white-space: pre-wrap; word-break: break-word;
+    margin: 0; padding: 0;
+  }
+  @page { margin: 16mm 14mm; }
+}
 
 /* ---------- holding a spot ---------- */
 

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Show test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function hits(el) {
+    el.scrollIntoView({ block: 'center' });
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return 'zero-size';
+    var t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!t) return 'nothing at point';
+    return (t === el || el.contains(t)) ? true : 'covered by ' + t.tagName.toLowerCase();
+  }
+  function click(sel) {
+    var el = q(sel);
+    if (!el) { out.push('NOEL ' + sel); fails++; render(); return false; }
+    var h = hits(el); ok(h === true, 'clickable: ' + sel, h); el.click(); return true;
+  }
+  function set(sel, v) { var el = q(sel); el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom;
+  try {
+    click('[data-action="load-sample"]');
+    click('[data-view="show"]');
+    ok(/No games yet/.test(q('#view').textContent), 'empty state before any game');
+
+    /* --- add a game --- */
+    click('[data-action="add-game"]');
+    ok(!!q('#g-opp'), 'the game form opens');
+    ok(!!q('#perfRows'), 'and it asks who to talk about');
+    ok(q('details.more').open === false, 'team stats start folded');
+
+    var roster = W.state().players.slice().sort(function (a, b) { return (b.ovr || 0) - (a.ovr || 0); });
+    var hero = roster[0].name, goat = roster[1].name;
+
+    set('#g-opp', 'Kansas State');
+    set('#g-where', '1');
+    set('#g-week', '4');
+    set('#g-result', 'W');
+    set('#g-sf', '38');
+    set('#g-sa', '17');
+    set('#g-yf', '505'); set('#g-ya', '288');
+    set('#g-tof', '1'); set('#g-toa', '3');
+    set('#g-3d', '9 of 14'); set('#g-pen', '5 for 40');
+    var names = document.querySelectorAll('[data-perf="name"]');
+    var lines = document.querySelectorAll('[data-perf="line"]');
+    var verds = document.querySelectorAll('[data-perf="verdict"]');
+    names[0].value = hero; lines[0].value = '24 of 31, 312 yards, 3 TD'; verds[0].value = 'standout';
+    names[1].value = goat; lines[1].value = '2 drops, a holding call'; verds[1].value = 'struggled';
+    click('[data-action="save-game"]');
+
+    var st = W.state();
+    ok(st.games.length === 1, 'the game is stored', st.games.length);
+    var g = st.games[0];
+    ok(g.opponent === 'Kansas State' && g.scoreFor === 38 && g.scoreAgainst === 17, 'score and opponent saved', JSON.stringify({ o: g.opponent, f: g.scoreFor, a: g.scoreAgainst }));
+    ok(g.performances.length === 2, 'both players kept, the blank row dropped', g.performances.length);
+    ok(!!g.performances[0].pos, 'position filled in from the roster', g.performances[0].pos);
+
+    /* --- the script --- */
+    ok(!!q('#scriptBox'), 'the script opens straight after saving');
+    var s = q('#scriptBox').value;
+    ok(s.length > 800, 'it is a real script, not a stub', s.length + ' chars');
+    ['COLD OPEN', 'THE BIG QUESTION', 'STOCK UP', 'THE HOT SEAT', 'THE NUMBERS', 'FINAL TAKE', 'PRODUCER NOTES'].forEach(function (seg) {
+      ok(s.indexOf(seg) >= 0, 'has the ' + seg + ' segment');
+    });
+    ok(/^HOST:/m.test(s) && /^TAKE:/m.test(s) && /^COUNTER:/m.test(s), 'all three voices speak');
+    ok(s.indexOf(hero) >= 0, 'the standout is named', hero);
+    ok(s.indexOf(goat) >= 0, 'the struggler is named', goat);
+    ok(s.indexOf('312 yards') >= 0, 'his actual stat line is quoted');
+    ok(s.indexOf('Kansas State') >= 0, 'the opponent is named');
+    ok(s.indexOf('38-17') >= 0, 'the score is in it');
+    ok(s.indexOf('9 of 14') >= 0, 'third down reached the numbers segment');
+    ok(/Plus 2 in takeaways/.test(s), 'the turnover margin is argued, not just listed');
+    /* nobody real should be putting words in anybody real's mouth */
+    ok(!/Stephen A|Shannon Sharpe|Molly|ESPN/i.test(s), 'no real broadcaster is impersonated');
+
+    /* --- editing sticks --- */
+    q('#scriptBox').value = s + '\nHOST: EDITED LINE.';
+    click('[data-action="copy-script"]');
+    ok(W.state().games[0].script.indexOf('EDITED LINE') >= 0, 'an edit is kept when you copy');
+
+    /* --- print puts the script, and only the script, on the page --- */
+    click('[data-action="close"]');
+    click('[data-action="script"][data-id="' + g.id + '"]');
+    var printed = q('#printArea');
+    q('[data-action="print-script"]').setAttribute('data-test', '1');
+    /* call the path without opening a real print dialogue */
+    var box = q('#scriptBox');
+    box.value = 'PRINT ME';
+    W.saveScriptBox(g.id);
+    printed.textContent = W.state().games[0].script;
+    ok(printed.textContent === 'PRINT ME', 'the print area carries the edited script');
+    ok(getComputedStyle(printed).display === 'none', 'and is invisible on screen');
+
+    /* --- a loss reads differently --- */
+    var g2 = { id: 'g2', season: W.state().season, week: 5, opponent: 'Iowa State', home: false,
+      result: 'L', scoreFor: 10, scoreAgainst: 31, yardsFor: 240, yardsAgainst: 480,
+      toFor: 3, toAgainst: 0, thirdDown: '3 of 15', penalties: '', performances: [
+        { name: goat, pos: 'WR', line: 'held to 12 yards', verdict: 'struggled' }
+      ], notes: '', script: '' };
+    W.state().games.push(g2);
+    W.saveScriptBox(g.id);   /* persists the whole state, g2 included */
+    var ls = W.buildScript(g2);
+    ok(ls.indexOf('LOSS') >= 0, 'a loss is called a loss');
+    ok(/lost the turnover battle by 3/.test(ls), 'the turnover argument flips on a loss');
+    ok(ls !== s, 'a different game produces a different script');
+    ok(/Now 1-1/.test(ls), 'the running record is worked out', (ls.match(/Now [0-9-]+/) || [''])[0]);
+
+    /* --- the list --- */
+    click('[data-action="close"]');
+    W.setView('show');
+    ok(document.querySelectorAll('.game-row').length === 2, 'both games listed', document.querySelectorAll('.game-row').length);
+    ok(hits(q('[data-action="script"]')) === true, 'the Script button is clickable', hits(q('[data-action="script"]')));
+    ok(/Kansas State/.test(q('#view').textContent), 'games show their opponent');
+
+    /* --- it survives a reload --- */
+    var raw = JSON.parse(localStorage.getItem('warroom.v1'));
+    ok(raw.games && raw.games.length === 2, 'games persisted', raw.games && raw.games.length);
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

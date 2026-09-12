@@ -37,6 +37,7 @@
     <button class="nav-btn" data-view="board">Board</button>
     <button class="nav-btn" data-view="portal">Portal</button>
     <button class="nav-btn" data-view="class">Class</button>
+    <button class="nav-btn" data-view="show">Show</button>
   </nav>
   <button class="icon-toggle" data-view="settings" title="Settings" aria-label="Settings" id="settingsBtn"></button>
   <button class="icon-toggle" id="themeToggle" title="Switch light / dark" aria-label="Switch light / dark"></button>
@@ -52,6 +53,10 @@
 
 <div id="modal" class="modal-backdrop" hidden></div>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<!-- Only ever visible in a print job: the script on its own, without the app
+     around it. -->
+<pre id="printArea" class="print-only"></pre>
 
 <script src="ocr.js"></script>
 <script src="app.js"></script>

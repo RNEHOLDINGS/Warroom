@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>show shot</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<script>localStorage.clear();</script>
+<script src="ocr.js"></script><script src="app.js"></script>
+<script>
+(function(){
+  var q = new URLSearchParams(location.search);
+  var W = WarRoom, st = W.state();
+  st.school = { name:'North Dakota State', mascot:'Bison', state:'ND', color:'#115740' };
+  st.games.push({ id:'d1', season:2027, week:4, opponent:'Kansas State', home:true, result:'W',
+    scoreFor:38, scoreAgainst:17, yardsFor:505, yardsAgainst:288, toFor:1, toAgainst:3,
+    thirdDown:'9 of 14', penalties:'5 for 40', performances:[
+      { name:'D.Jewell', pos:'HB', line:'168 yards and 2 scores on 19 carries', verdict:'standout' },
+      { name:'L.Clark', pos:'K', line:'missed two field goals inside 40', verdict:'struggled' }
+    ], notes:'', script:'' });
+  st.games.push({ id:'d2', season:2027, week:5, opponent:'Iowa State', home:false, result:'L',
+    scoreFor:10, scoreAgainst:31, yardsFor:240, yardsAgainst:480, toFor:3, toAgainst:0,
+    thirdDown:'3 of 15', penalties:'', performances:[], notes:'', script:'' });
+  W.setView('show');
+  if (q.get('v') === 'script') document.querySelector('[data-action="script"][data-id="d1"]').click();
+  if (q.get('v') === 'form') document.querySelector('[data-action="add-game"]').click();
+})();
+</script>
+</body></html>
