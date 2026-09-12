@@ -240,6 +240,63 @@
     click('[data-action="reroll-stories"]');
     ok(W.stories().map(function (s) { return s.id; }).join() !== beforeIds, 'New set produces different storylines');
 
+    function rec(id, name, pos, stars, status) {
+      return { id: id, type: 'hs', name: name, pos: pos, stars: stars, gem: false, bust: false, rank: 100, state: '', standing: 0,
+        hours: 0, archetype: '', dealbreaker: '', ovr: 0, year: 'FR', rs: false, from: '', status: status, note: '', dev: 'Normal' };
+    }
+
+    /* 10. backstory handed to a recruit who has already committed ends on
+       signing day. It used to close as landed on the very next save. */
+    var early = null; tries = 0;
+    while (!early && tries < 40) {
+      W.state().recruits = [rec('e1', 'Board Five', 'QB', 5, 'board'), rec('e2', 'Early Commit', 'WR', 5, 'committed'), rec('e3', 'Board One', 'CB', 1, 'board')];
+      W.rollStorylines('early' + tries);
+      W.stories().forEach(function (s) { if (!early && s.recruitId === 'e2' && s.tpl !== 'silent' && s.tpl !== 'flip') early = s; });
+      tries++;
+    }
+    ok(!!early, 'a backstory can land on a recruit who already committed', 'tries=' + tries);
+    if (early) {
+      W.syncStorylines();
+      ok(early.state === 'open', 'it stays open after the next save while he is merely committed', early.tpl + ' ' + early.state);
+      W.state().recruits[1].status = 'signed';
+      W.syncStorylines();
+      ok(early.state === 'won', 'and closes when he signs', early.state);
+    }
+    var signedGot = false;
+    for (k = 0; k < 20; k++) {
+      W.state().recruits = [rec('s1', 'Already Signed', 'QB', 5, 'signed'), rec('s2', 'Board Two', 'WR', 3, 'board'), rec('s3', 'Board Three', 'CB', 3, 'board')];
+      W.rollStorylines('signed' + k);
+      if (W.stories().some(function (s) { return s.recruitId === 's1'; })) signedGot = true;
+    }
+    ok(!signedGot, 'a recruit who has already signed is never given a story');
+
+    /* 11. a New set that cannot make one leaves the season's stories alone */
+    W.state().recruits = [rec('p1', 'Pair One', 'QB', 4, 'board'), rec('p2', 'Pair Two', 'WR', 4, 'board')];
+    W.rollStorylines('pair');
+    var pairIds = W.stories().map(function (s) { return s.id; }).join();
+    W.state().recruits[1].status = 'lost';
+    W.syncStorylines();
+    click('[data-view="board"]');
+    click('[data-action="reroll-stories"]');
+    click('[data-action="add-slot"][data-pos="TE"]');   /* an ordinary save */
+    ok(pairIds && W.stories().map(function (s) { return s.id; }).join() === pairIds, 'a refused New set keeps the season\'s stories',
+      pairIds + ' vs ' + W.stories().map(function (s) { return s.id; }).join());
+
+    /* 12. a recruit deleted mid-season takes his story with him rather than
+       filing it nameless and open */
+    W.state().recruits = [rec('d1', 'Del One', 'QB', 4, 'board'), rec('d2', 'Del Two', 'WR', 4, 'board'), rec('d3', 'Del Three', 'CB', 4, 'board')];
+    W.rollStorylines('del');
+    var victim = W.stories()[0];
+    click('[data-view="board"]');
+    click('[data-action="edit-recruit"][data-id="' + victim.recruitId + '"]');
+    click('[data-action="delete-recruit"]');
+    click('[data-view="class"]');
+    click('[data-action="advance"]');
+    click('[data-action="do-advance"]');
+    var filed = W.state().history[W.state().history.length - 1].stories;
+    ok(filed.length === 2 && filed.every(function (s) { return !!s.name && (s.state === 'won' || s.state === 'lost'); }),
+      'a deleted recruit\'s story is not filed in the history', JSON.stringify(filed.map(function (s) { return s.name + ':' + s.state; })));
+
     finish();
   } catch (e) {
     out.push('EXC ' + (e && e.stack || e));

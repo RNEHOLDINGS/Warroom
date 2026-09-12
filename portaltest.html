@@ -107,6 +107,23 @@
 
     click('[data-action="close"]');
 
+    /* --- the screen behind the list is current the moment it closes, with no
+       re-navigation: it used to go on saying nobody had left --- */
+    ok(q('#view').textContent.indexOf(guyName) >= 0, 'the portal screen lists him as soon as the list closes', guyName);
+
+    /* --- an athlete has no position row, but ticking him Gone still opens his spot --- */
+    W.state().players.push({ id: 'ath1', name: 'Ath Leaver', pos: 'ATH', year: 'SO', rs: false, redshirtNow: false, ovr: 75, dev: 'Normal', exit: '', note: '' });
+    var athOpen = W.needs().totals.open;
+    click('[data-action="portal-picker"]');
+    var athBox = q('[data-portal="out"][data-id="ath1"]');
+    athBox.checked = true;
+    athBox.dispatchEvent(new Event('change', { bubbles: true }));
+    ok(W.needs().totals.open === athOpen + 1, 'an athlete ticked Gone opens a scholarship too', athOpen + ' -> ' + W.needs().totals.open);
+    athBox.checked = false;
+    athBox.dispatchEvent(new Event('change', { bubbles: true }));
+    click('[data-action="close"]');
+    W.state().players = W.state().players.filter(function (p) { return p.id !== 'ath1'; });
+
     /* --- it shows where it should --- */
     click('[data-view="portal"]');
     ok(q('#view').textContent.indexOf(guyName) >= 0, 'the departing player is listed on the portal screen', guyName);

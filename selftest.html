@@ -118,6 +118,46 @@
     var lbRow = W.needs().rows.filter(function (r) { return r.group.id === 'LB'; })[0];
     ok(lbRow.on === lbRow.returning + lbRow.leaving, 'LB on = returning + leaving');
 
+    /* a refused Add must not leave a nameless player behind to be counted */
+    var before2 = W.state().players.length, open2 = W.needs().totals.open;
+    click('[data-action="add-player"]');
+    click('[data-action="save-player"]');
+    ok(!document.getElementById('modal').hidden && W.state().players.length === before2, 'Add with no name is refused and adds nobody', W.state().players.length - before2);
+    document.getElementById('p-name').value = 'Second Try';
+    document.getElementById('p-year').value = 'SO';
+    click('[data-action="save-player"]');
+    ok(W.state().players.length === before2 + 1, 'the retry adds exactly one player', W.state().players.length - before2);
+    ok(W.needs().totals.open === open2 - 1, 'and the count moves by one', open2 + ' -> ' + W.needs().totals.open);
+    ok(W.state().players.every(function (p) { return !!p.name; }), 'no nameless player on the roster');
+
+    /* nor may a refused edit survive Cancel */
+    var st2x = W.state().players.filter(function (p) { return p.name === 'Second Try'; })[0];
+    click('[data-action="edit-player"][data-id="' + st2x.id + '"]');
+    document.getElementById('p-name').value = '';
+    document.getElementById('p-ovr').value = '99';
+    click('[data-action="save-player"]');
+    click('[data-action="close"]');
+    click('[data-action="add-player"]'); document.getElementById('p-name').value = 'Nudge'; click('[data-action="save-player"]');
+    var kept = JSON.parse(localStorage.getItem('warroom.v1')).players.filter(function (p) { return p.id === st2x.id; })[0];
+    ok(kept.name === 'Second Try' && kept.ovr !== 99, 'Cancel after a refused save changes nothing', JSON.stringify({ n: kept.name, o: kept.ovr }));
+
+    /* a drag that ends outside the dialog must not close it; a press on the backdrop does */
+    click('[data-action="add-player"]');
+    var modalEl = document.getElementById('modal');
+    document.getElementById('p-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    modalEl.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    ok(!modalEl.hidden, 'selecting text and releasing outside the dialog keeps it open');
+    modalEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    modalEl.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    ok(modalEl.hidden, 'a click on the backdrop still closes it');
+
+    /* an athlete has no row but still leaves */
+    var athOpen = W.needs().totals.open;
+    W.state().players.push({ id: 'ath-sr', name: 'Ath Senior', pos: 'ATH', year: 'SR', rs: false, redshirtNow: false, ovr: 70, dev: 'Normal', exit: '', note: '' });
+    W.state().players.push({ id: 'ath-tp', name: 'Ath Transfer', pos: 'ATH', year: 'SO', rs: false, redshirtNow: false, ovr: 70, dev: 'Normal', exit: 'portal', note: '' });
+    ok(W.needs().totals.open === athOpen && W.needs().totals.leaving >= 2, 'a senior ATH and an ATH in the portal hold no scholarship', athOpen + ' -> ' + W.needs().totals.open);
+    W.state().players = W.state().players.filter(function (p) { return p.pos !== 'ATH'; });
+
     /* 5. filters */
     setVal('[data-filter="roster.show"]', 'leaving');
     ok(document.querySelectorAll('.item.leaving').length > 0 && document.querySelectorAll('.item:not(.leaving)').length === 0, 'leaving filter shows only leavers');
@@ -178,9 +218,49 @@
     out.push('EXC ' + (e && e.stack || e));
     fails++;
   }
-  out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS');
-  document.getElementById('out').textContent = out.join('\n');
-  setTimeout(function () { window.close(); }, 200);
+
+  /* 10. restoring a backup. Last, because FileReader answers asynchronously. */
+  function restore(text) {
+    click('[data-view="settings"]');
+    var input = document.getElementById('importFile');
+    var dt = new DataTransfer();
+    dt.items.add(new File([text], 'backup.json', { type: 'application/json' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return new Promise(function (res) { setTimeout(res, 300); });
+  }
+  function backups() {
+    click('[data-view="settings"]');
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    st.games.push({ id: 'bk1', season: st.season, week: 2, opponent: 'Utah', home: false, result: 'L', scoreFor: 17, scoreAgainst: 20,
+      yardsFor: 350, yardsAgainst: '', toFor: '', toAgainst: 2, thirdDown: '5 of 12', penalties: '', notes: '',
+      performances: [{ name: 'Somebody', pos: 'QB', line: '2 TD', verdict: 'solid' }], script: 'edited', scriptAuto: 'generated' });
+    click('[data-view="class"]'); click('[data-action="advance"]'); click('[data-action="do-advance"]');
+    var saved = localStorage.getItem('warroom.v1');
+    /* exactly what Export writes */
+    return restore(JSON.stringify(W.state(), null, 2)).then(function () {
+      ok(localStorage.getItem('warroom.v1') === saved, 'a backup this app exported restores unchanged',
+        saved.length + ' vs ' + (localStorage.getItem('warroom.v1') || '').length);
+      var evil = { players: [], recruits: [{ id: 'z1', type: 'hs', name: 'Zed', pos: 'QB', stars: 3, status: 'board',
+        hours: '<img src=x id=pwn onerror="window.__pwned=1">', rank: '"><b id=pwn2>' }] };
+      return restore(JSON.stringify(evil));
+    }).then(function () {
+      click('[data-view="board"]');
+      return new Promise(function (res) { setTimeout(res, 100); });
+    }).then(function () {
+      ok(!document.getElementById('pwn') && !document.getElementById('pwn2') && !window.__pwned, 'markup in a restored backup is never run');
+      ok(/Zed/.test(text('#view')), 'and the recruit it carried still comes in');
+    });
+  }
+
+  var tail;
+  try { tail = backups(); } catch (e) { tail = Promise.reject(e); }
+  tail.catch(function (e) { out.push('EXC ' + (e && e.stack || e)); fails++; }).then(function () {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS');
+    document.getElementById('out').textContent = out.join('\n');
+    setTimeout(function () { window.close(); }, 200);
+  });
 })();
 </script>
 </body>

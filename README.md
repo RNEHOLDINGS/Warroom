@@ -49,8 +49,9 @@ three kinds:
 
 **There is nothing to manage.** You never open, update or close one. Commit
 the player and it closes as landed; lose him and it closes as missed, with a
-line about what happened. Advance the season and the whole set is filed into
-that class's history, so old seasons read as a story instead of a list of
+line about what happened. If he had already committed when his story began,
+signing day closes it instead. Advance the season and the whole set is filed
+into that class's history, so old seasons read as a story instead of a list of
 names.
 
 A few ask you one question, and the answer is real: **Pull it** on the injured
@@ -114,6 +115,10 @@ plain text pastes into an AI far better than a PDF does. **Save as PDF** opens
 the print dialogue and prints the script alone, without the app around it.
 **Rewrite from the stats** throws your edits away and regenerates.
 
+Your edits are kept however you close the box. Change the score or the stats
+and a script you have not touched rewrites itself to match; one you have
+edited stays as it is until you ask for a rewrite.
+
 ## Holding a spot
 
 Most of what sits on a recruiting board is "I am chasing somebody here" long
@@ -138,7 +143,9 @@ rather than one picture of both.
 
 Either one opens a drop zone. Drop in a screenshot of
 the in-game roster or depth chart, click to choose files, or just press Ctrl+V
-if the image is on your clipboard. Several pages at once is fine.
+if the image is on your clipboard. Several pages at once is fine, and
+**Another image** on the review table adds a page to what you have already
+read and fixed.
 
 The text is recognised on this machine by Tesseract compiled to WebAssembly,
 from the files in `ocr/`. Nothing is uploaded and no network is used.
@@ -274,9 +281,10 @@ between them.
 
 ## Checking it
 
-There are eight suites, all driven through real DOM clicks with hit testing:
+There are nine suites, all driven through real DOM clicks with hit testing:
 
-- `selftest.html` — the app: counting, roster editing, season rollover.
+- `selftest.html` — the app: counting, roster editing, season rollover,
+  restoring a backup.
 - `ocrtest.html` — recognition accuracy, scored against a known roster, plus
   the line parser on its own.
 - `scantest.html` — the whole screenshot-to-roster flow through the real UI.

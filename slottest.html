@@ -120,10 +120,15 @@
     var pos = heldSigned.pos;
     click('[data-view="class"]');
     click('[data-action="advance"]');
+    var enrolLine = document.querySelectorAll('#modal .item .who span')[1].textContent;
+    ok(enrolLine.indexOf(pos + ' spot') >= 0 && !/(^, |, ,|, $)/.test(enrolLine), 'the advance dialog names a held spot instead of a blank', enrolLine);
     click('[data-action="do-advance"]');
     var enrolled = W.state().players.filter(function (p) { return p.name === pos + ' signee'; })[0];
     ok(!!enrolled, 'it enrols with a usable name rather than a blank', pos + ' signee');
     ok(W.state().players.every(function (p) { return !!p.name; }), 'no player on the roster is nameless');
+    var filedClass = W.state().history[W.state().history.length - 1].commits;
+    ok(filedClass.every(function (c) { return !!c.name; }) && filedClass.some(function (c) { return c.name === pos + ' signee'; }),
+      'and the past class files him by that name too', JSON.stringify(filedClass.map(function (c) { return c.name; })));
     finish();
   } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
 })();

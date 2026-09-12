@@ -147,6 +147,58 @@
     /* --- it survives a reload --- */
     var raw = JSON.parse(localStorage.getItem('warroom.v1'));
     ok(raw.games && raw.games.length === 2, 'games persisted', raw.games && raw.games.length);
+
+    /* --- a refused save must not leave a blank game behind --- */
+    function rowText(id) { var b = q('[data-action="edit-game"][data-id="' + id + '"]'); return b ? b.closest('.game-row').textContent : ''; }
+    function gameById(id) { return W.state().games.filter(function (x) { return x.id === id; })[0]; }
+    click('[data-action="add-game"]');
+    click('[data-action="save-game"]');
+    ok(!q('#modal').hidden && W.state().games.length === 2, 'saving with no opponent is refused and stores nothing', W.state().games.length);
+    set('#g-opp', 'Baylor'); set('#g-sf', '21'); set('#g-sa', '14');
+    click('[data-action="save-game"]');
+    ok(W.state().games.length === 3, 'the retry stores exactly one game', W.state().games.length);
+    var g3 = W.state().games.filter(function (x) { return x.opponent === 'Baylor'; })[0];
+
+    /* --- a script nobody touched follows the stats; an edited one is kept --- */
+    click('[data-action="close"]');
+    ok(!/script edited/.test(rowText(g3.id)), 'an untouched script is not called edited', rowText(g3.id));
+    click('[data-action="edit-game"][data-id="' + g3.id + '"]');
+    set('#g-sf', '35');
+    click('[data-action="save-game"]');
+    ok(/35-14/.test(q('#scriptBox').value), 'changing the score rewrites a script nobody touched');
+    q('#scriptBox').value += '\nHOST: MY OWN LINE.';
+    click('[data-action="close"]');
+    ok(/MY OWN LINE/.test(gameById(g3.id).script), 'Close keeps what was typed in the box');
+    ok(/script edited/.test(rowText(g3.id)), 'and the list says it is edited', rowText(g3.id));
+    click('[data-action="edit-game"][data-id="' + g3.id + '"]');
+    set('#g-sa', '28');
+    click('[data-action="save-game"]');
+    ok(/MY OWN LINE/.test(q('#scriptBox').value) && /Kept your edited script/.test(q('#toast').textContent), 'an edited script survives a stats change, and says so', q('#toast').textContent);
+    click('[data-action="rewrite-script"]');
+    ok(/35-28/.test(q('#scriptBox').value) && !/MY OWN LINE/.test(q('#scriptBox').value), 'Rewrite brings it back in line with the stats');
+    click('[data-action="close"]');
+
+    /* --- rename the ex-player and nobody hard-coded is left in the script.
+       Fixed names and no insider segment: the sample roster has Marcuses. --- */
+    W.state().show = { title: 'HARD COUNT', host: 'Ray Okonkwo', player: 'Dan Pierce', analyst: 'Erin Vasquez', insider: 'Gabe Sandoval', useInsider: false };
+    var leftovers = 0;
+    for (var i = 0; i < 40; i++) {
+      var gx = { id: 'mx' + i, season: W.state().season, week: 1, opponent: 'Opp' + i, home: true, result: i % 2 ? 'W' : 'L', scoreFor: 20 + i, scoreAgainst: 17,
+        yardsFor: 400, yardsAgainst: 300, toFor: i % 3, toAgainst: 1, thirdDown: '', penalties: '', notes: '',
+        performances: [{ name: 'Star Guy', pos: 'QB', line: '3 TD', verdict: 'standout' }, { name: 'Bad Guy', pos: 'WR', line: '2 drops', verdict: 'struggled' }] };
+      if (/Marcus|BOONE/.test(W.buildScript(gx))) leftovers++;
+    }
+    ok(leftovers === 0, 'a renamed ex-player is never called Marcus', leftovers + ' of 40 scripts');
+
+    /* --- the numbers segment argues only what was typed in --- */
+    var base = { season: W.state().season, week: 6, opponent: 'Nebraska', home: true, thirdDown: '', penalties: '', notes: '', performances: [] };
+    var numbers = function (s) { return s.split('THE NUMBERS')[1].split('--- SEGMENT')[0]; };
+    var noTO = W.buildScript(Object.assign({ id: 'nt', result: 'W', scoreFor: 28, scoreAgainst: 24, yardsFor: 410, yardsAgainst: 380, toFor: '', toAgainst: '' }, base));
+    ok(!/Even in turnovers/.test(noTO), 'with no turnovers typed in, none are claimed');
+    ok(!/rate|seven in ten/.test(numbers(noTO).split('\n').filter(function (l) { return /^PIERCE:/.test(l); }).join(' ')),
+      'and nobody argues with a base rate nobody quoted', numbers(noTO));
+    var lossTake = W.buildScript(Object.assign({ id: 'lt', result: 'L', scoreFor: 10, scoreAgainst: 31, yardsFor: 250, yardsAgainst: 450, toFor: '', toAgainst: 2 }, base));
+    ok(/still lost by 21/.test(lossTake) && !/most of your margin/.test(lossTake), 'takeaways in a loss are not called the margin');
     finish();
   } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
 })();

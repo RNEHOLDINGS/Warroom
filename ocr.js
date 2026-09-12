@@ -14,6 +14,10 @@
 
   var worker = null;
   var loading = null;
+  /* The worker's logger is fixed when the worker is made, so it reports to
+     whichever scan is running now. It used to keep calling the first scan's
+     callback, and every later scan sat on "Starting" until it finished. */
+  var progressTo = null;
 
   /* Loaded on demand — 6.5 MB of wasm and language data should not be part
      of opening the app. */
@@ -28,7 +32,7 @@
     });
   }
 
-  function getWorker(onProgress) {
+  function getWorker() {
     if (worker) return Promise.resolve(worker);
     if (loading) return loading;
     loading = loadScript('ocr/tesseract.min.js').then(function () {
@@ -39,7 +43,7 @@
         gzip: true,
         workerBlobURL: false,
         logger: function (m) {
-          if (onProgress && m && m.status) onProgress(m.status, m.progress || 0);
+          if (progressTo && m && m.status) progressTo(m.status, m.progress || 0);
         }
       });
     }).then(function (w) {
@@ -660,12 +664,13 @@
 
   function recognize(fileOrUrl, onProgress, kind) {
     var canvas, source, scale = 1;
+    progressTo = onProgress || null;
     return toImage(fileOrUrl)
       .then(function (img) {
         source = img;
         canvas = preprocess(img);
         scale = canvas.width / img.width;
-        return getWorker(onProgress);
+        return getWorker();
       })
       .then(function (w) { return w.recognize(canvas, {}, { text: true, blocks: true }); })
       .then(function (res) {

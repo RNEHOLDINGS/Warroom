@@ -60,6 +60,79 @@
     if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
   }
 
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function feed(file) {
+    var dt = new DataTransfer();
+    dt.items.add(file);
+    var input = q('#scanFiles');
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  function tableNames() {
+    return Array.prototype.map.call(document.querySelectorAll('[data-scan="name"]'), function (i) { return i.value; });
+  }
+  var shot = null;
+  var REAL = window.WarRoomOCR;
+
+  /* After the real import: the flow around the reader, with a stand-in reader
+     so each case is exact. */
+  function aroundTheReader() {
+    /* a second scan reports its own progress, not the first scan's */
+    var heard = [];
+    return REAL.recognize(shot, function (s) { heard.push(s); }).then(function () {
+      ok(heard.length > 0, 'a second scan reports progress', JSON.stringify(heard.slice(0, 3)));
+
+      var calls = 0, row = function (n, y) { return { name: n, pos: 'QB', year: y, rs: false, ovr: 80, dev: '', conf: 90, suspect: false }; };
+      window.WarRoomOCR = { recognize: function () {
+        calls++;
+        if (calls === 2) return Promise.reject(new Error('That file is not an image this browser can read.'));
+        return Promise.resolve({ ignored: 0, rows: calls === 1 ? [row('A.Alpha', 'SR'), row('B.Bravo', '')] : [row('C.Charlie', 'SO'), row('B.Bravo', 'SO')] });
+      } };
+      var fake = new File([new Uint8Array([137, 80, 78, 71])], 'page.png', { type: 'image/png' });
+      window.WarRoom.setView('roster');
+      click('[data-action="scan-roster"]');
+      feed(fake);
+      return sleep(200).then(function () {
+        var nameEls = document.querySelectorAll('[data-scan="name"]');
+        nameEls[0].value = 'A.Alpha-fixed';
+        nameEls[0].dispatchEvent(new Event('input', { bubbles: true }));
+        var yr = document.querySelectorAll('[data-scan="year"]')[1];
+        yr.value = 'JR';
+        yr.dispatchEvent(new Event('change', { bubbles: true }));
+        click('[data-action="scan-more"]');
+        ok(/2 rows already read are kept/.test(q('#modal').textContent), '"Another image" says the rows already read are kept');
+        feed(fake);                                    /* the reader fails on this one */
+        return sleep(200);
+      }).then(function () {
+        ok(!!q('#modal [data-action="scan-review"]'), 'a failed image offers the table back rather than losing it');
+        click('#modal [data-action="scan-more"]');     /* Try again */
+        ok(/Read a roster screenshot/.test(q('#modal h2').textContent), 'Try again reopens the same scanner', q('#modal h2').textContent);
+        feed(fake);
+        return sleep(200);
+      }).then(function () {
+        var years = Array.prototype.map.call(document.querySelectorAll('[data-scan="year"]'), function (s) { return s.value; });
+        ok(tableNames().join() === 'A.Alpha-fixed,B.Bravo,C.Charlie' && years.join() === 'SR,JR,SO',
+          'another image adds to the table and keeps the fixes made in it', tableNames().join() + ' / ' + years.join());
+
+        /* closing the dialog mid-read cancels it */
+        window.WarRoomOCR = { recognize: function () {
+          return new Promise(function (res) { setTimeout(function () { res({ ignored: 0, rows: [row('D.Delta', 'FR')] }); }, 300); });
+        } };
+        click('[data-action="close"]');
+        window.WarRoom.setView('roster');
+        click('[data-action="scan-roster"]');
+        feed(fake);
+        click('[data-action="close"]');
+        click('[data-action="add-player"]');
+        return sleep(700);
+      }).then(function () {
+        ok(!!q('#p-name') && !q('.scan-table'), 'a cancelled scan does not open its table over the next dialog', q('#modal h2') && q('#modal h2').textContent);
+        click('[data-action="close"]');
+        window.WarRoomOCR = REAL;
+      });
+    });
+  }
+
   /* Open the scanner from the empty state and drive it with a real File, the
      same object a drop or a paste would hand it. */
   click('[data-action="scan-roster"]');
@@ -70,6 +143,7 @@
     .then(function (r) { return r.blob(); })
     .then(function (blob) {
       var file = new File([blob], 'roster.png', { type: 'image/png' });
+      shot = file;
       var dt = new DataTransfer();
       dt.items.add(file);
       var input = q('#scanFiles');
@@ -169,7 +243,7 @@
       var n = window.WarRoom.needs();
       ok(n.totals.on === 13, 'roster total is 13', n.totals.on);
       ok(n.totals.leaving === 3, 'three seniors counted as leaving', n.totals.leaving);
-      finish();
+      return aroundTheReader().then(finish);
     })
     .catch(function (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); });
 })();

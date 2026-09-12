@@ -12,6 +12,10 @@
 param([int]$Port = 8123, [switch]$LocalOnly)
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+# What every served path must start with. With the separator on: a bare
+# "starts with the folder name" test let /../Warroom-old/anything through,
+# because ...\Warroom-old starts with ...\Warroom -- to anyone on the Wi-Fi.
+$rootDir = $root.TrimEnd('\') + '\'
 
 # Loopback answers only this PC, so a phone on the same Wi-Fi gets nothing and
 # it looks like the address is wrong. Any listens on the network too.
@@ -89,7 +93,7 @@ try {
       $resolved = $null
       try { $resolved = (Resolve-Path -LiteralPath $full -ErrorAction Stop).Path } catch {}
   
-      if ($resolved -and $resolved.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+      if ($resolved -and $resolved.StartsWith($rootDir, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $resolved -PathType Leaf)) {
         $bytes = [System.IO.File]::ReadAllBytes($resolved)
         $ext = [System.IO.Path]::GetExtension($resolved).ToLower()
         $ctype = $types[$ext]

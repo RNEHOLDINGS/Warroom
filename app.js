@@ -241,8 +241,15 @@
       };
     });
     var athIn = state.recruits.filter(function (r) { return groupOf(r.pos) === 'ATH' && isIncoming(r); }).length;
-    var athOn = state.players.filter(function (p) { return groupOf(p.pos) === 'ATH'; }).length;
-    var t = { on: athOn, leaving: 0, returning: athOn, incoming: athIn, target: 0, board: 0, atRisk: 0 };
+    /* An athlete has no row, but he still graduates, declares and transfers.
+       Counting every one as returning kept a senior ATH -- or one ticked Gone
+       -- holding a scholarship that advancing the season then freed. */
+    var ath = state.players.filter(function (p) { return groupOf(p.pos) === 'ATH'; });
+    var athLeaving = ath.filter(isLeaving).length;
+    var t = {
+      on: ath.length, leaving: athLeaving, returning: ath.length - athLeaving, incoming: athIn, target: 0, board: 0,
+      atRisk: ath.filter(function (p) { return p.risk && !isLeaving(p); }).length
+    };
     rows.forEach(function (r) {
       t.on += r.on; t.leaving += r.leaving; t.returning += r.returning;
       t.incoming += r.incoming; t.target += r.target; t.board += r.board;
@@ -460,7 +467,7 @@
         w('');
         w(ANALYST + ': ' + pick([
           'For once we agree, and I will go further — that is the most efficient game he has played. It is not close.',
-          'No argument. And the part Marcus will not say is that he did it with almost no help around him.',
+          'No argument. And the part ' + playerF + ' will not say is that he did it with almost no help around him.',
           'He was the best player on that field by any measure I have, and I have several.'
         ]));
         w('');
@@ -489,7 +496,7 @@
         w(HOST + ': ' + (i === 0 ? 'Now the other side. ' : 'One more. ') + p.name + (p.pos ? ' at ' + p.pos : '') + '. ' + sentence(p.line || 'It was not his day'));
         w('');
         w(ANALYST + ': ' + pick([
-          'I will start, because Marcus is going to defend him and I want the facts on the table first. ' + (p.line ? sentence(p.line) + ' ' : '') + 'That is not a wobble. That is a pattern I can show you.',
+          'I will start, because ' + playerF + ' is going to defend him and I want the facts on the table first. ' + (p.line ? sentence(p.line) + ' ' : '') + 'That is not a wobble. That is a pattern I can show you.',
           (p.line ? sentence(p.line) + ' ' : '') + 'At some point the sample stops being small.',
           'The uncomfortable version is that ' + (p.line ? 'this — ' + p.line + ' — ' : 'this ') + 'is closer to his average than anybody wants to admit.'
         ]));
@@ -528,19 +535,41 @@
       nums.forEach(function (n) { w('   ' + n); });
       w('');
       var toDiff = int(g.toAgainst, 0, 99) - int(g.toFor, 0, 99);
+      var hasTO = !!(g.toFor || g.toAgainst);
+      var yd = int(g.yardsFor, 0, 1200) - int(g.yardsAgainst, 0, 1200);
+      var take;
+      if (hasTO) {
+        take = toDiff < 0
+          ? 'They lost the turnover battle by ' + Math.abs(toDiff) + (won ? ' and won anyway' : '') + '. Teams that do that lose about seven times in ten. That is not a narrative, that is the base rate.'
+          : toDiff > 0
+            ? (won
+              ? 'Plus ' + toDiff + ' in takeaways, and that is most of your margin right there. Take those away and this is a different broadcast.'
+              /* on a loss there is no margin for the takeaways to explain */
+              : 'Plus ' + toDiff + ' in takeaways and they still ' + (tied ? 'could not win it' : 'lost by ' + m) + '. Win the turnover battle and not the game, and the problem is everything else.')
+            : 'Even in turnovers, which means nobody gets to hide behind the football. This was decided by execution.';
+      } else {
+        /* Nothing was typed in for turnovers, so there is no battle to call.
+           "Even in turnovers" here was a fact the script had made up. */
+        take = 'Nobody gave me turnovers, so I am not going to pretend I know who won that battle.' +
+          (g.yardsFor && g.yardsAgainst && yd
+            ? ' ' + (yd > 0 ? 'They outgained them by ' + yd : 'They were outgained by ' + -yd) + ' yards, and that is where I would start.'
+            : '');
+      }
       w(HOST + ': ' + analystF + ', this is your segment. ' + playerF + ', try not to interrupt.');
       w('');
-      w(ANALYST + ': ' + (toDiff < 0
-        ? 'They lost the turnover battle by ' + Math.abs(toDiff) + '. Teams that do that lose about seven times in ten. That is not a narrative, that is the base rate.'
-        : toDiff > 0
-          ? 'Plus ' + toDiff + ' in takeaways, and that is most of your margin right there. Take those away and this is a different broadcast.'
-          : 'Even in turnovers, which means nobody gets to hide behind the football. This was decided by execution.') +
+      w(ANALYST + ': ' + take +
         (g.thirdDown ? ' Third down was ' + g.thirdDown + ', and that is the number that tells you whether the plan worked.' : ''));
       w('');
-      w(PLAYER + ': ' + pick([
+      /* He answers what she actually said: arguing with "the rate" after she
+         never quoted one reads like two different scripts spliced together. */
+      w(PLAYER + ': ' + pick(hasTO && toDiff < 0 ? [
         'See, this is where you and I live in different buildings. Turnovers are not a base rate. They are a man not wrapping up, or a quarterback getting hit as he throws because somebody lost a one-on-one.',
         'Every one of those numbers has a human being attached to it, ' + analystF + '. You said seven in ten. I said somebody quit on a rep. Those are the same sentence.',
         'I do not care about the rate. I care about which play it happened on and who was standing there.'
+      ] : [
+        'See, this is where you and I live in different buildings. Every one of those numbers is a man winning or losing a one-on-one, and I watched the one-on-ones.',
+        'Every one of those numbers has a human being attached to it, ' + analystF + '. You read the box score. I am telling you who was standing there.',
+        'I do not care what the sheet says. I care about which play it happened on and who was standing there.'
       ]));
       w('');
       w(ANALYST + ': Those are compatible positions, which is why this is exhausting.');
@@ -1023,11 +1052,15 @@
      never the same template twice in a season. Seeded on the season and the
      board so it does not reshuffle itself on every render. */
   function rollStorylines(nonce) {
-    state.storylines = state.storylines.filter(function (s) { return s.season !== state.season; });
     var pool = state.recruits.filter(function (r) {
-      return (r.type || 'hs') === 'hs' && r.status !== 'lost' && r.name;
+      /* a signed recruit has nothing left to happen: any story on him would
+         close the moment it opened */
+      return (r.type || 'hs') === 'hs' && r.status !== 'lost' && r.status !== 'signed' && r.name;
     });
+    /* Checked before clearing. A refused "New set" used to wipe the season's
+       stories anyway, settled ones included, and nothing replaced them. */
     if (pool.length < 2) return 0;
+    state.storylines = state.storylines.filter(function (s) { return s.season !== state.season; });
 
     var rnd = seededRnd(hashStr(state.season + '|' + (nonce || '') + '|' + pool.map(function (r) { return r.id; }).join(',')));
     /* Interesting first — stars, plus a jitter so it is not the same three
@@ -1075,6 +1108,8 @@
       var built = best.make(c);
       state.storylines.push({
         id: uid(), season: state.season, recruitId: r.id, tpl: best.id,
+        /* where he was when it began, which decides how it can end */
+        phase: committed ? 'committed' : 'chase',
         title: built.title, hook: built.hook,
         choice: built.choice || null, chosen: '',
         state: 'open', outcome: ''
@@ -1095,10 +1130,12 @@
       var t = templateById(s.tpl);
       if (!t) return;
       var done = null;
-      if (t.phase === 'committed') {
+      if (t.phase === 'committed' || s.phase === 'committed') {
         /* These start from a recruit who has already said yes, so "he
            committed" cannot be the ending — signing day is. Decommitting back
-           to the board is the story going wrong. */
+           to the board is the story going wrong. That holds for backstory too:
+           handed to somebody already committed, it used to close as landed on
+           the very next save. */
         if (r.status === 'signed') done = 'won';
         else if (r.status === 'lost' || r.status === 'board') done = 'lost';
       } else {
@@ -1153,14 +1190,17 @@
     state.storylines.filter(function (s) { return s.season === state.season; }).forEach(function (s) {
       var r = storyRecruit(s);
       var t = templateById(s.tpl);
-      if (s.state === 'open' && r && t) {
+      /* His recruit was deleted off the board. Filing it anyway put a nameless
+         story, still marked open, into that class's history. */
+      if (!r) return;
+      if (s.state === 'open') {
         s.state = isIncoming(r) ? 'won' : 'lost';
-        s.outcome = t[s.state](storyContext(r, s.chosen));
+        s.outcome = t ? t[s.state](storyContext(r, s.chosen)) : '';
       }
       out.push({
         title: s.title,
-        name: r ? r.name : '',
-        pos: r ? r.pos : '',
+        name: r.name,
+        pos: r.pos,
         state: s.state,
         outcome: s.outcome
       });
@@ -1271,7 +1311,17 @@
     var first = m.querySelector('input[type="text"], select, textarea');
     if (first) setTimeout(function () { first.focus(); }, 30);
   }
-  function closeModal() { var m = $('#modal'); m.hidden = true; m.innerHTML = ''; }
+  function closeModal() {
+    /* "Edit anything", the script dialog says, but only Copy and Save as PDF
+       kept the edit: Close threw it away. Whichever way it closes -- Close,
+       Escape, the backdrop, the nav -- keep what is in the box. */
+    var box = $('#scriptBox');
+    if (box) saveScriptBox(box.getAttribute('data-id'));
+    var m = $('#modal'); m.hidden = true; m.innerHTML = '';
+    /* Closing the dialog is cancelling the scan. Left running, it opened its
+       review table later over whatever you had moved on to. */
+    if (scanBusy) { scanBusy = false; scanRun++; }
+  }
 
   /* compact drops the spelled-out group name, which a narrow table column
      clips to "QB — Quarterb…" and so shows less than the bare code does.
@@ -1308,7 +1358,9 @@
     portal: { group: '', status: '' }
   };
 
-  function render() {
+  /* keepScroll: repainting the screen behind an open dialog should not throw
+     the page back to the top underneath it. */
+  function render(keepScroll) {
     applyTeam();
     $$('.nav-btn').forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-view') === view); });
     $('#settingsBtn').classList.toggle('active', view === 'settings');
@@ -1322,7 +1374,7 @@
     else if (view === 'show') html = renderShow();
     else if (view === 'settings') html = renderSettings();
     el.innerHTML = html;
-    window.scrollTo(0, 0);
+    if (!keepScroll) window.scrollTo(0, 0);
   }
 
   function needChip(need, extra) {
@@ -1710,7 +1762,7 @@
       var sub = ['Week ' + (g.week || 1)];
       if (good) sub.push(good + ' stood out');
       if (bad) sub.push(bad + ' struggled');
-      if (g.script) sub.push('script edited');
+      if (scriptEdited(g)) sub.push('script edited');
       html += '<div class="item game-row">' +
         '<span class="chip ' + (g.result === 'W' ? 'good' : g.result === 'L' ? 'crit' : 'outline') + '">' + (g.result || 'W') + '</span>' +
         '<span class="who"><b>' + esc(gameLabel(g)) + '</b><span>' + esc(sub.join(' · ')) + '</span></span>' +
@@ -1819,13 +1871,21 @@
     return g;
   }
 
+  /* A script is edited only if it differs from the one generated for it.
+     Before this was tracked, a generated script looked exactly like a
+     reworded one: every game said "script edited", and changing the score
+     reopened the old script. Games saved before carry no scriptAuto, so they
+     count as edited and are never overwritten. */
+  function scriptEdited(g) { return !!g.script && g.script !== g.scriptAuto; }
+  function writeScript(g) { g.script = g.scriptAuto = buildScript(g); }
+
   function scriptModal(id) {
     var g = state.games.filter(function (x) { return x.id === id; })[0];
     if (!g) return;
-    if (!g.script) g.script = buildScript(g);
+    if (!g.script) writeScript(g);
     openModal('<h2>' + esc(gameLabel(g)) + '</h2>' +
       '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:10px">Edit anything. <b>Copy</b> is the one you want for pasting into an AI — plain text travels better than a PDF. <b>Save as PDF</b> opens your print dialogue.</p>' +
-      '<textarea id="scriptBox" class="script-box" spellcheck="false">' + esc(g.script) + '</textarea>' +
+      '<textarea id="scriptBox" class="script-box" spellcheck="false" data-id="' + g.id + '">' + esc(g.script) + '</textarea>' +
       '<div class="modal-actions">' +
         '<button class="btn" data-action="rewrite-script" data-id="' + g.id + '">Rewrite from the stats</button>' +
         '<span class="spacer"></span>' +
@@ -1872,7 +1932,12 @@
   function saveScriptBox(id) {
     var box = $('#scriptBox');
     var g = state.games.filter(function (x) { return x.id === id; })[0];
-    if (box && g) { g.script = box.value; save(); }
+    if (box && g) {
+      g.script = box.value;
+      save();
+      /* the list says which scripts are edited, so it follows the box */
+      if (view === 'show') render(true);
+    }
     return g;
   }
 
@@ -2145,10 +2210,13 @@
   var scanBusy = false;
   var scanKind = 'players';   /* 'players' or 'recruits' */
   var scanIgnored = 0;        /* greyed depth-chart fill-ins left out */
+  var scanRun = 0;            /* bumped to abandon a scan whose dialog was closed */
 
   function scanSupported() { return location.protocol.indexOf('http') === 0; }
 
-  function scanModal(kind) {
+  /* keep: "Another image" from the review table adds to the rows already read
+     and fixed. It used to start over, silently dropping them. */
+  function scanModal(kind, keep) {
     scanKind = kind === 'recruits' ? 'recruits' : 'players';
     if (!scanSupported()) {
       openModal('<h2>Reading screenshots needs the local server</h2>' +
@@ -2157,8 +2225,11 @@
         '<div class="modal-actions"><span class="spacer"></span><button class="btn primary" data-action="close">Got it</button></div>');
       return;
     }
-    scanRows = [];
-    scanIgnored = 0;
+    if (!keep) {
+      scanRows = [];
+      scanIgnored = 0;
+    }
+    var kept = scanRows.length;
     var recruits = scanKind === 'recruits';
     openModal('<h2>' + (recruits ? 'Read a recruiting board' : 'Read a roster screenshot') + '</h2>' +
       '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:12px">' +
@@ -2166,12 +2237,15 @@
           ? 'Screenshot your recruiting board and drop it here — it reads name, position, stars and home state. Send the roster and the board as <b>separate</b> images: they are different screens with different columns, and one picture of both reads worse than two of each.'
           : 'Take a screenshot of the roster or depth chart and drop it here. A photo of the TV works too. It is read on this machine and never uploaded, and you get to check every row before anything is added.') +
       '</p>' +
+      (kept ? '<div class="banner info">' + kept + ' ' + plural(kept, 'row') + ' already read ' + plural(kept, 'is', 'are') + ' kept, with your changes. This image adds to them.</div>' : '') +
       '<div class="dropzone" id="dropzone" tabindex="0">' + icon('camera') +
         '<b>Drop images here</b><span>or click to choose · paste with Ctrl+V · several pages at once is fine</span>' +
       '</div>' +
       '<input type="file" id="scanFiles" accept="image/*" multiple hidden>' +
       '<div id="scanProgress"></div>' +
-      '<div class="modal-actions"><span class="spacer"></span><button class="btn" data-action="close">Cancel</button></div>');
+      '<div class="modal-actions"><span class="spacer"></span>' +
+        (kept ? '<button class="btn" data-action="scan-review">Back to the table</button>' : '<button class="btn" data-action="close">Cancel</button>') +
+      '</div>');
     wireDropzone();
   }
 
@@ -2220,6 +2294,8 @@
     if (!files.length) { toast('That was not an image.'); return; }
 
     scanBusy = true;
+    var run = ++scanRun;
+    var before = scanRows.length;
     var prog = $('#scanProgress');
     var dz = $('#dropzone');
     if (dz) dz.style.display = 'none';
@@ -2234,14 +2310,17 @@
     show('Starting', 0);
 
     var step = function (i) {
+      if (run !== scanRun) return;   /* cancelled */
       if (i >= files.length) {
         scanBusy = false;
         renderScanReview();
+        if (before && scanRows.length === before) toast('No new rows in that image.');
         return;
       }
       window.WarRoomOCR.recognize(files[i], function (status, p) {
-        show(status.replace(/^\w/, function (c) { return c.toUpperCase(); }), p);
+        if (run === scanRun) show(status.replace(/^\w/, function (c) { return c.toUpperCase(); }), p);
       }, scanKind).then(function (res) {
+        if (run !== scanRun) return;
         scanIgnored += res.ignored || 0;
         res.rows.forEach(function (r) {
           /* Name alone. A lineman is numbered on more than one depth-chart
@@ -2255,10 +2334,15 @@
         done++;
         step(i + 1);
       }).catch(function (err) {
+        if (run !== scanRun) return;
         scanBusy = false;
+        /* "Try again" goes back to the scanner you were using -- it always
+           opened the roster one -- and keeps any rows already read. */
         openModal('<h2>Could not read that</h2>' +
           '<p style="color:var(--ink-2);font-size:var(--t-small)">' + esc(String(err && err.message || err)) + '</p>' +
-          '<div class="modal-actions"><span class="spacer"></span><button class="btn" data-action="close">Close</button><button class="btn primary" data-action="scan-roster">Try again</button></div>');
+          '<div class="modal-actions"><span class="spacer"></span>' +
+            (scanRows.length ? '<button class="btn" data-action="scan-review">Back to the table</button>' : '<button class="btn" data-action="close">Close</button>') +
+            '<button class="btn primary" data-action="scan-more">Try again</button></div>');
       });
     };
     step(0);
@@ -2306,7 +2390,7 @@
       (missing ? '<div class="banner" id="scanWarn">' + missing + ' ' + plural(missing, 'row is', 'rows are') + ' missing a year or a position — the amber cells. Both feed the count, so they are asked for rather than guessed. Fill them in or untick the row.</div>' : '') +
       '<div class="table-wrap"><table class="plain scan-table"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table></div>' +
       '<div class="modal-actions">' +
-        '<button class="btn" data-action="scan-' + (recruits ? 'recruits' : 'roster') + '">' + icon('camera') + 'Another image</button>' +
+        '<button class="btn" data-action="scan-more">' + icon('camera') + 'Another image</button>' +
         '<span class="spacer"></span>' +
         '<button class="btn" data-action="close">Cancel</button>' +
         '<button class="btn primary" data-action="import-scan" id="scanAdd">Add</button>' +
@@ -2396,7 +2480,7 @@
       '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:12px">This is the offseason in one click. It cannot be undone, so export a backup first if you are unsure.</p>' +
       '<div class="list">' +
         '<div class="item" style="cursor:default"><span class="chip crit">Out</span><span class="who"><b>' + leaving.length + ' ' + plural(leaving.length, 'player') + ' leave</b><span>' + (leaving.length ? leaving.map(function (p) { return esc(p.name) + ' (' + exitLabel(p) + ')'; }).join(', ') : 'nobody') + '</span></span><span></span></div>' +
-        '<div class="item" style="cursor:default"><span class="chip good">In</span><span class="who"><b>' + incoming.length + ' ' + plural(incoming.length, 'recruit') + ' enroll</b><span>' + (incoming.length ? incoming.map(function (r) { return esc(r.name); }).join(', ') : 'nobody — the class is empty') + '</span></span><span></span></div>' +
+        '<div class="item" style="cursor:default"><span class="chip good">In</span><span class="who"><b>' + incoming.length + ' ' + plural(incoming.length, 'recruit') + ' enroll</b><span>' + (incoming.length ? incoming.map(function (r) { return esc(r.name || r.pos + ' spot'); }).join(', ') : 'nobody — the class is empty') + '</span></span><span></span></div>' +
         '<div class="item" style="cursor:default"><span class="chip">Age</span><span class="who"><b>Everyone else moves up a year</b><span>' + (rsNow.length ? rsNow.length + ' redshirting: ' + rsNow.map(function (p) { return esc(p.name); }).join(', ') : 'no redshirts this year') + '</span></span><span></span></div>' +
         '<div class="item" style="cursor:default"><span class="chip outline">Drop</span><span class="who"><b>' + dropped.length + ' uncommitted or lost ' + plural(dropped.length, 'recruit') + ' cleared</b><span>The board starts empty for the new class.</span></span><span></span></div>' +
         (openStories ? '<div class="item" style="cursor:default"><span class="chip team">Story</span><span class="who"><b>' + openStories + ' open ' + plural(openStories, 'storyline') + ' settles</b><span>Whoever has not committed by now counts as missed, and the whole season goes into the history.</span></span><span></span></div>' : '') +
@@ -2408,10 +2492,13 @@
     var leaving = state.players.filter(isLeaving);
     var incoming = state.recruits.filter(isIncoming);
     var dropped = state.recruits.length - incoming.length;
+    /* a held spot that signed still has to be somebody -- on the roster and in
+       the history, where he used to be filed as a blank */
+    var signee = function (r) { return r.name || (r.pos + ' signee'); };
     var stories = closeSeasonStories();
     state.history.push({
       season: state.season,
-      commits: incoming.map(function (r) { return { name: r.name, pos: r.pos, stars: r.stars, type: r.type || 'hs', ovr: r.ovr || 0 }; }),
+      commits: incoming.map(function (r) { return { name: signee(r), pos: r.pos, stars: r.stars, type: r.type || 'hs', ovr: r.ovr || 0 }; }),
       departed: leaving.map(function (p) { return { name: p.name, pos: p.pos, ovr: p.ovr || 0, reason: exitLabel(p) }; }),
       dropped: dropped,
       stories: stories
@@ -2426,8 +2513,7 @@
     });
     incoming.forEach(function (r) {
       state.players.push({
-        /* a held spot that signed still has to be somebody on the roster */
-        id: uid(), name: r.name || (r.pos + ' signee'), pos: r.pos,
+        id: uid(), name: signee(r), pos: r.pos,
         year: r.type === 'portal' ? (r.year || 'SO') : 'FR',
         rs: r.type === 'portal' ? !!r.rs : false,
         redshirtNow: false,
@@ -2517,13 +2603,91 @@
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   }
+  /* A backup is a file from anywhere, but every render trusts the shape the app
+     itself writes: ids, ratings and ranks go into the page as they are, so a
+     restored file with markup in a number ran it. Coerce each field to that
+     shape before it is stored. A file this app exported comes through
+     unchanged. */
+  function tidyBackup(b) {
+    var objs = function (v) { return (Array.isArray(v) ? v : []).filter(function (x) { return x && typeof x === 'object'; }); };
+    var num = function (o, k, lo, hi, blank) { if (k in o) o[k] = int(o[k], lo, hi) || (blank ? '' : 0); };
+    var text = function (o, keys) { keys.forEach(function (k) { if (k in o) o[k] = o[k] == null ? '' : String(o[k]); }); };
+    var oneOf = function (o, k, list, dflt) { if (k in o && list.indexOf(o[k]) < 0) o[k] = dflt; };
+    var safe = function (v) { return /^[A-Za-z0-9_-]+$/.test(String(v)); };
+    var ids = function (list) { return list.map(function (x) { return x.id; }); };
+    var statuses = ids(STATUSES);
+
+    if (b.school && typeof b.school === 'object') text(b.school, ['name', 'mascot', 'state', 'color']);
+    else delete b.school;
+    if (b.show && typeof b.show === 'object') {
+      text(b.show, ['title', 'host', 'player', 'analyst', 'insider']);
+      if ('useInsider' in b.show) b.show.useInsider = b.show.useInsider !== false;
+    } else delete b.show;
+    if (b.targets && typeof b.targets === 'object') GROUPS.forEach(function (g) { num(b.targets, g.id, 0, 99); });
+
+    b.players = objs(b.players);
+    b.players.forEach(function (p) {
+      if (!safe(p.id)) p.id = uid();
+      p.name = p.name == null ? '' : String(p.name);
+      text(p, ['pos', 'note']);
+      oneOf(p, 'year', YEARS, 'FR'); oneOf(p, 'dev', DEVS, 'Normal'); oneOf(p, 'exit', ids(EXITS), '');
+      num(p, 'ovr', 0, 99);
+    });
+    b.recruits = objs(b.recruits);
+    b.recruits.forEach(function (r) {
+      if (!safe(r.id)) r.id = uid();
+      r.name = r.name == null ? '' : String(r.name);
+      if (statuses.indexOf(r.status) < 0) r.status = 'board';
+      text(r, ['pos', 'state', 'from', 'archetype', 'dealbreaker', 'note']);
+      oneOf(r, 'type', ['hs', 'portal'], 'hs'); oneOf(r, 'year', YEARS, 'SO'); oneOf(r, 'dev', DEVS, 'Normal');
+      num(r, 'stars', 0, 5); num(r, 'rank', 0, 9999); num(r, 'standing', 0, 8); num(r, 'hours', 0, 99); num(r, 'ovr', 0, 99);
+    });
+    b.games = objs(b.games);
+    b.games.forEach(function (g) {
+      if (!safe(g.id)) g.id = uid();
+      text(g, ['opponent', 'thirdDown', 'penalties', 'notes', 'script', 'scriptAuto']);
+      oneOf(g, 'result', ['W', 'L', 'T'], 'W');
+      num(g, 'season', 1900, 2999); num(g, 'week', 1, 25); num(g, 'scoreFor', 0, 999); num(g, 'scoreAgainst', 0, 999);
+      num(g, 'yardsFor', 0, 1200, true); num(g, 'yardsAgainst', 0, 1200, true); num(g, 'toFor', 0, 20, true); num(g, 'toAgainst', 0, 20, true);
+      if ('performances' in g) {
+        g.performances = objs(g.performances);
+        g.performances.forEach(function (p) { text(p, ['name', 'pos', 'line']); oneOf(p, 'verdict', ids(VERDICTS), 'standout'); });
+      }
+    });
+    b.storylines = objs(b.storylines);
+    b.storylines.forEach(function (s) {
+      if (!safe(s.id)) s.id = uid();
+      text(s, ['recruitId', 'tpl', 'title', 'hook', 'outcome', 'chosen']);
+      num(s, 'season', 1900, 2999);
+      oneOf(s, 'state', ['open', 'won', 'lost'], 'open'); oneOf(s, 'phase', ['chase', 'committed'], 'chase');
+      if (s.choice) {
+        var opts = typeof s.choice === 'object' ? objs(s.choice.options).filter(function (o) { return safe(o.id); }) : [];
+        opts.forEach(function (o) {
+          text(o, ['label', 'confirm']);
+          if ('status' in o && statuses.indexOf(o.status) < 0) delete o.status;
+          if ('pos' in o && !POS_GROUP[o.pos]) delete o.pos;
+        });
+        s.choice = opts.length ? { question: String(s.choice.question == null ? '' : s.choice.question), options: opts } : null;
+      }
+    });
+    b.history = objs(b.history);
+    b.history.forEach(function (h) {
+      num(h, 'season', 1900, 2999); num(h, 'dropped', 0, 9999);
+      ['commits', 'departed', 'stories'].forEach(function (k) { if (k in h) h[k] = objs(h[k]); });
+      (h.commits || []).forEach(function (c) { text(c, ['name', 'pos']); oneOf(c, 'type', ['hs', 'portal'], 'hs'); num(c, 'stars', 0, 5); num(c, 'ovr', 0, 99); });
+      (h.departed || []).forEach(function (d) { text(d, ['name', 'pos', 'reason']); num(d, 'ovr', 0, 99); });
+      (h.stories || []).forEach(function (s) { text(s, ['title', 'name', 'pos', 'outcome']); oneOf(s, 'state', ['won', 'lost'], 'lost'); });
+    });
+    return b;
+  }
+
   function importBackup(file) {
     var reader = new FileReader();
     reader.onload = function () {
       try {
         var parsed = JSON.parse(reader.result);
         if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.players)) throw new Error('bad');
-        localStorage.setItem(STORE_KEY, JSON.stringify(parsed));
+        localStorage.setItem(STORE_KEY, JSON.stringify(tidyBackup(parsed)));
         state = load();
         view = 'home';
         render();
@@ -2540,10 +2704,16 @@
       '<div class="modal-actions"><span class="spacer"></span><button class="btn" data-action="close">Cancel</button><button class="btn danger" data-action="' + action + '">' + label + '</button></div>');
   }
 
+  /* Selecting text in a field and letting go outside the dialog fires the
+     click on the backdrop, which closed the dialog and threw the form away.
+     Only a press that started on the backdrop closes it. */
+  var pressedBackdrop = false;
+  document.addEventListener('pointerdown', function (e) { pressedBackdrop = e.target === $('#modal'); });
+
   document.addEventListener('click', function (e) {
     var t = e.target.closest('[data-view], [data-action]');
     if (!t) {
-      if (e.target === $('#modal')) closeModal();
+      if (e.target === $('#modal') && pressedBackdrop) closeModal();
       return;
     }
     if (t.hasAttribute('data-view') && !t.hasAttribute('data-action')) {
@@ -2562,8 +2732,12 @@
         if (p) playerModal(p);
         break;
       case 'save-player':
-        p = readPlayerForm(id);
-        if (!p.name) { $('#p-name').focus(); return; }
+        /* Checked before the form is read. Reading it first pushed a nameless
+           player on every refused Add -- saved, and counted against the cap,
+           with the next change -- and left a refused edit applied after
+           Cancel. */
+        if (!$('#p-name').value.trim()) { $('#p-name').focus(); return; }
+        readPlayerForm(id);
         save(); closeModal(); render(); break;
       case 'delete-player':
         state.players = state.players.filter(function (x) { return x.id !== id; });
@@ -2601,12 +2775,16 @@
         if (eg) gameModal(eg);
         break;
       case 'save-game':
+        /* checked before reading, for the same reason as a player */
+        if (!$('#g-opp').value.trim()) { $('#g-opp').focus(); return; }
         var sg = readGameForm(id);
-        if (!sg.opponent) { $('#g-opp').focus(); return; }
-        /* a fresh game gets its script now; an edited one keeps whatever the
-           user has already reworded until they ask for a rewrite */
-        if (!sg.script) sg.script = buildScript(sg);
-        save(); closeModal(); view = 'show'; render(); scriptModal(sg.id); break;
+        /* A script nobody has touched follows the stats. One the user has
+           reworded is kept until they ask for a rewrite. */
+        var keptScript = scriptEdited(sg);
+        if (!keptScript) writeScript(sg);
+        save(); closeModal(); view = 'show'; render(); scriptModal(sg.id);
+        if (keptScript) toast('Kept your edited script. Rewrite from the stats to update it.');
+        break;
       case 'delete-game':
         state.games = state.games.filter(function (x) { return x.id !== id; });
         save(); closeModal(); render(); toast('Removed.'); break;
@@ -2620,12 +2798,20 @@
       case 'script': scriptModal(id); break;
       case 'rewrite-script':
         var rg = state.games.filter(function (x) { return x.id === id; })[0];
-        if (rg) { rg.script = buildScript(rg); save(); scriptModal(id); toast('Rewritten from the stats.'); }
+        if (rg) { writeScript(rg); save(); scriptModal(id); toast('Rewritten from the stats.'); }
         break;
       case 'copy-script': copyScript(id); break;
       case 'print-script': printScript(id); break;
       case 'scan-roster': scanModal('players'); break;
       case 'scan-recruits': scanModal('recruits'); break;
+      case 'scan-more':
+        readScanTable();   /* keep the fixes made in the table so far */
+        scanModal(scanKind, true);
+        break;
+      case 'scan-review':
+        if (scanBusy) { scanBusy = false; scanRun++; }
+        renderScanReview();
+        break;
       case 'import-scan': doImportScan(); break;
       case 'paste-players': pasteModal('players'); break;
       case 'paste-recruits': pasteModal('recruits', type || 'hs'); break;
@@ -2701,6 +2887,11 @@
           pl.risk = t.checked;
         }
         save();
+        /* The screen behind the list is repainted now, since closing the list
+           -- Done, Escape, the backdrop -- does not render, and the Portal
+           screen kept saying nobody had left. The list lives in the dialog, so
+           the ticks are untouched. */
+        render(true);
       }
     } else if (t.matches('[data-scan]')) {
       updateScanAdd();
