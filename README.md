@@ -24,8 +24,9 @@ always the real one.
   plus every past class after you advance.
 - **Storylines** — two or three recruits a season get a story that generates
   itself from your board and closes itself when you commit or lose them.
-- **Show** — put in a game and get an ESPN-style debate script out, ready to
-  paste into whatever makes your podcast audio.
+- **Show** — put in a game and HARD COUNT argues about it: a host, a former
+  player, an analyst and a recruiting insider, ready to paste into whatever
+  makes your podcast audio.
 - **Advance season** — one click does the offseason: seniors and marked exits
   leave, everyone else moves up a year (redshirts keep theirs), commits enroll
   as freshmen or at their portal class, and the board resets.
@@ -76,16 +77,37 @@ the grounds that last season's worry is not this season's.
 
 ## The show
 
-Type in what happened in a game and get a debate-show script out: a HOST who
-sets it up, a TAKE who goes too far, and a COUNTER who pulls it back. Six
-segments — cold open, the big question, stock up, the hot seat, the numbers,
-final take — followed by producer notes holding the raw facts.
+Type in what happened in a game and get a debate-show script out. The show is
+**HARD COUNT** and it has a cast:
 
-It is written from your data, so it names your players, quotes the stat lines
-you typed, argues the turnover margin the right way round for a win or a loss,
-and works out your running record. The roles are generic on purpose: no real
-broadcaster has words put in their mouth, and you can rename them to whatever
-your show calls them.
+- **Ray Okonkwo** — host. Keeps time, sets the question, needles both of them
+  and enjoys the fight. Never takes a side.
+- **Marcus Boone** — played nine years on the offensive line. Argues from
+  having been in the huddle: defends players, blames coaches and scheme, has
+  no patience for analytics. Loud, personal, interrupts.
+- **Erin Vasquez** — analyst. Argues from the evidence. Dry, precise, and will
+  defend a player everybody hates if the numbers say so.
+- **Gabe Sandoval** — recruiting insider. Speaks in hedged certainties and
+  never reveals a source.
+
+Boone and Vasquez argue from **different sources of authority** rather than at
+different volumes. That is the whole design: "I was in that huddle" against
+"the sample says otherwise" lets them clash over the same fact, and either one
+can be right on a given play. Loud-versus-calm runs out after two episodes.
+
+Seven segments — cold open, the question, stock up, the hot seat, the numbers,
+the insider, final take — then producer notes carrying the raw facts.
+
+It is written from your data: it names your players, quotes the stat lines you
+typed, argues the turnover margin the right way round for a win or a loss, and
+works out your running record from the other games you have logged. **The
+insider segment reads your actual recruiting board** — how many scholarships
+are open and where the holes are, the best name still live and where you sit
+on his list, who is in the portal and who might follow.
+
+Nobody real is impersonated; a test asserts no broadcaster's name ever appears.
+Every name, the show title included, is editable in Settings, and the insider
+segment can be switched off there.
 
 The script lands in a box you can edit. **Copy** is the button you want —
 plain text pastes into an AI far better than a PDF does. **Save as PDF** opens

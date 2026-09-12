@@ -88,10 +88,13 @@
     ok(!!q('#scriptBox'), 'the script opens straight after saving');
     var s = q('#scriptBox').value;
     ok(s.length > 800, 'it is a real script, not a stub', s.length + ' chars');
-    ['COLD OPEN', 'THE BIG QUESTION', 'STOCK UP', 'THE HOT SEAT', 'THE NUMBERS', 'FINAL TAKE', 'PRODUCER NOTES'].forEach(function (seg) {
+    ['COLD OPEN', 'THE QUESTION', 'STOCK UP', 'THE HOT SEAT', 'THE NUMBERS', 'THE INSIDER', 'FINAL TAKE', 'PRODUCER NOTES'].forEach(function (seg) {
       ok(s.indexOf(seg) >= 0, 'has the ' + seg + ' segment');
     });
-    ok(/^HOST:/m.test(s) && /^TAKE:/m.test(s) && /^COUNTER:/m.test(s), 'all three voices speak');
+    ok(/^OKONKWO:/m.test(s) && /^BOONE:/m.test(s) && /^VASQUEZ:/m.test(s), 'the cast speaks by name');
+    ok(/^SANDOVAL:/m.test(s), 'the insider files his segment');
+    ok(s.indexOf('HARD COUNT') >= 0, 'the show is branded');
+    ok(/CAST —/.test(s), 'the script tells you who each voice is');
     ok(s.indexOf(hero) >= 0, 'the standout is named', hero);
     ok(s.indexOf(goat) >= 0, 'the struggler is named', goat);
     ok(s.indexOf('312 yards') >= 0, 'his actual stat line is quoted');

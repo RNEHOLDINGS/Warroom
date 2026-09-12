@@ -180,6 +180,7 @@
       recruits: [],
       storylines: [],
       games: [],
+      show: { title: 'HARD COUNT', host: 'Ray Okonkwo', player: 'Marcus Boone', analyst: 'Erin Vasquez', insider: 'Gabe Sandoval', useInsider: true },
       history: []
     };
   }
@@ -199,6 +200,7 @@
           s.recruits = Array.isArray(parsed.recruits) ? parsed.recruits : [];
           s.storylines = Array.isArray(parsed.storylines) ? parsed.storylines : [];
           s.games = Array.isArray(parsed.games) ? parsed.games : [];
+          if (parsed.show && typeof parsed.show === 'object') s.show = Object.assign(s.show, parsed.show);
           s.history = Array.isArray(parsed.history) ? parsed.history : [];
         }
       }
@@ -307,7 +309,40 @@
     };
   }
 
+  /* The cast. The two who argue do it from different sources of authority
+     rather than at different volumes — Boone from having played, Vasquez from
+     the evidence — which is what lets them clash over the same fact instead
+     of simply disagreeing louder. Plain names on purpose: these have to sound
+     like people on a Tuesday morning panel, not characters. All of them live
+     in settings so the show can be renamed to whatever it really is. */
+  function showCfg() {
+    var s = state.show || {};
+    return {
+      title:   s.title   || 'HARD COUNT',
+      host:    s.host    || 'Ray Okonkwo',
+      player:  s.player  || 'Marcus Boone',
+      analyst: s.analyst || 'Erin Vasquez',
+      insider: s.insider || 'Gabe Sandoval',
+      useInsider: s.useInsider !== false
+    };
+  }
+  /* "Marcus Boone" speaks as BOONE. */
+  function speakerLabel(name) {
+    var parts = String(name || '').replace(/"[^"]*"/g, ' ').trim().split(/\s+/);
+    return (parts[parts.length - 1] || 'HOST').toUpperCase();
+  }
+
   function buildScript(g) {
+    var cast = showCfg();
+    var HOST = speakerLabel(cast.host);
+    var PLAYER = speakerLabel(cast.player);
+    var ANALYST = speakerLabel(cast.analyst);
+    var INSIDER = speakerLabel(cast.insider);
+    /* Speakers are labelled by surname but addressed by first name, because
+       nobody on a panel says "BOONE, sixty seconds". */
+    var firstOf = function (n) { return String(n || '').trim().split(' ')[0] || n; };
+    var hostF = firstOf(cast.host), playerF = firstOf(cast.player), analystF = firstOf(cast.analyst);
+
     var pick = picker(hashStr(g.id + '|' + g.opponent + '|' + g.scoreFor));
     var us = state.school.name || 'Our team';
     var mascot = state.school.mascot || '';
@@ -325,128 +360,163 @@
     var rule = function () { w('============================================================'); };
 
     rule();
-    w('  ' + (mascot ? us + ' ' + mascot : us).toUpperCase() + '  ' + (g.home ? 'VS' : 'AT') + '  ' + them.toUpperCase());
+    w('  ' + cast.title.toUpperCase().split('').join(' '));
+    rule();
+    w('  ' + (mascot ? us + ' ' + mascot : us) + ' ' + (g.home ? 'vs' : 'at') + ' ' + them);
     w('  ' + g.season + ' · Week ' + (g.week || 1) + ' · ' + (won ? 'WIN' : tied ? 'TIE' : 'LOSS') + ' ' + score + ' · Now ' + rec);
     rule();
     w('');
-    w('FORMAT: three voices. HOST sets it up and keeps time. TAKE argues the');
-    w('hot side and never hedges. COUNTER argues the other side with the');
-    w('context. Rename them to whatever your show calls them.');
+    w('CAST — give each one its own voice.');
+    w('');
+    w('  ' + HOST + ' (' + cast.host + ') — host. Keeps time, sets the question,');
+    w('    needles both of them and enjoys the fight. Never takes a side.');
+    w('');
+    w('  ' + PLAYER + ' (' + cast.player + ') — played nine years on the offensive');
+    w('    line. Argues from having been in the huddle. Defends players,');
+    w('    blames coaches and scheme, has no time for analytics. Loud, personal,');
+    w('    interrupts.');
+    w('');
+    w('  ' + ANALYST + ' (' + cast.analyst + ') — analyst. Argues from evidence.');
+    w('    Dry, precise, never raises the volume, and will defend a player');
+    w('    everybody hates if the numbers say so.');
+    if (cast.useInsider) {
+      w('');
+      w('  ' + INSIDER + ' (' + cast.insider + ') — recruiting insider. Speaks in');
+      w('    hedged certainties. Never reveals a source.');
+    }
     w('');
     w('');
 
+    /* ---- cold open ---- */
     w('--- COLD OPEN -------------------------------------------');
     w('');
-    w('HOST: ' + pick([
-      'Good morning. ' + us + ' ' + (won ? 'got it done' : tied ? 'did not lose, which is the kindest thing I can say' : 'did not get it done') + ', ' + score + ', ' + (g.home ? 'at home' : 'on the road') + ' against ' + them + '. I already know where this is going.',
-      'We start where we have to. ' + score + ', ' + (g.home ? 'at home' : 'on the road') + ', ' + (won ? 'a win' : tied ? 'a tie' : 'a loss') + ' against ' + them + '. That puts them ' + rec + '.',
-      us + ' and ' + them + '. Final ' + score + '. ' + (blowout ? 'It was over early.' : tight ? 'It came down to the last possession.' : 'It was settled in the second half.') + ' Let us get into it.'
+    w(HOST + ': ' + pick([
+      'This is ' + cast.title + '. Nobody here is getting the benefit of the doubt. ' + us + ' ' + (won ? 'won' : tied ? 'tied' : 'lost') + ' ' + score + ' ' + (g.home ? 'at home' : 'on the road') + ' against ' + them + ', and these two have already been arguing in the hallway.',
+      cast.title + '. ' + score + ', ' + (g.home ? 'at home' : 'on the road') + ' against ' + them + '. ' + (blowout ? 'It was over by the third quarter.' : tight ? 'It went to the wire.' : 'It got decided after half time.') + ' ' + PLAYER + ', you look like you have something to say.',
+      'Good morning, this is ' + cast.title + '. ' + us + ' are ' + rec + ' after ' + score + ' ' + (g.home ? 'at home' : 'on the road') + '. I am going to sit back for this one.'
     ]));
     w('');
-    w('TAKE: ' + (won
+    w(PLAYER + ': ' + (won
       ? pick([
-        (blowout ? 'THAT is what I have been waiting on. ' : '') + 'I do not want to hear about style points. You put ' + int(g.scoreFor, 0, 999) + ' on somebody ' + (g.home ? 'in your own building' : 'on the road') + ', that is a statement.',
-        'Everybody wanted to tell me what this team could not do. ' + score + '. Next question.'
+        (blowout ? 'THAT is what I have been waiting on all year. ' : '') + 'And I do not want to hear one word about how it looked. You go out there and put ' + int(g.scoreFor, 0, 999) + ' on a grown man, you earned the right to enjoy your Sunday.',
+        'Everybody in that building played angry today. You could see it in the first series. That is what I have been asking for.'
       ])
       : tied
-        ? 'A tie is a loss with better manners. Nobody hangs a banner for this.'
+        ? 'A tie is the worst thing in sport. Nobody gets to be happy and nobody gets to be honest about it.'
         : pick([
-          'No. Not today. You do not lose ' + (tight ? 'a game that close' : 'like that') + ' and then tell me the arrow is pointing up.',
-          'I have been patient with this football team. ' + score + ' is where the patience runs out.'
+          'No. No, ' + hostF + '. You do not lose ' + (tight ? 'a game that close' : 'like that') + ' and then walk in here and tell me about progress.',
+          'I have defended this football team on this show every week. I am not doing it today.'
         ])));
     w('');
-    w('COUNTER: ' + pick([
-      'And there it is. One game, and the whole thing is either a dynasty or a disaster.',
-      'Take a breath. Let me give people some context before you bury anybody.',
-      'You are doing it again. Can we look at what actually happened first?'
+    w(ANALYST + ': ' + pick([
+      'And we are forty seconds in and nobody has said a number yet.',
+      playerF + ' is doing the thing where one afternoon becomes a personality trait.',
+      'I would like to enter some evidence before we sentence anybody.'
     ]));
+    w('');
+    w(PLAYER + ': Here we go.');
     w('');
     w('');
 
-    w('--- SEGMENT 1: THE BIG QUESTION -------------------------');
+    /* ---- segment 1 ---- */
+    w('--- SEGMENT 1: THE QUESTION -----------------------------');
     w('');
     var q = won
       ? (blowout ? 'Is ' + us + ' actually this good, or is ' + them + ' just that bad?'
-                 : 'A win is a win — but should ' + (mascot ? 'the ' + mascot : us) + ' be winning this one by more?')
-      : tied ? 'What does a tie tell you about where this team really is?'
-             : (tight ? 'Who loses ' + us + ' this football game — the players or the plan?'
-                      : 'Was this a bad day, or is this simply who ' + us + ' is?');
-    w('HOST: Question on the board — ' + q);
+                 : 'They won. Should they have won by more?')
+      : tied ? 'What does a tie actually tell you about this team?'
+             : (tight ? 'Who loses this football game — the players or the plan?'
+                      : 'Bad day, or is this just who they are?');
+    w(HOST + ': The question on the board. ' + q + ' ' + playerF + ', sixty seconds.');
     w('');
-    w('TAKE: ' + (won
-      ? 'I am not doing the thing where we win and still go looking for something to cry about. They are ' + rec + '. ' + (blowout ? 'They did not just win, they embarrassed somebody.' : 'You bank it and you move on.')
-      : 'Both, and anybody telling you otherwise is selling something. ' + (tight ? 'Close losses still go in the same column.' : 'Nobody gets beaten by that much by accident.')));
+    w(PLAYER + ': ' + (won
+      ? 'I am not going to win a game and then go hunting for something to cry about. That is what analysts do. ' + (blowout ? 'They did not beat them, they embarrassed them, and that matters in a locker room.' : 'They are ' + rec + '. Bank it.')
+      : 'Both. And I will tell you where it starts — it starts up front. ' + (tight ? 'You lose a game that close, somebody did not finish a block on a critical down. I promise you that.' : 'When you get beaten by ' + m + ', that is not one man. That is a plan that did not survive contact.')));
     w('');
-    w('COUNTER: ' + (won
-      ? (blowout || comfortable ? 'Winning by ' + m + ' hides a lot. Enjoy it — the tape will still have notes.' : 'A ' + m + '-point game is a ' + m + '-point game. They found a way, and finding a way is a skill.')
-      : (tight ? 'They were one play from a completely different conversation. I am not burning the season over that.' : 'Ugly games happen to good teams. What matters is what shows up next week.')));
+    w(ANALYST + ': ' + (won
+      ? (blowout || comfortable ? 'A ' + m + '-point margin hides a great deal, and I would rather look at how they got there than how it felt. Enjoy the win. The tape has notes.' : 'A ' + m + '-point game is a coin flip that landed correctly. I would not build a thesis on it, but winning coin flips is a repeatable skill and this team is doing it.')
+      : (tight ? 'They were inside one possession. If you want to tell me this team is broken, you need more than one afternoon and I do not have it yet.' : 'I am less interested in whether it was ugly than in whether it was predictable. And ' + (g.yardsAgainst ? 'giving up ' + g.yardsAgainst + ' yards was not an accident.' : 'this one was visible coming.'))));
     w('');
-    w('HOST: Hold that thought. We are coming back to it.');
+    w(PLAYER + ': ' + analystF + ', I watched the same football game you did. They were bleeding out there.');
+    w('');
+    w(ANALYST + ': And yet the scoreboard is the scoreboard.');
+    w('');
+    w(HOST + ': Hold it. We come back to this.');
     w('');
     w('');
 
+    /* ---- segment 2: stock up ---- */
     w('--- SEGMENT 2: STOCK UP ---------------------------------');
     w('');
     if (stars.length) {
       stars.slice(0, 3).forEach(function (p, i) {
-        w('HOST: ' + (i === 0 ? 'Start me with ' : 'Next. ') + p.name + (p.pos ? ', ' + p.pos : '') + '. ' + sentence(p.line || 'Big afternoon'));
+        w(HOST + ': ' + (i === 0 ? 'Start me with ' : 'Next one. ') + p.name + (p.pos ? ', ' + p.pos : '') + '. ' + sentence(p.line || 'Big afternoon'));
         w('');
-        w('TAKE: ' + pick([
-          'Put some RESPECT on it. ' + p.name + ' did that ' + (won ? 'in a winning effort' : 'while everybody around him was drowning') + '. ' + (p.line ? sentence(p.line) + ' ' : '') + 'That is not a good game, that is a statement game.',
-          'I told everybody about ' + p.name + '. I have been telling you for weeks. ' + (p.line ? sentence(p.line) + ' ' : '') + 'Nobody wanted to hear it.',
-          'What more do you want from the man? ' + (p.line ? sentence(p.line) + ' ' : '') + 'He carried people today.'
+        w(PLAYER + ': ' + pick([
+          'Put some RESPECT on that young man. ' + (p.line ? sentence(p.line) + ' ' : '') + 'And he did it ' + (won ? 'when the game was still in doubt' : 'while the whole thing was falling apart around him') + '. That is not a stat, that is character.',
+          'I have been telling this audience about ' + p.name + ' since August. ' + (p.line ? sentence(p.line) + ' ' : '') + 'Nobody wanted to hear it.',
+          'You want to know what that is? That is a man who practises the way he plays. ' + (p.line ? sentence(p.line) + ' ' : '') + 'You cannot coach that in September.'
         ]));
         w('');
-        w('COUNTER: ' + pick([
-          'No argument, and I will go further — that is the version of him you build the whole thing around.',
-          'Agreed, and the part people will miss is that he did it without much help.',
-          'Best player on the field. I do not need talking into it.'
+        w(ANALYST + ': ' + pick([
+          'For once we agree, and I will go further — that is the most efficient game he has played. It is not close.',
+          'No argument. And the part Marcus will not say is that he did it with almost no help around him.',
+          'He was the best player on that field by any measure I have, and I have several.'
         ]));
         w('');
+        if (i === 0) {
+          w(PLAYER + ': "By any measure." Just say the man balled out.');
+          w('');
+          w(ANALYST + ': The man balled out.');
+          w('');
+        }
       });
     } else {
-      w('HOST: Nobody got flagged as a standout this week. Who are we giving it to?');
+      w(HOST + ': Nobody got flagged as a standout this week. Who gets it?');
       w('');
-      w('TAKE: That is the story right there. ' + (won ? 'You won and you cannot name a hero.' : 'You lost and not one man stood up.'));
+      w(PLAYER + ': That is your story right there. ' + (won ? 'You won and you cannot name one man who won it for you.' : 'You lost and not one man stood up.'));
       w('');
-      w('COUNTER: Some games are just eleven people doing their job. Not everything needs a headline.');
+      w(ANALYST + ': Or eleven people did their job competently and nobody made a highlight. That is allowed.');
       w('');
     }
     w('');
 
+    /* ---- segment 3: hot seat ---- */
     w('--- SEGMENT 3: THE HOT SEAT -----------------------------');
     w('');
     if (rough.length) {
       rough.slice(0, 3).forEach(function (p, i) {
-        w('HOST: ' + (i === 0 ? 'Now the other side of it. ' : 'One more. ') + p.name + (p.pos ? ' at ' + p.pos : '') + '. ' + sentence(p.line || 'It was not his day'));
+        w(HOST + ': ' + (i === 0 ? 'Now the other side. ' : 'One more. ') + p.name + (p.pos ? ' at ' + p.pos : '') + '. ' + sentence(p.line || 'It was not his day'));
         w('');
-        w('TAKE: ' + pick([
-          'I am not going to sit here and protect him. ' + (p.line ? sentence(p.line) + ' ' : '') + 'At some point you are what the tape says you are.',
-          'Somebody has to say it. ' + p.name + ' cost them ' + (won ? 'points they were fortunate not to need' : 'this football game') + '. ' + (p.line ? sentence(p.line) + ' ' : ''),
-          'You cannot win at this level with that. ' + (p.line ? sentence(p.line) + ' ' : '') + 'That is the whole take.'
+        w(ANALYST + ': ' + pick([
+          'I will start, because Marcus is going to defend him and I want the facts on the table first. ' + (p.line ? sentence(p.line) + ' ' : '') + 'That is not a wobble. That is a pattern I can show you.',
+          (p.line ? sentence(p.line) + ' ' : '') + 'At some point the sample stops being small.',
+          'The uncomfortable version is that ' + (p.line ? 'this — ' + p.line + ' — ' : 'this ') + 'is closer to his average than anybody wants to admit.'
         ]));
         w('');
-        w('COUNTER: ' + pick([
-          'And what is the plan — bench him? Who is behind him? This is where the take falls apart.',
-          'One bad afternoon from a kid who has been fine all year.',
-          'I will take the heat for defending him. He was not helped. Look at what was going on around him.'
+        w(PLAYER + ': ' + pick([
+          'And what is your plan? Bench him? Who is behind him? This is where the spreadsheet runs out of road.',
+          'You are talking about a kid. Twenty years old, on the road, in front of a hostile crowd. You ever done that?',
+          'He was not helped. I watched that film too and nobody around him did their job either. But he is the one on the graphic.'
         ]));
         w('');
-        w('TAKE: That is an excuse.');
+        w(ANALYST + ': I am not blaming him for ' + (won ? 'anything' : 'the loss') + '. I am telling you what happened.');
         w('');
-        w('COUNTER: That is context. There is a difference.');
+        w(PLAYER + ': It sounds like blame.');
         w('');
+        if (i === 0) { w(HOST + ': It is definitely blame.'); w(''); }
       });
     } else {
-      w('HOST: Nobody on the hot seat this week.');
+      w(HOST + ': Nobody on the hot seat this week.');
       w('');
-      w('TAKE: Then somebody is not being honest with the film.');
+      w(ANALYST + ': Then somebody has not watched the whole tape.');
       w('');
-      w('COUNTER: Or — and hear me out — everybody played fine.');
+      w(PLAYER + ': Or — and stay with me — everybody played fine.');
       w('');
     }
     w('');
 
+    /* ---- segment 4: numbers ---- */
     var nums = [];
     if (g.yardsFor || g.yardsAgainst) nums.push('Yards: ' + (g.yardsFor || '?') + ' for, ' + (g.yardsAgainst || '?') + ' against');
     if (g.toFor || g.toAgainst) nums.push('Turnovers: ' + int(g.toFor, 0, 99) + ' given away, ' + int(g.toAgainst, 0, 99) + ' taken');
@@ -458,47 +528,105 @@
       nums.forEach(function (n) { w('   ' + n); });
       w('');
       var toDiff = int(g.toAgainst, 0, 99) - int(g.toFor, 0, 99);
-      w('HOST: The numbers behind it.');
+      w(HOST + ': ' + analystF + ', this is your segment. ' + playerF + ', try not to interrupt.');
       w('');
-      w('TAKE: ' + (toDiff < 0
-        ? 'You lost the turnover battle by ' + Math.abs(toDiff) + '. That is not bad luck, that is carelessness, and it gets you beaten in November.'
+      w(ANALYST + ': ' + (toDiff < 0
+        ? 'They lost the turnover battle by ' + Math.abs(toDiff) + '. Teams that do that lose about seven times in ten. That is not a narrative, that is the base rate.'
         : toDiff > 0
-          ? 'Plus ' + toDiff + ' in takeaways. That is coaching, that is want-to, and that is why the scoreboard reads the way it does.'
-          : 'Even in turnovers, so nobody gets to hide behind the football. This was decided by who was better.'));
+          ? 'Plus ' + toDiff + ' in takeaways, and that is most of your margin right there. Take those away and this is a different broadcast.'
+          : 'Even in turnovers, which means nobody gets to hide behind the football. This was decided by execution.') +
+        (g.thirdDown ? ' Third down was ' + g.thirdDown + ', and that is the number that tells you whether the plan worked.' : ''));
       w('');
-      w('COUNTER: ' + (g.thirdDown
-        ? 'Third down is the number I care about — ' + g.thirdDown + '. That tells you whether the plan worked. The highlight does not.'
-        : 'Yardage is a vanity number. Points are the only one that pays.'));
+      w(PLAYER + ': ' + pick([
+        'See, this is where you and I live in different buildings. Turnovers are not a base rate. They are a man not wrapping up, or a quarterback getting hit as he throws because somebody lost a one-on-one.',
+        'Every one of those numbers has a human being attached to it, ' + analystF + '. You said seven in ten. I said somebody quit on a rep. Those are the same sentence.',
+        'I do not care about the rate. I care about which play it happened on and who was standing there.'
+      ]));
+      w('');
+      w(ANALYST + ': Those are compatible positions, which is why this is exhausting.');
       w('');
       w('');
     }
 
-    w('--- SEGMENT 5: FINAL TAKE -------------------------------');
+    /* ---- segment 5: the insider, wired to the actual board ---- */
+    if (cast.useInsider) {
+      var n = computeNeeds();
+      var holes = n.rows.filter(function (r) { return r.need > 0; }).sort(function (a, b) { return b.need - a.need; });
+      var board = state.recruits.filter(function (r) { return (r.type || 'hs') === 'hs' && r.status === 'board' && r.name; }).sort(byStars);
+      var committed = state.recruits.filter(isIncoming).length;
+      var out = state.players.filter(function (p) { return p.exit === 'portal'; });
+      var risk = state.players.filter(function (p) { return p.risk && !isLeaving(p); });
+
+      w('--- SEGMENT 5: THE INSIDER ------------------------------');
+      w('');
+      w(HOST + ': ' + cast.insider + ' is with us. What are you hearing?');
+      w('');
+      if (holes.length) {
+        var h = holes.slice(0, 3).map(function (r) { return r.need + ' at ' + r.group.name.toLowerCase(); });
+        w(INSIDER + ': The number everybody inside that building knows is ' + n.totals.open + '. That is how many scholarships are open, and the shape of it matters more than the total — they are ' +
+          h.join(', ') + '. You do not fix that in January.');
+      } else {
+        w(INSIDER + ': They are in the rare position of not needing much. ' + n.totals.open + ' open, and no hole you would call urgent. That changes how they can recruit — they get to be picky.');
+      }
+      w('');
+      if (board.length) {
+        var b = board[0];
+        var where = b.state ? ' out of ' + b.state : '';
+        var stand = b.standing ? ' I am told they are number ' + b.standing + ' on his list, and they know it.' : '';
+        w(INSIDER + ': The name to watch is the ' + (b.stars || 3) + '-star ' + b.pos + where + '.' + stand +
+          (b.dealbreaker ? ' Everything with him comes back to ' + b.dealbreaker + '.' : '') +
+          (b.hours ? ' They are spending ' + b.hours + ' hours a week on him, which tells you where he sits.' : ''));
+        w('');
+        if (board.length > 1) {
+          w(INSIDER + ': Behind him there ' + (board.length - 1 === 1 ? 'is one more name' : 'are ' + (board.length - 1) + ' more names') + ' still live on that board, and ' + (committed === 1 ? 'one commitment' : committed + ' commitments') + ' in the bag.');
+          w('');
+        }
+      } else if (committed) {
+        w(INSIDER + ': ' + committed + ' committed and nothing else live on the board right now, which is quiet for this time of year.');
+        w('');
+      }
+      if (out.length || risk.length) {
+        w(INSIDER + ': And the part nobody enjoys — ' +
+          (out.length ? (out.length === 1 ? 'one man is already in the portal' : out.length + ' are already in the portal') + (out.length <= 3 ? ', ' + out.map(function (p) { return p.name; }).join(' and ') : '') : 'nobody has entered the portal yet') +
+          (risk.length ? ', and I am told ' + (risk.length === 1 ? 'another one is thinking about it' : risk.length + ' more are thinking about it') + '. If they all go, that ' + n.totals.open + ' becomes ' + n.totals.openIfRisk + '.' : '.'));
+        w('');
+      }
+      w(PLAYER + ': That is the part people miss. You are not building a roster, you are plugging a hole while somebody drills a new one.');
+      w('');
+      w(ANALYST + ': That is the most agreeable thing you have said all morning.');
+      w('');
+      w('');
+    }
+
+    /* ---- final take ---- */
+    w('--- SEGMENT 6: FINAL TAKE -------------------------------');
     w('');
-    w('HOST: Ten seconds each. Where is this team going?');
+    w(HOST + ': Ten seconds each. Where does this team finish?');
     w('');
-    w('TAKE: ' + (won
-      ? 'They are ' + rec + ' and I am not apologising for being excited. Book it.'
-      : 'Until I see it fixed, I am off the bandwagon. ' + rec + ' is ' + rec + '.'));
+    w(PLAYER + ': ' + (won
+      ? 'They are ' + rec + ' and playing angry. I am not apologising for enjoying it. Write it down.'
+      : 'Until I see somebody get physical in the fourth quarter, I am out. ' + rec + ' is ' + rec + '.'));
     w('');
-    w('COUNTER: ' + (won
-      ? 'Good win. Next week tells us whether it meant anything.'
-      : 'One football game. Ask me again in three weeks and I will give you a real answer.'));
+    w(ANALYST + ': ' + (won
+      ? 'Good process, good result. Next week tells us which one it was.'
+      : 'One data point. Ask me after the next two and I will give you an actual answer.'));
     w('');
-    if (g.notes) { w('HOST: One more before we go — ' + g.notes); w(''); }
-    w('HOST: That is the show.');
+    if (g.notes) { w(HOST + ': One more thing before we go — ' + g.notes); w(''); }
+    w(HOST + ': That is ' + cast.title + '. Same time.');
     w('');
     w('');
 
+    /* ---- facts ---- */
     rule();
     w('  PRODUCER NOTES — raw facts, not to be read aloud');
     rule();
+    w('Show:        ' + cast.title);
     w('Team:        ' + (us + (mascot ? ' ' + mascot : '')));
     w('Opponent:    ' + them + (g.home ? ' (home)' : ' (away)'));
     w('Season/Week: ' + g.season + ' / ' + (g.week || 1));
     w('Result:      ' + (won ? 'WIN' : tied ? 'TIE' : 'LOSS') + ' ' + score + '  (margin ' + m + ')');
     w('Record:      ' + rec);
-    nums.forEach(function (n) { w(n); });
+    nums.forEach(function (n2) { w(n2); });
     if (perf.length) {
       w('');
       w('Players:');
@@ -1761,6 +1889,17 @@
       '<div class="field"><label for="s-hours">Recruiting hours per week</label><input type="number" id="s-hours" value="' + state.hours + '" min="0" max="999"></div>' +
     '</div><div class="modal-actions"><button class="btn primary" data-action="save-program">Save program</button></div></div>';
 
+    var sh = showCfg();
+    html += '<div class="card"><div class="card-head"><h2>The show</h2><span class="hint">Who is on the panel. Change a name and the next script uses it.</span></div><div class="row">' +
+      '<div class="field"><label for="sh-title">Show name</label><input type="text" id="sh-title" value="' + esc(sh.title) + '" placeholder="HARD COUNT"></div>' +
+      '<div class="field"><label for="sh-host">Host</label><input type="text" id="sh-host" value="' + esc(sh.host) + '"><div class="help">Keeps time, sets the question</div></div>' +
+      '<div class="field"><label for="sh-player">The ex-player</label><input type="text" id="sh-player" value="' + esc(sh.player) + '"><div class="help">Argues from having played</div></div>' +
+      '<div class="field"><label for="sh-analyst">The analyst</label><input type="text" id="sh-analyst" value="' + esc(sh.analyst) + '"><div class="help">Argues from the evidence</div></div>' +
+      '<div class="field"><label for="sh-insider">The insider</label><input type="text" id="sh-insider" value="' + esc(sh.insider) + '"><div class="help">Recruiting news</div></div>' +
+    '</div>' +
+    '<label class="check"><input type="checkbox" id="sh-useins"' + (sh.useInsider ? ' checked' : '') + '> Include the recruiting segment, built from your own board</label>' +
+    '<div class="modal-actions"><button class="btn primary" data-action="save-show">Save the cast</button></div></div>';
+
     html += '<div class="card"><div class="card-head"><h2>Targets by position</h2><span class="hint">How many you want on the roster at each spot. Sum: <b id="targetSum">' + sumTargets() + '</b> of ' + state.cap + '.</span></div><div class="targets-grid">';
     GROUPS.forEach(function (g) {
       html += '<div><label for="t-' + g.id + '">' + g.id + ' <span style="font-weight:400;color:var(--ink-muted)">' + esc(g.name) + '</span></label><input type="number" id="t-' + g.id + '" data-target="' + g.id + '" value="' + int(state.targets[g.id], 0, 99) + '" min="0" max="99"></div>';
@@ -2510,6 +2649,16 @@
         state.cap = int($('#s-cap').value, 1, 200);
         state.hours = int($('#s-hours').value, 0, 999);
         save(); render(); toast('Saved.'); break;
+      case 'save-show':
+        state.show = {
+          title: $('#sh-title').value.trim() || 'HARD COUNT',
+          host: $('#sh-host').value.trim() || 'Ray Okonkwo',
+          player: $('#sh-player').value.trim() || 'Marcus Boone',
+          analyst: $('#sh-analyst').value.trim() || 'Erin Vasquez',
+          insider: $('#sh-insider').value.trim() || 'Gabe Sandoval',
+          useInsider: $('#sh-useins').checked
+        };
+        save(); render(); toast('Cast saved. Rewrite a script to hear them.'); break;
       case 'save-targets':
         $$('[data-target]').forEach(function (inp) { state.targets[inp.getAttribute('data-target')] = int(inp.value, 0, 99); });
         save(); render(); toast('Targets saved — ' + sumTargets() + ' of ' + state.cap + '.'); break;
