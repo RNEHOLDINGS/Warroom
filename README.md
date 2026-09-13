@@ -113,6 +113,23 @@ insider segment reads your actual recruiting board** — how many scholarships
 are open and where the holes are, the best name still live and where you sit
 on his list, who is in the portal and who might follow.
 
+**Team stats** go in an us-and-them table laid out like the game's own team
+stats screen: rushing yards, passing yards, total yards (added up for you),
+turnovers, third downs and fourth downs (converted of tried), and penalties
+(flags for yards). All of them are optional, and 0 counts as an answer. **The
+numbers segment explains what each stat did to the game** instead of reading
+it out. Under 90 rushing yards means a one-dimensional offense. 8 of 14 allowed
+on third down is a defense that could not get off the field. Outgaining a team
+and losing means points were left in the red zone. The three or four stats
+that mattered most get argued, and the rest stay in the table.
+
+**Shorthand is spoken as words.** "24/31, 312 yds, 3 TD, 1 INT" is read as "24
+of 31, 312 yards, 3 touchdowns, 1 interception", and QB becomes quarterback,
+3rd & 8 becomes third and 8, a 45 yd FG becomes a 45-yard field goal. The script
+is written that way, and Voice it translates again when it speaks, so a script
+you typed shorthand into still sounds right. The producer notes keep your raw
+line.
+
 Nobody real is impersonated; a test asserts no broadcaster's name ever appears.
 Every name, the show title included, is editable in Settings, and the insider
 segment can be switched off there.
@@ -352,6 +369,9 @@ There are ten suites, all driven through real DOM clicks with hit testing:
   signee still becomes somebody on the roster.
 - `showtest.html` — game entry, every segment of the generated script, that a
   loss argues differently from a win, and that no real broadcaster is named.
+- `stattest.html` — shorthand said as words, the team-stats table, what each
+  stat is argued to mean, 0 kept apart from blank, and old games' typed third
+  downs and penalties still counting.
 - `voicetest.html` — Voice it against a stand-in for Google: what is sent, the
   two-voice limit, the stitched WAV, retries, a bad key, cancelling, and that
   the key never reaches a backup. Run with `?custom=1` too, to check a cast

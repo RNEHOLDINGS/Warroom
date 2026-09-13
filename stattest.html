@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Stat talk test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+/* The show says stats the way a broadcaster does, and every team stat it is
+   given turns into a point about what it did to the game. */
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function set(sel, v) { var el = q(sel); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }
+  function click(sel) { var el = q(sel); if (!el) { ok(false, 'element ' + sel, 'missing'); return; } el.click(); }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom;
+  try {
+    /* --- shorthand, said out loud --- */
+    var S = W.spoken;
+    var cases = [
+      ['24/31, 312 yds, 3 TD, 1 INT', '24 of 31, 312 yards, 3 touchdowns, 1 interception'],
+      ['1 TD', '1 touchdown'],
+      ['TD pass on 3rd & 8', 'touchdown pass on third and 8'],
+      ['19 car, 168 yds, 2 rush TDs', '19 carries, 168 yards, 2 rushing touchdowns'],
+      ['7 rec 112 rec yds 1 rec TD', '7 catches 112 receiving yards 1 receiving touchdown'],
+      ['2 sacks, 1 FF, 3 TFL, 1 PBU', '2 sacks, 1 forced fumble, 3 tackles for loss, 1 pass breakup'],
+      ['3TD 2INT', '3 touchdowns 2 interceptions'],
+      ['2 INTs', '2 interceptions'],
+      ['FG 3/4, lng 52', 'field goal 3 of 4, a long of 52'],
+      ['picked off in Q4, lost in OT', 'picked off in the fourth quarter, lost in overtime'],
+      ['7-for-14 on 3rd down, 50%', '7 of 14 on third down, 50 percent'],
+      ['QB hurried all day, WRs dropped 3', 'quarterback hurried all day, wide receivers dropped 3'],
+      ['1 fum, 5.2 YPC', '1 fumble, 5.2 yards per carry'],
+      ['100+ yds', '100-plus yards'],
+      ['J.Carty was great', 'J. Carty was great'],
+      ['Pat threw a pick 6', 'Pat threw a pick-six'],
+      ['went for 2pt conv', 'went for two-point conversion'],
+      ['Missed 45 yd FG in Q4', 'Missed 45-yard field goal in the fourth quarter'],
+      ['68 yard TD run', '68-yard touchdown run']
+    ];
+    cases.forEach(function (c) { var got = S(c[0]); ok(got === c[1], 'says "' + c[0] + '"', got); });
+    ok(S('Nothing to change here.') === 'Nothing to change here.', 'plain sentences are left alone', S('Nothing to change here.'));
+    ok(!/\b(TD|INT|YDS)\b/i.test(S('TD INT YDS td int yds')), 'no bare shorthand survives', S('TD INT YDS td int yds'));
+
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    var qb = st.players.filter(function (p) { return p.pos === 'QB'; })[0];
+    st.show = { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true };
+    var spokenLines = function (s) { return WarRoomVoice.parseDialogue(s).map(function (t) { return t.text; }).join('\n'); };
+    var numbers = function (s) { return (s.split('THE NUMBERS')[1] || '').split('--- SEGMENT')[0]; };
+
+    function base0() { return { season: st.season, week: 5, opponent: 'Kansas', home: true, notes: '', performances: [] }; }
+    /* --- the script itself carries no shorthand --- */
+    var g = { id: 'st1', season: st.season, week: 3, opponent: 'Baylor', home: true, result: 'W', scoreFor: 34, scoreAgainst: 20,
+      rushFor: 235, rushAgainst: 70, passFor: 180, passAgainst: 310, toFor: 0, toAgainst: 2,
+      thirdFor: 9, thirdForAtt: 14, thirdAgainst: 3, thirdAgainstAtt: 12, fourthFor: 2, fourthForAtt: 2, fourthAgainst: '', fourthAgainstAtt: '',
+      penFor: 10, penForYds: 95, penAgainst: '', penAgainstYds: '', notes: 'Won it in OT after a 3rd & 12 conversion',
+      performances: [
+        { name: qb.name, pos: 'QB', line: '22/30, 280 yds, 3 TD, 1 INT', verdict: 'standout' },
+        { name: 'Somebody Else', pos: 'CB', line: 'beaten for 2 TDs', verdict: 'struggled' }
+      ] };
+    var s = W.buildScript(g);
+    var said = spokenLines(s);
+    ok(!/\b(TDs?|INTs?|yds|QB|CB)\b/.test(said), 'nobody on air says TD, INT, yds or a position code', (said.match(/.{0,30}\b(TDs?|INTs?|yds|QB|CB)\b.{0,10}/) || [''])[0]);
+    ok(/3 touchdowns, 1 interception/.test(said), 'the stat line is read as words');
+    ok(/quarterback/.test(said), 'the position is said, not spelled');
+    ok(!/\b[A-Z]\.[A-Z][a-z]/.test(W.buildScript(Object.assign({}, g, { id: 'st2', performances: [{ name: 'J.Carty', pos: 'QB', line: '3 TD', verdict: 'standout' }] })).split('PRODUCER NOTES')[0].split('SEGMENT 1')[1]),
+      'an abbreviated name is spaced so it is not read as "J dot Carty"');
+    var close = numbers(W.buildScript(Object.assign({}, base0(), { id: 'cl', result: 'L', scoreFor: 24, scoreAgainst: 27, toFor: 2, toAgainst: 1, rushFor: 62, rushAgainst: 214,
+      thirdFor: 4, thirdForAtt: 13, fourthFor: 0, fourthForAtt: 2 })));
+    ok(/0 for 2 on fourth down/.test(close), 'failed fourth downs in a one-score loss make the segment', close);
+    ok(/overtime after a third and 12 conversion\./.test(said), 'notes are spoken too');
+    ok(/22\/30, 280 yds, 3 TD, 1 INT/.test(s.split('PRODUCER NOTES')[1]), 'the producer notes keep the raw line');
+
+    /* --- the numbers: the table, then what they mean --- */
+    var seg = numbers(s);
+    ok(/Rushing yards\s+235\s+70/.test(seg), 'rushing yards in the table', seg);
+    ok(/Passing yards\s+180\s+310/.test(seg), 'passing yards in the table');
+    ok(/Total yards\s+415\s+380/.test(seg), 'total yards added up from rushing and passing');
+    ok(/Third downs\s+9 of 14\s+3 of 12/.test(seg), 'third downs in the table');
+    ok(/Plus 2 in takeaways/.test(seg), 'turnovers lead, because they swing the most games');
+    ok(/ran for 235 yards.*eats the clock/.test(seg) || /third down.*keeps drives alive/.test(seg) || /310 yards through the air/.test(seg),
+      'a stat is explained by what it did to the game, not just read out');
+    var aLines = seg.split('\n').filter(function (l) { return /^HARLAN:/.test(l); });
+    var pLines = seg.split('\n').filter(function (l) { return /^MABRY:/.test(l); });
+    ok(aLines.length === 5 && pLines.length === 4, 'a game where four stats each mattered gets four points, each answered, then the sign-off', aLines.length + ' analyst, ' + pLines.length + ' player');
+    ok(!/Third down was/.test(seg), 'no bare "third down was 9 of 14"');
+
+    /* each stat on its own says what it means */
+    var base = { season: st.season, week: 4, opponent: 'Iowa', home: false, notes: '', performances: [] };
+    function only(extra, result, sf, sa) {
+      return numbers(W.buildScript(Object.assign({ id: 'o' + Math.random(), result: result || 'L', scoreFor: sf == null ? 17 : sf, scoreAgainst: sa == null ? 24 : sa }, base, extra)));
+    }
+    ok(/one-dimensional/.test(only({ rushFor: 45 })), 'a stalled run game is called one-dimensional');
+    ok(/245 rushing yards allowed/.test(only({ rushAgainst: 245 })), 'a run defence that got gashed is the headline');
+    ok(/could not run, so they had to throw/.test(only({ rushFor: 60, passFor: 340 })), '340 passing with no run game is not called balance');
+    ok(/discount some of it/.test(only({ passFor: 330 }, 'L', 10, 38)), 'a big passing day in a blowout loss is discounted');
+    ok(/3 of 15 on third down\. 20 percent/.test(only({ thirdFor: 3, thirdForAtt: 15 })), 'a bad third-down day gets a percentage and a consequence');
+    ok(/not getting off the field/.test(only({ thirdAgainst: 9, thirdAgainstAtt: 14 })), 'giving up third downs is about getting off the field');
+    ok(/0 for 2 on fourth down.*turnover by another name/.test(only({ fourthFor: 0, fourthForAtt: 2 })), 'failed fourth downs are turnovers on downs');
+    ok(/outgained them by 120 yards and lost/.test(only({ yardsFor: 420, yardsAgainst: 300 })), 'outgaining a team and losing is the argument');
+    ok(/outgained by 150 yards and still won/.test(only({ yardsFor: 250, yardsAgainst: 400 }, 'W', 24, 21)), 'winning while outgained is flagged as fragile');
+    ok(/11 penalties for 98 yards/.test(only({ penFor: 11, penForYds: 98 })), 'penalties are counted with their yards');
+    ok(/Nobody turned it over/.test(only({ toFor: 0, toAgainst: 0 })), 'zero turnovers is a real answer, not a blank');
+    ok(only({}) === '', 'no stats typed, no numbers segment');
+
+    /* old games kept third downs and penalties as text */
+    var legacy = only({ yardsFor: 240, yardsAgainst: 480, toFor: 3, toAgainst: 0, thirdDown: '3 of 15', penalties: '9 for 85' }, 'L', 10, 31);
+    ok(/Third downs\s+3 of 15/.test(legacy) && /Penalties\s+9 for 85/.test(legacy), 'an old game\'s typed third downs and penalties still count', legacy);
+
+    /* --- the form --- */
+    W.setView('show');
+    click('[data-action="add-game"]');
+    ok(!!q('.box-grid'), 'the stats are an us-and-them table');
+    set('#g-opp', 'TCU'); set('#g-sf', '28'); set('#g-sa', '21');
+    set('#g-rf', '150'); set('#g-pf', '260');
+    ok(q('#g-yf').placeholder === '410', 'total yards shows rushing plus passing as it is typed', q('#g-yf').placeholder);
+    set('#g-ra', '90'); set('#g-pa', '200');
+    set('#g-tof', '0'); set('#g-toa', '1');
+    set('#g-3f', '6'); set('#g-3fa', '13'); set('#g-3a', '4'); set('#g-3aa', '12');
+    set('#g-4f', '1'); set('#g-4fa', '2');
+    set('#g-pnf', '5'); set('#g-pnfy', '45');
+    click('[data-action="save-game"]');
+    var saved = W.state().games.filter(function (x) { return x.opponent === 'TCU'; })[0];
+    ok(saved && saved.yardsFor === 410 && saved.yardsAgainst === 290, 'totals are stored from rushing plus passing', saved && saved.yardsFor + '/' + saved.yardsAgainst);
+    ok(saved && saved.toFor === 0 && saved.thirdForAtt === 13 && saved.fourthFor === 1 && saved.penForYds === 45, 'every box is stored, a 0 included', JSON.stringify(saved && { to: saved.toFor, t: saved.thirdForAtt, f: saved.fourthFor, p: saved.penForYds }));
+    ok(saved && saved.fourthAgainst === '' && saved.penAgainst === '', 'a box left empty stays empty');
+    ok(/Rushing yards\s+150\s+90/.test(q('#scriptBox').value), 'and the script uses them');
+    click('[data-action="close"]');
+    click('[data-action="edit-game"][data-id="' + saved.id + '"]');
+    ok(q('#g-3fa').value === '13' && q('#g-tof').value === '0', 'editing shows them again, 0 included', q('#g-3fa').value + ' / ' + q('#g-tof').value);
+    click('[data-action="close"]');
+
+    /* it survives a backup round trip with its zeros */
+    var raw = JSON.parse(localStorage.getItem('warroom.v1'));
+    var back = raw.games.filter(function (x) { return x.opponent === 'TCU'; })[0];
+    ok(back && back.toFor === 0 && back.fourthAgainst === '', 'saved to storage with 0 and blank kept apart');
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

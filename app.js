@@ -318,6 +318,350 @@
     return /[.!?]$/.test(s) ? s : s + '.';
   }
 
+  /* Box-score shorthand, said the way a broadcaster says it. A stat line is
+     typed the way it appears on screen -- "24/31, 312 yds, 3 TD, 1 INT" --
+     and a voice reads that as "three tee dee". Applied to everything a
+     person types that ends up in someone's mouth, and again by voice.js on
+     the way out, so a script written or edited before this still sounds
+     right. */
+  var SAY_POS = {
+    QB: 'quarterback', HB: 'halfback', RB: 'running back', FB: 'fullback', WR: 'wide receiver', TE: 'tight end',
+    OL: 'offensive lineman', LT: 'left tackle', LG: 'left guard', C: 'center', RG: 'right guard', RT: 'right tackle',
+    OT: 'offensive tackle', OG: 'guard', LEDG: 'left edge', REDG: 'right edge', EDGE: 'edge rusher',
+    DE: 'defensive end', DT: 'defensive tackle', DL: 'defensive lineman', NT: 'nose tackle',
+    SAM: 'Sam linebacker', MIKE: 'Mike linebacker', WILL: 'Will linebacker', LB: 'linebacker',
+    OLB: 'outside linebacker', MLB: 'middle linebacker', ILB: 'inside linebacker',
+    CB: 'cornerback', DB: 'defensive back', FS: 'free safety', SS: 'strong safety', S: 'safety',
+    K: 'kicker', PK: 'kicker', P: 'punter', ATH: 'athlete'
+  };
+  function sayPos(p) { return SAY_POS[String(p || '').toUpperCase()] || p; }
+  var STATE_NAMES = {
+    AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado', CT: 'Connecticut',
+    DE: 'Delaware', FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+    KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland', MA: 'Massachusetts', MI: 'Michigan',
+    MN: 'Minnesota', MS: 'Mississippi', MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada',
+    NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York', NC: 'North Carolina',
+    ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island',
+    SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont',
+    VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming', DC: 'Washington, D.C.'
+  };
+  /* [abbreviation pattern, one, many, only with a number in front]. The
+     last flag is for the ones that are also ordinary words or names: "Pat",
+     "car", "rec". Order matters: touchdowns and yards go before catches so
+     "rec TD" is a receiving touchdown and not "catch TD". */
+  var SAY_STAT = [
+    ['tds?', 'touchdown', 'touchdowns'],
+    ['ints?', 'interception', 'interceptions'],
+    ['yds?|yrds?', 'yard', 'yards'],
+    ['cmps?|comps?', 'completion', 'completions'],
+    ['atts?', 'attempt', 'attempts', true],
+    ['cars?|carr?', 'carry', 'carries', true],
+    ['recs?', 'catch', 'catches', true],
+    ['tgts?', 'target', 'targets'],
+    ['scks?|sks?', 'sack', 'sacks'],
+    ['tkls?|tcks?', 'tackle', 'tackles'],
+    ['tfls?', 'tackle for loss', 'tackles for loss'],
+    ['ffs?', 'forced fumble', 'forced fumbles'],
+    ['frs?', 'fumble recovery', 'fumble recoveries', true],
+    ['fums?|fmbs?', 'fumble', 'fumbles'],
+    ['pbus?|pds?', 'pass breakup', 'pass breakups'],
+    ['qbhs?', 'quarterback hurry', 'quarterback hurries'],
+    ['fgs?', 'field goal', 'field goals'],
+    ['xps?|pats?', 'extra point', 'extra points', true],
+    ['krs?', 'kick return', 'kick returns', true],
+    ['prs?', 'punt return', 'punt returns', true],
+    ['pens?', 'penalty', 'penalties', true],
+    ['drps?', 'drop', 'drops']
+  ].map(function (e) {
+    return {
+      re: new RegExp('(\\d+(?:\\.\\d+)?\\s*)?\\b((?:rush(?:ing)?|pass(?:ing)?|rec(?:eiving)?|ret(?:urn)?)\\s+)?\\b(' + e[0] + ')\\b(?![.\\/]\\w)', 'gi'),
+      one: e[1], many: e[2], needsNum: !!e[3]
+    };
+  });
+  var SAY_MOD = { rush: 'rushing', rushing: 'rushing', pass: 'passing', passing: 'passing', rec: 'receiving', receiving: 'receiving', ret: 'return', return: 'return' };
+  var ORDINAL = { 1: 'first', 2: 'second', 3: 'third', 4: 'fourth', 5: 'fifth' };
+  /* Positions inside typed text: only the unmistakable ones, in capitals.
+     SAM, MIKE and WILL are names, OT is overtime, DE is Delaware, and a lone
+     C or S is anything. */
+  var SAY_POS_RE = new RegExp('\\b(' + Object.keys(SAY_POS).filter(function (k) {
+    return k.length > 1 && ['SAM', 'MIKE', 'WILL', 'OT', 'DE'].indexOf(k) < 0;
+  }).join('|') + ')(s?)\\b(?!\\.\\w)', 'g');
+
+  function spoken(s) {
+    s = String(s == null ? '' : s);
+    if (!s) return s;
+    s = s
+      .replace(/\b([A-Z])\.(?=[A-Z][a-z])/g, '$1. ')             /* J.Carty */
+      .replace(/\bw\/o\b/gi, 'without').replace(/\bw\/\s*/gi, 'with ')
+      .replace(/(\d+)\s*(?:\/|-for-)\s*(\d+)/gi, '$1 of $2')
+      .replace(/\b2\s*-?\s*pts?\b(?:\s*conv(?:ersion)?s?\b)?/gi, 'two-point conversion')
+      .replace(/(\d)\s*\+/g, '$1-plus')
+      .replace(/(\d)\s*%/g, '$1 percent')
+      .replace(/\b([1-5])(?:st|nd|rd|th)\b/gi, function (m, d) { return ORDINAL[d]; })
+      .replace(/\b(first|second|third|fourth)\s*(?:&|-?and-?|-)\s*(\d+|goal|long|short|inches)\b/gi, '$1 and $2')
+      .replace(/\b(in|during)\s+Q([1-4])\b/gi, function (m, w, d) { return w + ' the ' + ORDINAL[d] + ' quarter'; })
+      .replace(/\bQ([1-4])\b/g, function (m, d) { return ORDINAL[d] + ' quarter'; })
+      .replace(/\b2OT\b/g, 'double overtime').replace(/\bOT\b/g, 'overtime')
+      .replace(/\blng\b\.?:?\s*(\d+)/gi, 'a long of $1')
+      .replace(/\bypc\b/gi, 'yards per carry').replace(/\bypa\b/gi, 'yards per attempt').replace(/\bypr\b/gi, 'yards per catch')
+      .replace(/\bavg\b\.?/gi, 'average').replace(/\b(?:qbr|rtg)\b/gi, 'passer rating')
+      .replace(/\bpick[\s-]?6\b/gi, 'pick-six')
+      /* "45 yd FG" is a 45-yard field goal, not "45 yards field goal" */
+      .replace(/(\d+)\s*-?\s*(?:yds?|yards?)\s+(?=(?:fgs?|field goals?|tds?|touchdowns?|run|pass|catch|reception|return|punt|scramble|strike|score|gain|loss|line|bomb|shot|completion)\b)/gi, '$1-yard ')
+      /* "3TD" -> "3 TD", so the number is found */
+      .replace(/(\d)(tds?|ints?|yds?|scks?|sks?|ffs?|fgs?|tfls?|pds?|pbus?|recs?|cars?|atts?|xps?|drps?|tkls?)\b/gi, '$1 $2');
+    SAY_STAT.forEach(function (e) {
+      s = s.replace(e.re, function (m, num, mod, abbr) {
+        if (e.needsNum && !num) return m;
+        var n = num ? parseFloat(num) : null;
+        var many = n != null ? n !== 1 : /s$/i.test(abbr);
+        return (num ? num.trim() + ' ' : '') + (mod ? SAY_MOD[mod.trim().toLowerCase()] + ' ' : '') + (many ? e.many : e.one);
+      });
+    });
+    return s
+      .replace(/\b(rush|pass|rec)\s+(?=yards?\b|touchdowns?\b|attempts?\b)/gi, function (m, w) { return SAY_MOD[w.toLowerCase()] + ' '; })
+      .replace(SAY_POS_RE, function (m, p, pl) { return (p === 'OL' ? 'offensive line' : SAY_POS[p]) + pl; })
+      .replace(/\s*&\s*/g, ' and ').replace(/\s@\s/g, ' at ').replace(/\bvs\.?(?=\s)/gi, 'versus')
+      .replace(/ {2,}/g, ' ');
+  }
+
+  /* ---------- the box score ----------
+     Every number is blank until typed, and 0 is a real answer: nobody
+     turning it over, 0 of 2 on fourth down. Games saved before these fields
+     existed kept third downs and penalties as text; that is read here, so
+     old games argue with the new numbers without being re-entered. */
+  var BOX = [
+    ['rushFor', -200, 1000], ['rushAgainst', -200, 1000], ['passFor', -50, 1000], ['passAgainst', -50, 1000],
+    ['yardsFor', -200, 1500], ['yardsAgainst', -200, 1500], ['toFor', 0, 20], ['toAgainst', 0, 20],
+    ['thirdFor', 0, 40], ['thirdForAtt', 0, 40], ['thirdAgainst', 0, 40], ['thirdAgainstAtt', 0, 40],
+    ['fourthFor', 0, 20], ['fourthForAtt', 0, 20], ['fourthAgainst', 0, 20], ['fourthAgainstAtt', 0, 20],
+    ['penFor', 0, 40], ['penForYds', 0, 400], ['penAgainst', 0, 40], ['penAgainstYds', 0, 400]
+  ];
+  function blankInt(v, lo, hi) { return v === '' || v == null || !/\d/.test(String(v)) ? '' : int(v, lo, hi); }
+  function pairOf(s) {
+    var m = /(\d+)\s*(?:of|for|\/|-|–)\s*(\d+)/i.exec(String(s || ''));
+    return m ? [+m[1], +m[2]] : null;
+  }
+  function boxOf(g) {
+    var b = {};
+    BOX.forEach(function (f) { b[f[0]] = blankInt(g[f[0]], f[1], f[2]); });
+    var t = pairOf(g.thirdDown), p = pairOf(g.penalties);
+    if (t && b.thirdFor === '' && b.thirdForAtt === '') { b.thirdFor = t[0]; b.thirdForAtt = t[1]; }
+    if (p && b.penFor === '' && b.penForYds === '') { b.penFor = p[0]; b.penForYds = p[1]; }
+    if (b.yardsFor === '' && b.rushFor !== '' && b.passFor !== '') b.yardsFor = b.rushFor + b.passFor;
+    if (b.yardsAgainst === '' && b.rushAgainst !== '' && b.passAgainst !== '') b.yardsAgainst = b.rushAgainst + b.passAgainst;
+    return b;
+  }
+  function boxHasAny(b) { return BOX.some(function (f) { return b[f[0]] !== ''; }); }
+
+  /* The printed table under THE NUMBERS. Not voiced -- it is for whoever
+     reads the PDF -- so it can be a table. */
+  function boxLines(b) {
+    var rows = [];
+    var cell = function (v) { return v === '' ? '—' : String(v); };
+    var pair = function (a, c, word) { return a === '' && c === '' ? '—' : cell(a) + ' ' + word + ' ' + cell(c); };
+    var row = function (label, us, them) {
+      if (us === '—' && them === '—') return;
+      rows.push('   ' + (label + '                  ').slice(0, 18) + (us + '             ').slice(0, 13) + them);
+    };
+    row('Rushing yards', cell(b.rushFor), cell(b.rushAgainst));
+    row('Passing yards', cell(b.passFor), cell(b.passAgainst));
+    row('Total yards', cell(b.yardsFor), cell(b.yardsAgainst));
+    row('Turnovers', cell(b.toFor), cell(b.toAgainst));
+    row('Third downs', pair(b.thirdFor, b.thirdForAtt, 'of'), pair(b.thirdAgainst, b.thirdAgainstAtt, 'of'));
+    row('Fourth downs', pair(b.fourthFor, b.fourthForAtt, 'of'), pair(b.fourthAgainst, b.fourthAgainstAtt, 'of'));
+    row('Penalties', pair(b.penFor, b.penForYds, 'for'), pair(b.penAgainst, b.penAgainstYds, 'for'));
+    if (rows.length) rows.unshift('   ' + '                  ' + 'US           THEM');
+    return rows;
+  }
+
+  /* What each number means for the game, as something the analyst can say
+     and something the ex-player can push back on. Weight is how much of the
+     result the number explains: turnovers first because they swing the most
+     games, a result that disagrees with the yardage next because that is the
+     argument, then the stats that decide drives. Only numbers somebody typed
+     in are ever mentioned. */
+  function readBox(b, g, pick) {
+    var won = g.result === 'W', tied = g.result === 'T';
+    var m = gameMargin(g);
+    var say = function (n) { return n < 0 ? 'minus ' + -n : String(n); };
+    var has = function (k) { return b[k] !== ''; };
+    var plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : many); };
+    var I = [];
+    var add = function (key, weight, analyst, player) { I.push({ key: key, weight: weight, analyst: analyst, player: player, order: I.length }); };
+
+    /* turnovers */
+    if (has('toFor') || has('toAgainst')) {
+      var toDiff = int(b.toAgainst, 0, 99) - int(b.toFor, 0, 99);
+      if (toDiff < 0) {
+        add('to', 5, 'They lost the turnover battle by ' + -toDiff + (won ? ' and won anyway' : '') + '. Teams that do that lose about seven times in ten. That is not a narrative, that is the base rate. Every giveaway is a possession you never get back, and usually a short field for the other side.',
+          pick([
+            'See, this is where you and I live in different buildings. Turnovers are not a base rate. They are a man not wrapping up, or a quarterback getting hit as he throws because somebody lost a one-on-one.',
+            'Every one of those numbers has a human being attached to it. You said seven in ten. I say somebody was careless with the football. Those are the same sentence.',
+            'I do not care about the rate. I care about which play it happened on and who was standing there.'
+          ]));
+      } else if (toDiff > 0) {
+        add('to', 5, won
+          ? 'Plus ' + toDiff + ' in takeaways, and that is most of your margin right there. Every takeaway is an extra possession, usually on a short field. Take those away and this is a different broadcast.'
+          /* on a loss there is no margin for the takeaways to explain */
+          : 'Plus ' + toDiff + ' in takeaways and they still ' + (tied ? 'could not win it' : 'lost by ' + m) + '. Win the turnover battle and not the game, and the problem is everything else.',
+          pick([
+            'That is effort. Takeaways do not fall out of the sky. Somebody ran through a ball carrier and somebody else was hustling to be there when it came out.',
+            'You call it a stat. I call it eleven men running to the football.'
+          ]));
+      } else if (int(b.toFor, 0, 99) === 0) {
+        add('to', 2, 'Nobody turned it over. Not once, either side. That means nobody gets to hide behind a fluke. This one was decided by execution.',
+          'Clean football. Protect the ball and you give yourself a chance every week. Nobody talks about it because nothing happened.');
+      } else {
+        add('to', 1, 'Even in turnovers, which means nobody gets to hide behind the football. This was decided by execution.',
+          'Then it comes down to who blocked and who tackled. My kind of game.');
+      }
+    }
+
+    /* the result against the yardage */
+    if (has('yardsFor') && has('yardsAgainst')) {
+      var yd = b.yardsFor - b.yardsAgainst;
+      if (won && yd <= -50) {
+        add('yds', 4, 'They were outgained by ' + -yd + ' yards and still won. That is usually turnovers, special teams, or a couple of big plays, and none of those are promised to show up next week.',
+          pick(['A win is a win. Yards do not go on the scoreboard. They made the plays when it counted.',
+                'I have played in games like that. You bend, you do not break, and you get on the bus a winner.']));
+      } else if (!won && !tied && yd >= 50) {
+        add('yds', 4, 'Here is the one that should drive the staff crazy. They outgained them by ' + yd + ' yards and lost. Yards between the twenties do not count. That is the red zone, or giving the ball away, and it is fixable, which somehow makes it worse.',
+          'That is finishing. You drive it all the way down there and kick field goals, you lose football games. Punch it in.');
+      } else if (Math.abs(yd) >= 150) {
+        add('yds', 2, yd > 0
+          ? 'They outgained them by ' + yd + ' yards, ' + say(b.yardsFor) + ' to ' + say(b.yardsAgainst) + '. When the gap is that big, the scoreboard is telling the truth. It was not a fluke.'
+          : 'Outgained by ' + -yd + ' yards, ' + say(b.yardsFor) + ' to ' + say(b.yardsAgainst) + '. That is not bad luck. That is getting beaten at the line of scrimmage, snap after snap.',
+          yd > 0 ? 'They physically dominated them. That is what that number means to me.'
+                 : 'They got pushed around. I do not need a spreadsheet to tell me that. I watched it.');
+      } else {
+        add('yds', 1, 'Total yards were ' + say(b.yardsFor) + ' to ' + say(b.yardsAgainst) + '. Close enough that yardage does not explain this one.',
+          'Which is why you watch the tape and not the sheet.');
+      }
+    }
+
+    /* running the ball */
+    if (has('rushFor')) {
+      var rf = b.rushFor;
+      if (rf >= 200) {
+        add('rushFor', 3, 'They ran for ' + rf + ' yards. That is the stat that controls a game. It eats the clock, it keeps the other offense on the sideline, and it pulls the safeties up so the play-action shots are open.',
+          pick(['That is the offensive line, and nobody ever puts them on a graphic. ' + rf + ' yards on the ground means five men up front moved grown men where they did not want to go.',
+                'You run for ' + rf + ', you are telling the other sideline you are tougher than they are. By the fourth quarter, they believed it.']));
+      } else if (rf < 90) {
+        add('rushFor', won ? 2 : 3, 'Only ' + say(rf) + ' rushing yards. When you cannot run, you are one-dimensional. The defense stops respecting the run, pins its ears back and comes after the quarterback, and every third down turns into third and long.',
+          'I played guard. When your team cannot run the football, I take that personally. That is the line losing at the point of attack, and no play call fixes it.');
+      } else {
+        add('rushFor', 1, 'They ran for ' + rf + '. Fine. Not the story either way.',
+          'Fine is not a word I ever want to hear about a run game.');
+      }
+    }
+    if (has('rushAgainst')) {
+      var ra = b.rushAgainst;
+      if (ra >= 200) {
+        add('rushAgainst', 3, 'The number I would lose sleep over is ' + ra + ' rushing yards allowed. A team that can run on you does not have to take a single risk, and it can drain the clock whenever it wants.',
+          'That is not scheme, that is want-to. Getting off blocks, fitting your gap, wrapping up. You get run on for ' + ra + ', that is a toughness question, and they are going to hear about it in the film room.');
+      } else if (ra < 90) {
+        add('rushAgainst', 2, 'They held them to ' + say(ra) + ' yards on the ground. Take the run away and an offense becomes predictable. The defense knew the pass was coming.',
+          'The front seven owned the line of scrimmage. That is where football games are won. Everything else is decoration.');
+      }
+    }
+
+    /* throwing it */
+    if (has('passFor')) {
+      var pf = b.passFor;
+      var ranWell = has('rushFor') && b.rushFor >= 200, ranBadly = has('rushFor') && b.rushFor < 90;
+      if (pf >= 300) {
+        var garbage = !won && !tied && m >= 14;
+        add('passFor', 2, pf + ' passing yards' + (ranBadly
+          ? ', and do not mistake that for balance. They could not run, so they had to throw.'
+          : garbage
+            ? ', and I would discount some of it. Passing yards pile up when the other team is sitting on a lead and giving you everything underneath.'
+            : '. That stretches a defense vertically, and it is part of why everything else opened up.'),
+          garbage ? 'Do not tell me garbage time. The kid was still out there competing when everybody else had stopped.'
+                  : 'The quarterback stood in there and took shots to make those throws. Give the man his flowers.');
+      } else if (pf < 150) {
+        add('passFor', won && ranWell ? 1 : 2, won && ranWell
+          ? 'Only ' + say(pf) + ' through the air, and it did not matter, because they never needed to throw.'
+          : 'Just ' + say(pf) + ' passing yards. If you cannot throw, the defense puts eight men in the box and dares you to, and the run game dies with it.',
+          won && ranWell ? 'Why would you throw it? You are running it down their throats. Keep doing that.'
+                         : 'Receivers have to win their routes and the quarterback has to have time. That is on all of them, not just the man under center.');
+      }
+    }
+    if (has('passAgainst')) {
+      var pa = b.passAgainst;
+      if (pa >= 300) {
+        add('passAgainst', 3, 'They gave up ' + pa + ' yards through the air. That is the secondary getting targeted and losing, and it usually means explosive plays, the kind that flip field position in one snap.',
+          'Corners on an island all day with no pass rush to help them. You cannot cover forever. That is a scheme problem before it is a player problem.');
+      } else if (pa < 150) {
+        add('passAgainst', 2, 'They held them to ' + say(pa) + ' passing yards. The secondary won its matchups, and that let the front take chances.',
+          'That is a pass rush. The quarterback never got comfortable, and a quarterback who is not comfortable does not throw for yards.');
+      }
+    }
+
+    /* third down: whether drives lived or died */
+    if (has('thirdForAtt') && b.thirdForAtt > 0) {
+      var tf = int(b.thirdFor, 0, b.thirdForAtt), tfa = b.thirdForAtt, tfp = Math.round(tf / tfa * 100);
+      if (tfa >= 4 && tfp >= 50) {
+        add('thirdFor', 3, tf + ' of ' + tfa + ' on third down. That is ' + tfp + ' percent, and anything over about 45 is elite. Converting third downs keeps drives alive, keeps your own defense resting on the sideline, and never lets the other offense find a rhythm.',
+          'Third down is the grown-man down. Everybody in the stadium knows what is coming and you convert anyway. That is execution, and that is the players.');
+      } else if (tfa >= 4 && tfp < 34) {
+        add('thirdFor', won ? 2 : 3, 'They were ' + tf + ' of ' + tfa + ' on third down. ' + tfp + ' percent. Every failed third down is a punt, a drive that died, and the defense back on the field before it has caught its breath.',
+          'Third and long all day, and that starts on first down. Stay ahead of the chains and third down takes care of itself.');
+      } else {
+        add('thirdFor', 1, tf + ' of ' + tfa + ' on third down, ' + tfp + ' percent. Middle of the road. Nothing to build a case on.',
+          'Middle of the road is where you get run over.');
+      }
+    }
+    if (has('thirdAgainstAtt') && b.thirdAgainstAtt > 0) {
+      var ta = int(b.thirdAgainst, 0, b.thirdAgainstAtt), taa = b.thirdAgainstAtt, tap = Math.round(ta / taa * 100);
+      if (taa >= 4 && tap >= 50) {
+        add('thirdAgainst', 3, 'Their offense converted ' + ta + ' of ' + taa + ' on third down. ' + tap + ' percent. That is the defense doing the hard part, getting them to third down, and then not getting off the field. Nothing wears a defense out faster.',
+          'You got them to third down! That is the job half done, and then you let them off the hook. That is tackling, and eyes in the right place.');
+      } else if (taa >= 4 && tap <= 30) {
+        add('thirdAgainst', 3, 'And the defense held them to ' + ta + ' of ' + taa + ' on third down. Get off the field like that and you hand your own offense extra possessions all afternoon.',
+          'That is a defense that wanted to get back to the sideline. You love to see it.');
+      } else {
+        add('thirdAgainst', 1, 'They allowed ' + ta + ' of ' + taa + ' on third down. About average.',
+          'Average does not win you a conference.');
+      }
+    }
+
+    /* fourth down: the gambles */
+    if (has('fourthForAtt') && b.fourthForAtt > 0) {
+      var ff = int(b.fourthFor, 0, b.fourthForAtt), ffa = b.fourthForAtt;
+      if (ff === ffa) {
+        add('fourthFor', ffa >= 2 ? 2 : 1, 'They went for it on fourth down ' + (ffa === 1 ? 'once and converted' : ffa + ' times and converted every one') + '. That is a staff playing to win, and every conversion is a possession they got to keep.',
+          'Love it. The coach trusted his guys, and his guys paid him back.');
+      } else {
+        add('fourthFor', !won && m <= 8 ? 4 : 2, (ff === 0 ? 'They went 0 for ' + ffa : 'They were ' + ff + ' of ' + ffa) + ' on fourth down. A failed fourth down is a turnover by another name, and it usually hands the other side a short field.',
+          'I will never criticize a coach for going for it. Call the play, then block the play. That is execution, not courage.');
+      }
+    }
+    if (has('fourthAgainstAtt') && b.fourthAgainstAtt > 0 && int(b.fourthAgainst, 0, 20) > 0) {
+      var fa = int(b.fourthAgainst, 0, b.fourthAgainstAtt);
+      add('fourthAgainst', 1, 'They converted ' + fa + ' of ' + b.fourthAgainstAtt + ' on fourth down against this defense, and a stop there would have been as good as a turnover.',
+        'Fourth down is a gut check, and the defense did not win it.');
+    }
+
+    /* flags */
+    if (has('penFor')) {
+      var pn = b.penFor, py = b.penForYds;
+      if (pn >= 9 || (py !== '' && py >= 80)) {
+        add('penFor', 2, plural(pn, 'penalty', 'penalties') + (py !== '' ? ' for ' + py + ' yards' : '') + '. ' + (py !== '' && py >= 80 ? 'That is most of a football field handed away. ' : '') + 'Flags kill your own drives and keep theirs alive, and they are the most avoidable mistake in the sport.',
+          'That is discipline, and discipline is coaching. I will put that one on the staff.');
+      } else if (pn <= 3) {
+        add('penFor', 1, 'Only ' + plural(pn, 'penalty', 'penalties') + '. Disciplined. That does not win games on its own, but it stops you losing them.',
+          'Clean football. Nobody talks about it, but it matters.');
+      }
+    }
+    if (has('penAgainst') && (b.penAgainst >= 9 || (b.penAgainstYds !== '' && b.penAgainstYds >= 80))) {
+      add('penAgainst', 1, 'The other side gave away ' + plural(b.penAgainst, 'penalty', 'penalties') + (b.penAgainstYds !== '' ? ' for ' + b.penAgainstYds + ' yards' : '') + '. That is free yardage.',
+        'Take the gifts. Good teams do.');
+    }
+
+    return I.sort(function (a, c) { return c.weight - a.weight || a.order - c.order; });
+  }
+
   /* Seeded, so one game always reads the same way but two in a row do not
      open with the same sentence. */
   function picker(seed) {
@@ -383,8 +727,12 @@
     var score = int(g.scoreFor, 0, 999) + '-' + int(g.scoreAgainst, 0, 999);
     var rec = recordThrough(g);
     var perf = (g.performances || []).filter(function (p) { return p.name; });
-    var stars = perf.filter(function (p) { return p.verdict === 'standout'; });
-    var rough = perf.filter(function (p) { return p.verdict === 'struggled'; });
+    /* what gets said out loud: "J. Carty, quarterback. 24 of 31, 3 touchdowns" */
+    var said = perf.map(function (p) {
+      return { name: p.name.replace(/\b([A-Z])\.(?=[A-Z][a-z])/g, '$1. '), pos: sayPos(p.pos), line: spoken(p.line), verdict: p.verdict };
+    });
+    var stars = said.filter(function (p) { return p.verdict === 'standout'; });
+    var rough = said.filter(function (p) { return p.verdict === 'struggled'; });
     var L = [];
     var w = function (s) { L.push(s == null ? '' : s); };
     var rule = function () { w('============================================================'); };
@@ -473,7 +821,7 @@
     w('');
     w(ANALYST + ': ' + (won
       ? (blowout || comfortable ? 'A ' + m + '-point margin hides a great deal, and I would rather look at how they got there than how it felt. Enjoy the win. The tape has notes.' : 'A ' + m + '-point game is a coin flip that landed correctly. I would not build a thesis on it, but winning coin flips is a repeatable skill and this team is doing it.')
-      : (tight ? 'They were inside one possession. If you want to tell me this team is broken, you need more than one afternoon and I do not have it yet.' : 'I am less interested in whether it was ugly than in whether it was predictable. And ' + (g.yardsAgainst ? 'giving up ' + g.yardsAgainst + ' yards was not an accident.' : 'this one was visible coming.'))));
+      : (tight ? 'They were inside one possession. If you want to tell me this team is broken, you need more than one afternoon and I do not have it yet.' : 'I am less interested in whether it was ugly than in whether it was predictable. And ' + (boxOf(g).yardsAgainst !== '' ? 'giving up ' + boxOf(g).yardsAgainst + ' yards was not an accident.' : 'this one was visible coming.'))));
     w('');
     w(PLAYER + ': ' + analystF + ', I watched the same football game you did. They were bleeding out there.');
     w('');
@@ -554,55 +902,39 @@
     }
     w('');
 
-    /* ---- segment 4: numbers ---- */
-    var nums = [];
-    if (g.yardsFor || g.yardsAgainst) nums.push('Yards: ' + (g.yardsFor || '?') + ' for, ' + (g.yardsAgainst || '?') + ' against');
-    if (g.toFor || g.toAgainst) nums.push('Turnovers: ' + int(g.toFor, 0, 99) + ' given away, ' + int(g.toAgainst, 0, 99) + ' taken');
-    if (g.thirdDown) nums.push('Third down: ' + g.thirdDown);
-    if (g.penalties) nums.push('Penalties: ' + g.penalties);
-    if (nums.length) {
+    /* ---- segment 4: numbers ----
+       Each typed stat becomes a point the analyst makes about what it did to
+       the game and one the ex-player answers from the field. The biggest
+       three get airtime; the rest stay in the table. The analyst never reads
+       "7 of 14" at anybody without saying what 7 of 14 means. */
+    var bx = boxOf(g);
+    var nums = boxLines(bx);
+    if (boxHasAny(bx)) {
       w('--- SEGMENT 4: THE NUMBERS ------------------------------');
       w('');
-      nums.forEach(function (n) { w('   ' + n); });
+      nums.forEach(function (n) { w(n); });
       w('');
-      var toDiff = int(g.toAgainst, 0, 99) - int(g.toFor, 0, 99);
-      var hasTO = !!(g.toFor || g.toAgainst);
-      var yd = int(g.yardsFor, 0, 1200) - int(g.yardsAgainst, 0, 1200);
-      var take;
-      if (hasTO) {
-        take = toDiff < 0
-          ? 'They lost the turnover battle by ' + Math.abs(toDiff) + (won ? ' and won anyway' : '') + '. Teams that do that lose about seven times in ten. That is not a narrative, that is the base rate.'
-          : toDiff > 0
-            ? (won
-              ? 'Plus ' + toDiff + ' in takeaways, and that is most of your margin right there. Take those away and this is a different broadcast.'
-              /* on a loss there is no margin for the takeaways to explain */
-              : 'Plus ' + toDiff + ' in takeaways and they still ' + (tied ? 'could not win it' : 'lost by ' + m) + '. Win the turnover battle and not the game, and the problem is everything else.')
-            : 'Even in turnovers, which means nobody gets to hide behind the football. This was decided by execution.';
-      } else {
-        /* Nothing was typed in for turnovers, so there is no battle to call.
-           "Even in turnovers" here was a fact the script had made up. */
-        take = 'Nobody gave me turnovers, so I am not going to pretend I know who won that battle.' +
-          (g.yardsFor && g.yardsAgainst && yd
-            ? ' ' + (yd > 0 ? 'They outgained them by ' + yd : 'They were outgained by ' + -yd) + ' yards, and that is where I would start.'
-            : '');
-      }
+      var points = readBox(bx, g, pick);
+      var big = points.filter(function (p) { return p.weight >= 2; });
+      /* three points, or four when four of them each moved the game */
+      var cap = points.filter(function (p) { return p.weight >= 3; }).length >= 4 ? 4 : 3;
+      points = (big.length ? big : points).slice(0, cap);
+      var hasTO = bx.toFor !== '' || bx.toAgainst !== '';
       w(HOST + ': ' + analystF + ', this is your segment. ' + playerF + ', try not to interrupt.');
       w('');
-      w(ANALYST + ': ' + take +
-        (g.thirdDown ? ' Third down was ' + g.thirdDown + ', and that is the number that tells you whether the plan worked.' : ''));
-      w('');
-      /* He answers what she actually said: arguing with "the rate" after she
-         never quoted one reads like two different scripts spliced together. */
-      w(PLAYER + ': ' + pick(hasTO && toDiff < 0 ? [
-        'See, this is where you and I live in different buildings. Turnovers are not a base rate. They are a man not wrapping up, or a quarterback getting hit as he throws because somebody lost a one-on-one.',
-        'Every one of those numbers has a human being attached to it, ' + analystF + '. You said seven in ten. I said somebody quit on a rep. Those are the same sentence.',
-        'I do not care about the rate. I care about which play it happened on and who was standing there.'
-      ] : [
-        'See, this is where you and I live in different buildings. Every one of those numbers is a man winning or losing a one-on-one, and I watched the one-on-ones.',
-        'Every one of those numbers has a human being attached to it, ' + analystF + '. You read the box score. I am telling you who was standing there.',
-        'I do not care what the sheet says. I care about which play it happened on and who was standing there.'
-      ]));
-      w('');
+      points.forEach(function (p, i) {
+        if (i > 0 && i === points.length - 1) { w(HOST + ': Last one, and make it quick.'); w(''); }
+        else if (i > 0) { w(HOST + ': ' + (i === 1 ? pick(['What else is on the sheet?', 'Keep going.', 'Give me the next one.']) : 'Keep going.')); w(''); }
+        /* Nothing typed for turnovers means no battle to call. Saying "even
+           in turnovers" there was a fact the script made up. */
+        var lead = i === 0 && !hasTO && points.length < 3 ? 'Nobody gave me turnovers, so I am not going to pretend I know who won that battle. ' : '';
+        w(ANALYST + ': ' + lead + p.analyst);
+        w('');
+        /* He answers what she actually said: arguing with "the rate" after
+           she never quoted one reads like two scripts spliced together. */
+        w(PLAYER + ': ' + (i === 0 ? pick(['', 'Hold on. ', 'Okay. ']) : '') + p.player);
+        w('');
+      });
       w(ANALYST + ': Those are compatible positions, which is why this is exhausting.');
       w('');
       w('');
@@ -631,9 +963,9 @@
       w('');
       if (board.length) {
         var b = board[0];
-        var where = b.state ? ' out of ' + b.state : '';
+        var where = b.state ? ' out of ' + (STATE_NAMES[b.state] || b.state) : '';
         var stand = b.standing ? ' I am told they are number ' + b.standing + ' on his list, and they know it.' : '';
-        w(INSIDER + ': The name to watch is the ' + (b.stars || 3) + '-star ' + b.pos + where + '.' + stand +
+        w(INSIDER + ': The name to watch is the ' + (b.stars || 3) + '-star ' + sayPos(b.pos) + where + '.' + stand +
           (b.dealbreaker ? ' Everything with him comes back to ' + b.dealbreaker + '.' : '') +
           (b.hours ? ' They are spending ' + b.hours + ' hours a week on him, which tells you where he sits.' : ''));
         w('');
@@ -671,7 +1003,7 @@
       ? 'Good process, good result. Next week tells us which one it was.'
       : 'One data point. Ask me after the next two and I will give you an actual answer.'));
     w('');
-    if (g.notes) { w(HOST + ': One more thing before we go — ' + g.notes); w(''); }
+    if (g.notes) { w(HOST + ': One more thing before we go. ' + sentence(spoken(g.notes))); w(''); }
     w(HOST + ': That is ' + cast.title + '. Same time.');
     w('');
     w('');
@@ -1820,6 +2152,7 @@
     };
     var perf = (g.performances || []).slice();
     while (perf.length < 3) perf.push({ name: '', pos: '', line: '', verdict: 'standout' });
+    var bx = boxOf(g);
 
     var rosterNames = state.players.slice().sort(byOvr).map(function (p) { return p.name; });
 
@@ -1840,17 +2173,24 @@
       '<div id="perfRows">' + perf.map(function (p, i) { return perfRow(p, i); }).join('') + '</div>' +
       '<button class="btn small" data-action="add-perf" style="margin-top:6px">' + icon('plus') + 'Another player</button>' +
 
-      '<details class="more"><summary>Team stats — optional, they feed a segment</summary>' +
-        '<div class="row">' +
-          '<div class="field"><label for="g-yf">Our yards</label><input type="number" id="g-yf" value="' + esc(g.yardsFor) + '" min="0" max="1200"></div>' +
-          '<div class="field"><label for="g-ya">Their yards</label><input type="number" id="g-ya" value="' + esc(g.yardsAgainst) + '" min="0" max="1200"></div>' +
-          '<div class="field"><label for="g-tof">We gave away</label><input type="number" id="g-tof" value="' + esc(g.toFor) + '" min="0" max="20"></div>' +
-          '<div class="field"><label for="g-toa">We took</label><input type="number" id="g-toa" value="' + esc(g.toAgainst) + '" min="0" max="20"></div>' +
+      '<details class="more"' + (boxHasAny(bx) ? ' open' : '') + '><summary>Team stats — optional, each one becomes part of the argument</summary>' +
+        /* laid out like the game's own team-stats screen, so it can be
+           copied straight across: one row per stat, us then them */
+        '<div class="box-grid">' +
+          '<span></span><span class="box-head">Us</span><span class="box-head">Them</span>' +
+          boxRow('Rushing yards', boxNum('g-rf', bx.rushFor, 'Our rushing yards'), boxNum('g-ra', bx.rushAgainst, 'Their rushing yards')) +
+          boxRow('Passing yards', boxNum('g-pf', bx.passFor, 'Our passing yards'), boxNum('g-pa', bx.passAgainst, 'Their passing yards')) +
+          boxRow('Total yards', boxNum('g-yf', blankInt(g.yardsFor, -200, 1500), 'Our total yards', yardsHint(bx.rushFor, bx.passFor)),
+                                boxNum('g-ya', blankInt(g.yardsAgainst, -200, 1500), 'Their total yards', yardsHint(bx.rushAgainst, bx.passAgainst))) +
+          boxRow('Turnovers', boxNum('g-tof', bx.toFor, 'Turnovers we gave away'), boxNum('g-toa', bx.toAgainst, 'Turnovers they gave away')) +
+          boxRow('Third downs', boxPair('g-3f', bx.thirdFor, 'g-3fa', bx.thirdForAtt, 'of', 'Our third downs'),
+                                boxPair('g-3a', bx.thirdAgainst, 'g-3aa', bx.thirdAgainstAtt, 'of', 'Their third downs')) +
+          boxRow('Fourth downs', boxPair('g-4f', bx.fourthFor, 'g-4fa', bx.fourthForAtt, 'of', 'Our fourth downs'),
+                                 boxPair('g-4a', bx.fourthAgainst, 'g-4aa', bx.fourthAgainstAtt, 'of', 'Their fourth downs')) +
+          boxRow('Penalties', boxPair('g-pnf', bx.penFor, 'g-pnfy', bx.penForYds, 'for', 'Our penalties'),
+                              boxPair('g-pna', bx.penAgainst, 'g-pnay', bx.penAgainstYds, 'for', 'Their penalties')) +
         '</div>' +
-        '<div class="row">' +
-          '<div class="field"><label for="g-3d">Third down</label><input type="text" id="g-3d" value="' + esc(g.thirdDown) + '" placeholder="7 of 14"></div>' +
-          '<div class="field"><label for="g-pen">Penalties</label><input type="text" id="g-pen" value="' + esc(g.penalties) + '" placeholder="8 for 65"></div>' +
-        '</div>' +
+        '<div class="box-help">Downs are converted of tried (7 of 14). Penalties are flags for yards (8 for 65). Total yards fills itself in from rushing and passing. Leave anything blank you do not have.</div>' +
         '<div class="field"><label for="g-notes">Anything else worth a mention</label><input type="text" id="g-notes" value="' + esc(g.notes) + '" placeholder="Fourth-down call at the end, injury, weather…"></div>' +
       '</details>' +
 
@@ -1861,6 +2201,19 @@
         '<button class="btn primary" data-action="save-game" data-id="' + (g.id || '') + '">' + (isNew ? 'Add and write it' : 'Save') + '</button>' +
       '</div>');
   }
+
+  function boxRow(label, us, them) {
+    return '<span class="box-label">' + label + '</span>' + us + them;
+  }
+  function boxNum(id, v, aria, hint) {
+    return '<input type="number" inputmode="numeric" id="' + id + '" value="' + esc(v) + '" aria-label="' + esc(aria) + '"' +
+      (hint ? ' placeholder="' + esc(hint) + '"' : '') + '>';
+  }
+  function boxPair(id1, v1, id2, v2, word, aria) {
+    return '<span class="box-pair">' + boxNum(id1, v1, aria + (word === 'of' ? ' converted' : '')) +
+      '<span>' + word + '</span>' + boxNum(id2, v2, aria + (word === 'of' ? ' tried' : ' yards')) + '</span>';
+  }
+  function yardsHint(rush, pass) { return rush !== '' && pass !== '' ? String(rush + pass) : ''; }
 
   function perfRow(p, i) {
     return '<div class="perf-row">' +
@@ -1879,12 +2232,25 @@
     g.result = $('#g-result').value;
     g.scoreFor = int($('#g-sf').value, 0, 999);
     g.scoreAgainst = int($('#g-sa').value, 0, 999);
-    g.yardsFor = int($('#g-yf').value, 0, 1200) || '';
-    g.yardsAgainst = int($('#g-ya').value, 0, 1200) || '';
-    g.toFor = int($('#g-tof').value, 0, 20) || '';
-    g.toAgainst = int($('#g-toa').value, 0, 20) || '';
-    g.thirdDown = $('#g-3d').value.trim();
-    g.penalties = $('#g-pen').value.trim();
+    var ids = {
+      rushFor: 'g-rf', rushAgainst: 'g-ra', passFor: 'g-pf', passAgainst: 'g-pa', yardsFor: 'g-yf', yardsAgainst: 'g-ya',
+      toFor: 'g-tof', toAgainst: 'g-toa', thirdFor: 'g-3f', thirdForAtt: 'g-3fa', thirdAgainst: 'g-3a', thirdAgainstAtt: 'g-3aa',
+      fourthFor: 'g-4f', fourthForAtt: 'g-4fa', fourthAgainst: 'g-4a', fourthAgainstAtt: 'g-4aa',
+      penFor: 'g-pnf', penForYds: 'g-pnfy', penAgainst: 'g-pna', penAgainstYds: 'g-pnay'
+    };
+    BOX.forEach(function (f) { g[f[0]] = blankInt($('#' + ids[f[0]]).value, f[1], f[2]); });
+    /* the game's own total is rushing plus passing, so when both are there
+       they win over a typo in the total */
+    if (g.rushFor !== '' && g.passFor !== '') g.yardsFor = g.rushFor + g.passFor;
+    if (g.rushAgainst !== '' && g.passAgainst !== '') g.yardsAgainst = g.rushAgainst + g.passAgainst;
+    /* converted can never be more than tried */
+    [['thirdFor', 'thirdForAtt'], ['thirdAgainst', 'thirdAgainstAtt'], ['fourthFor', 'fourthForAtt'], ['fourthAgainst', 'fourthAgainstAtt']].forEach(function (k) {
+      if (g[k[0]] !== '' && g[k[1]] !== '' && g[k[1]] < g[k[0]]) g[k[1]] = g[k[0]];
+    });
+    /* the old free-text versions are now read into the boxes above, so they
+       go, or a cleared box would come back from the text */
+    g.thirdDown = '';
+    g.penalties = '';
     g.notes = $('#g-notes').value.trim();
 
     var rows = {};
@@ -2796,7 +3162,8 @@
       text(g, ['opponent', 'thirdDown', 'penalties', 'notes', 'script', 'scriptAuto']);
       oneOf(g, 'result', ['W', 'L', 'T'], 'W');
       num(g, 'season', 1900, 2999); num(g, 'week', 1, 25); num(g, 'scoreFor', 0, 999); num(g, 'scoreAgainst', 0, 999);
-      num(g, 'yardsFor', 0, 1200, true); num(g, 'yardsAgainst', 0, 1200, true); num(g, 'toFor', 0, 20, true); num(g, 'toAgainst', 0, 20, true);
+      /* box-score numbers keep a real 0 -- "no turnovers" is not "not typed" */
+      BOX.forEach(function (f) { if (f[0] in g) g[f[0]] = blankInt(g[f[0]], f[1], f[2]); });
       if ('performances' in g) {
         g.performances = objs(g.performances);
         g.performances.forEach(function (p) { text(p, ['name', 'pos', 'line']); oneOf(p, 'verdict', ids(VERDICTS), 'standout'); });
@@ -3062,6 +3429,12 @@
   });
   document.addEventListener('input', function (e) {
     if (e.target.matches('[data-scan]')) updateScanAdd();
+    /* total yards shows rushing plus passing as it is typed */
+    if (e.target.matches('#g-rf, #g-pf, #g-ra, #g-pa')) {
+      var v = function (id) { return blankInt($('#' + id).value, -200, 1000); };
+      $('#g-yf').placeholder = yardsHint(v('g-rf'), v('g-pf'));
+      $('#g-ya').placeholder = yardsHint(v('g-ra'), v('g-pa'));
+    }
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && !$('#modal').hidden) closeModal();
@@ -3096,6 +3469,8 @@
        recogniser */
     showScanReview: function (rows) { scanRows = rows; renderScanReview(); },
     buildScript: buildScript,
+    spoken: spoken,
+    boxOf: boxOf,
     saveScriptBox: saveScriptBox,
     stories: currentStories,
     rollStorylines: rollStorylines,

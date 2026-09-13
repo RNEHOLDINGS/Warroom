@@ -102,6 +102,10 @@
 
   function buildRequest(chunk, voices, styles, fallbackVoice) {
     var voiceOf = function (s) { return voices[s] || fallbackVoice; };
+    /* "3 TD, 1 INT" becomes "3 touchdowns, 1 interception" here as well as
+       when the script is written, so a script written before that existed,
+       or typed into by hand, is still said the way a broadcaster says it. */
+    var say = (window.WarRoom && window.WarRoom.spoken) || function (x) { return x; };
     var text, speechConfig;
     if (chunk.speakers.length === 1) {
       var s = chunk.speakers[0];
@@ -109,12 +113,12 @@
          mode, so the label comes off and the direction goes in front, which
          is the form Google's own examples use. */
       text = 'Say this as ' + (styles[s] || 'a college football broadcaster') + ':\n\n' +
-        chunk.turns.map(function (t) { return t.text; }).join('\n');
+        chunk.turns.map(function (t) { return say(t.text); }).join('\n');
       speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceOf(s) } } };
     } else {
       text = 'Voice this exchange from a college football debate show as a natural, fast studio conversation. ' +
         chunk.speakers.map(function (s) { return s + ' is ' + (styles[s] || 'a broadcaster'); }).join('. ') + '.\n\n' +
-        chunk.turns.map(function (t) { return t.speaker + ': ' + t.text; }).join('\n');
+        chunk.turns.map(function (t) { return t.speaker + ': ' + say(t.text); }).join('\n');
       speechConfig = {
         multiSpeakerVoiceConfig: {
           speakerVoiceConfigs: chunk.speakers.map(function (s) {

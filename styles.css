@@ -627,3 +627,24 @@ table.plain td.num, table.plain th.num { text-align: right; }
 }
 
 .kbd { font-family: var(--font-num); font-size: var(--t-micro); background: var(--wash); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border); }
+
+/* team stats, laid out like the game's own screen: us, then them */
+.box-grid {
+  display: grid; grid-template-columns: minmax(88px, auto) 1fr 1fr;
+  gap: 6px 8px; align-items: center; margin: 10px 0 6px;
+}
+.box-head { font-size: var(--t-small); color: var(--ink-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.box-label { font-size: var(--t-small); color: var(--ink); }
+.box-grid input { width: 100%; min-width: 0; padding: 6px 8px; }
+.box-pair { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.box-pair span { font-size: var(--t-small); color: var(--ink-muted); flex: none; }
+.box-help { font-size: var(--t-small); color: var(--ink-muted); margin: 2px 0 12px; text-wrap: pretty; }
+.box-pair input { padding: 6px 4px; text-align: center; }
+.box-grid input::-webkit-outer-spin-button, .box-grid input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.box-grid input[type="number"] { -moz-appearance: textfield; }
+@media (max-width: 560px) {
+  .box-grid { grid-template-columns: 74px 1fr 1fr; gap: 6px 5px; }
+  .box-label { font-size: 12px; line-height: 1.2; }
+  .box-pair { gap: 2px; }
+  .box-pair span { font-size: 11px; }
+}

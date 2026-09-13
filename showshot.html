@@ -35,6 +35,7 @@
   W.setView('show');
   if (q.get('v') === 'script') document.querySelector('[data-action="script"][data-id="d1"]').click();
   if (q.get('v') === 'form') document.querySelector('[data-action="add-game"]').click();
+  if (q.get('v') === 'edit') { document.querySelector('[data-action="edit-game"][data-id="d1"]').click(); setTimeout(function () { var d = document.querySelector('.box-grid'); if (d) d.scrollIntoView(); }, 300); }
 })();
 </script>
 </body></html>
