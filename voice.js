@@ -114,20 +114,31 @@
      than hand it bare lines, which it reads like a teleprompter. Words in
      capitals get the stress; nothing is put in brackets, because a tag the
      model does not know gets read out. */
-  function direction(show, cast) {
+  /* The energy slider: 1 film room, 2 studio, 3 game day. */
+  var ENERGY = [
+    '',
+    { scene: 'A quiet film-room podcast recorded on a weekday afternoon. Friends who have covered football together for years, talking it through over coffee.',
+      pace: '- Relaxed, measured energy and an easy pace. Nobody raises their voice; disagreement is dry and amused, not loud.\n' },
+    { scene: 'Monday morning after a big Saturday. The panel has been arguing since before the cameras came on and they genuinely like needling each other.',
+      pace: '- Replies come in quickly, right on the end of the last line. A heated line speeds up and gets louder; a dry line lands flat and slow.\n' },
+    { scene: 'Live game-day sports TV with a loud crowd outside the set. Everyone is fired up and talking over each other.',
+      pace: '- High energy and a fast pace. Big reactions, voices rise on the hot takes, laughter and disbelief come through clearly. Keep the words clear even when loud.\n' }
+  ];
+  function direction(show, cast, hype) {
+    var e = ENERGY[hype] || ENERGY[2];
     return '# AUDIO PROFILE\n' +
-      (show || 'A college football debate show') + ', a college football debate show taped in front of a studio crew. ' + cast + '\n\n' +
+      (show || 'A college football debate show') + ', a college football debate show. ' + cast + '\n\n' +
       '# THE SCENE\n' +
-      'Monday morning after a big Saturday. The panel has been arguing since before the cameras came on and they genuinely like needling each other. Nobody is reading; they are talking.\n\n' +
+      e.scene + ' Nobody is reading; they are talking.\n\n' +
       '# DIRECTOR’S NOTES\n' +
       '- Conversational, unscripted delivery: natural pace changes, breaths, small hesitations, a laugh when a line is funny.\n' +
-      '- Replies come in quickly, right on the end of the last line. A heated line speeds up and gets louder; a dry line lands flat and slow.\n' +
+      e.pace +
       '- Stress words written in CAPITALS. Short fragments like "Come on." or "No." are reactions, not sentences.\n' +
       '- Sports-broadcast rhythm on names, scores and numbers. Never read out labels, punctuation or these notes.\n\n' +
       '#### TRANSCRIPT\n';
   }
 
-  function buildRequest(chunk, voices, styles, fallbackVoice, show) {
+  function buildRequest(chunk, voices, styles, fallbackVoice, show, hype) {
     var voiceOf = function (s) { return voices[s] || fallbackVoice; };
     /* "3 TD, 1 INT" becomes "3 touchdowns, 1 interception" here as well as
        when the script is written, so a script written before that existed,
@@ -139,11 +150,11 @@
       /* Single voice: speaker names are not stripped by the model in this
          mode, so the label comes off and the direction goes in front, which
          is the form Google's own examples use. */
-      text = direction(show, 'The speaker is ' + (styles[s] || 'a college football broadcaster') + '.') +
+      text = direction(show, 'The speaker is ' + (styles[s] || 'a college football broadcaster') + '.', hype) +
         chunk.turns.map(function (t) { return say(t.text); }).join('\n');
       speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceOf(s) } } };
     } else {
-      text = direction(show, chunk.speakers.map(function (s) { return 'The speaker labelled ' + s + ' is ' + (styles[s] || 'a broadcaster'); }).join('. ') + '.') +
+      text = direction(show, chunk.speakers.map(function (s) { return 'The speaker labelled ' + s + ' is ' + (styles[s] || 'a broadcaster'); }).join('. ') + '.', hype) +
         chunk.turns.map(function (t) { return t.speaker + ': ' + say(t.text); }).join('\n');
       speechConfig = {
         multiSpeakerVoiceConfig: {
@@ -184,7 +195,7 @@
   }
 
   function voiceChunk(opts, chunk, onWait) {
-    var body = JSON.stringify(buildRequest(chunk, opts.voices, opts.styles, opts.fallbackVoice, opts.show));
+    var body = JSON.stringify(buildRequest(chunk, opts.voices, opts.styles, opts.fallbackVoice, opts.show, opts.hype));
     var attempt = 0;
     var go = function () {
       attempt++;

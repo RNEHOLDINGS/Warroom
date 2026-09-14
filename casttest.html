@@ -55,6 +55,7 @@
 
     click('[data-action="load-sample"]');
     var st = W.state();
+    st.quarterLen = 15;
     st.school = { name: 'Oregon', mascot: 'Ducks', state: 'OR', color: '#154733' };
     st.games = [];
     st.show = { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true };
@@ -109,7 +110,7 @@
     var s3 = W.buildScript(g3);
     var sp3 = spokenText(s3);
     ok(/three straight/i.test(sp3), 'a third win in a row is called a streak');
-    ok(/third big game this year/.test(sp3), 'a standout for the third week is remembered as such');
+    ok(/third good game this year/.test(sp3), 'a standout for the third week is remembered as such');
     ok(/two rough ones in a row/.test(sp3), 'a second straight rough game is called a trend');
     ok(/Coming in, Oregon was scoring 29 a game and giving up 15/.test(sp3), 'the season averages so far are used', (sp3.match(/Coming in.{0,80}/) || [''])[0]);
     ok(/way below the 200 they’d been averaging on the ground/.test(sp3), 'a stat is measured against what the team usually does', (sp3.match(/.{0,60}averaging on the ground/) || [''])[0]);

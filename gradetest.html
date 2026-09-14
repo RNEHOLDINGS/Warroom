@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Stat grading test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+/* The panel sizes a performance to the stat line and the game length,
+   credits the teammates inside the numbers, and the energy slider sets how
+   hard it sells. */
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function click(sel) { var el = q(sel); if (!el) { ok(false, 'element ' + sel, 'missing'); return; } el.click(); }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom, V = window.WarRoomVoice;
+  var said = function (s) { return V.parseDialogue(s).map(function (t) { return t.speaker + ': ' + t.text; }).join('\n'); };
+  var seg = function (s, name) { return (s.split(name)[1] || '').split('--- SEGMENT')[0]; };
+  try {
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    ok(st.quarterLen === 5, 'quarter length defaults to 5 minutes', st.quarterLen);
+    ok(Math.abs(W.quarterScale() - 0.6) < 0.001, 'which judges a game at about 0.6 of a full one', W.quarterScale());
+    st.school = { name: 'Oregon', mascot: 'Ducks', state: 'OR', color: '#154733' };
+    st.games = [];
+
+    /* --- reading lines --- */
+    var S = W.statsOf('22/30, 280 yds, 3 TD, 1 INT', 'QB');
+    ok(S.comp === 22 && S.att === 30 && S.passYds === 280 && S.passTd === 3 && S.ints === 1, 'a quarterback line is read', JSON.stringify(S));
+    S = W.statsOf('19 car, 168 yds, 2 TD, 3 rec 40 yds', 'HB');
+    ok(S.carries === 19 && S.rushYds === 168 && S.rushTd === 2 && S.catches === 3 && S.recYds === 40, 'a back’s rushing and receiving yards are kept apart', JSON.stringify(S));
+    S = W.statsOf('7 catches for 112 yards and a touchdown, 1 drop', 'WR');
+    ok(S.catches === 7 && S.recYds === 112 && S.recTd === 1 && S.drops === 1, 'a receiver line in words is read', JSON.stringify(S));
+    S = W.statsOf('11 tkl, 2 sk, 3 TFL, 1 FF', 'MIKE');
+    ok(S.tackles === 11 && S.sacks === 2 && S.tfl === 3 && S.ff === 1 && S.fumbles == null, 'a linebacker line is read, and a forced fumble is not a fumble', JSON.stringify(S));
+    S = W.statsOf('FG 3/4, lng 52', 'K');
+    ok(S.fgMade === 3 && S.fgAtt === 4 && S.long === 52, 'a kicker line is read', JSON.stringify(S));
+    S = W.statsOf('sacked 4 times, 12/25 for 90 yds', 'QB');
+    ok(S.comp === 12 && S.att === 25 && S.passYds === 90, 'a bad quarterback line is read', JSON.stringify(S));
+
+    /* --- the example from the user: 134 yards and 2 touchdowns is not a monster day --- */
+    var G = W.gradeLine({ name: 'J.Carty', pos: 'QB', line: '134 yds, 2 TD' }, 0.6);
+    ok(G.overall === 2 && G.label === 'a good day', '134 passing yards and 2 touchdowns at 5 minutes is a good day, not a big one', G.label);
+    ok(/2 touchdowns on only 134 yards/.test(G.plus.join('|')), 'and what made it good is the touchdowns, not the yards', G.plus.join('|'));
+    ok(W.gradeLine({ pos: 'QB', line: '134 yds, 2 TD' }, 1).overall <= 1, 'the same line in a full-length game is ordinary');
+    ok(W.gradeLine({ pos: 'QB', line: '19/24, 260 yds, 4 TD' }, 0.6).overall >= 3, '260 yards and 4 touchdowns at 5 minutes is big');
+    ok(W.gradeLine({ pos: 'HB', line: '8 car 20 yds' }, 0.6).overall <= 1, 'under 3 yards a carry is not good');
+    ok(W.gradeLine({ pos: 'QB', line: '250 yds, 1 TD, 3 INT' }, 0.6).overall <= 1, 'three interceptions drag a big yardage day down');
+    ok(W.gradeLine({ pos: 'QB', line: 'played hard' }, 0.6) === null, 'a line with no numbers is not graded');
+
+    /* --- the show, with that line --- */
+    var perfs = [
+      { name: 'J.Carty', pos: 'QB', line: '14/20, 134 yds, 2 TD', verdict: 'standout' },
+      { name: 'T.Reed', pos: 'WR', line: '5 rec 70 yds 1 TD', verdict: 'solid' }
+    ];
+    var g = { id: 'g1', season: st.season, week: 1, opponent: 'Utah', home: true, result: 'W', scoreFor: 21, scoreAgainst: 14, rushFor: 60, passFor: 134, performances: perfs, notes: '' };
+    st.games.push(g);
+    var s = W.buildScript(g);
+    var stock = seg(s, 'STOCK UP');
+    ok(!/RESPECT|big-time|standing up|monster/i.test(stock), 'the panel does not hype a good-not-great line as a big day', stock);
+    ok(/Good game\. Not a great one|Solid, and I mean that as a compliment|a good day, not a historic one/.test(stock), 'the analyst calls it what it is', stock);
+    ok(/T\. Reed made plays for him/.test(stock), 'and credits the receiver who was inside those numbers', stock);
+    ok(!/no help|without help|almost no help|alone/i.test(s), 'nobody says he had no help when his receivers caught touchdowns');
+    ok(/a quick word for T\. Reed/.test(said(s)), 'the receiver who did his job gets a word');
+
+    var modest = W.buildScript(Object.assign({}, g, { id: 'g2', performances: [{ name: 'J.Carty', pos: 'QB', line: '9/18, 90 yds', verdict: 'standout' }] }));
+    ok(/pump the brakes/.test(seg(modest, 'STOCK UP')) && /90 passing yards is a normal day in a game this length/.test(seg(modest, 'STOCK UP')), 'a modest line marked "Balled out" gets the brakes pumped', seg(modest, 'STOCK UP'));
+
+    var big = W.buildScript(Object.assign({}, g, { id: 'g3', performances: [{ name: 'J.Carty', pos: 'QB', line: '19/24, 260 yds, 4 TD', verdict: 'standout' }] }));
+    ok(/big-time game|RESPECT|grown man’s stat line|That’s a star/.test(seg(big, 'STOCK UP')) && /A big day by any standard|A monster day by any standard/.test(seg(big, 'STOCK UP')), 'a genuinely big line gets the big reaction', seg(big, 'STOCK UP'));
+
+    var sacked = W.buildScript(Object.assign({}, g, { id: 'g4', result: 'L', scoreFor: 10, scoreAgainst: 17, performances: [{ name: 'J.Carty', pos: 'QB', line: '10/22, 80 yds, 2 INT, sacked 4 times', verdict: 'struggled' }] }));
+    ok(/He got sacked 4 times/.test(seg(sacked, 'HOT SEAT')), 'a quarterback on the hot seat is defended with the sacks, because the line shows them', seg(sacked, 'HOT SEAT'));
+
+    var onHim = W.buildScript(Object.assign({}, g, { id: 'g5', result: 'L', scoreFor: 10, scoreAgainst: 17, rushFor: 150, performances: [{ name: 'J.Carty', pos: 'QB', line: '10/22, 80 yds, 3 INT', verdict: 'struggled' }] }));
+    ok(/That one’s on him/.test(seg(onHim, 'HOT SEAT')) && !/nobody around him/.test(onHim), 'with no sacks, drops or dead run game in the numbers, nobody makes excuses', seg(onHim, 'HOT SEAT'));
+
+    var decent = W.buildScript(Object.assign({}, g, { id: 'g6', result: 'L', scoreFor: 20, scoreAgainst: 24, performances: [{ name: 'D.Moss', pos: 'HB', line: '14 car 95 yds, 1 fum', verdict: 'struggled' }] }));
+    ok(/Why is he on the hot seat/.test(seg(decent, 'HOT SEAT')) && /It’s a fumble that put him here/.test(seg(decent, 'HOT SEAT')), 'a good line on the hot seat is argued over, and the fumble is named', seg(decent, 'HOT SEAT'));
+
+    /* --- team stats scale with the game too --- */
+    var nums = seg(W.buildScript(Object.assign({}, g, { id: 'g7', performances: [], rushFor: 130, passFor: 100 })), 'THE NUMBERS');
+    ok(/Oregon ran for 130 yards/.test(nums), '130 rushing yards is a big day at 5 minutes', nums);
+    st.quarterLen = 15;
+    nums = seg(W.buildScript(Object.assign({}, g, { id: 'g8', performances: [], rushFor: 130, passFor: 100 })), 'THE NUMBERS');
+    ok(!/Oregon ran for 130 yards\. That is the stat/.test(nums), 'and ordinary in a full-length game', nums);
+    st.quarterLen = 5;
+
+    /* --- a thread through the show --- */
+    var lossScript = W.buildScript(Object.assign({}, g, { id: 'g9', result: 'L', scoreFor: 14, scoreAgainst: 24, rushFor: 40, passFor: 180,
+      performances: [{ name: 'D.Moss', pos: 'HB', line: '9 car 25 yds', verdict: 'struggled' }] }));
+    ok(/you said it started up front\. Let’s see if the numbers back you up/.test(said(lossScript)), 'the numbers segment picks up what was said earlier');
+    ok(/(just saying about|saw it with) D\. Moss/.test(seg(said(lossScript), 'THE NUMBERS') || said(lossScript)), 'and ties a stat back to the player already discussed', seg(lossScript, 'THE NUMBERS'));
+
+    /* --- the energy slider --- */
+    W.setView('show');
+    click('[data-action="script"][data-id="g1"]');
+    var slider = q('#hype');
+    ok(slider && slider.type === 'range' && slider.min === '1' && slider.max === '3' && slider.value === '2', 'the script dialog has a three-step energy slider, starting at studio');
+    ok(/Studio/.test(q('#hypeName').textContent), 'and names the setting');
+    slider.value = '3'; slider.dispatchEvent(new Event('input', { bubbles: true })); slider.dispatchEvent(new Event('change', { bubbles: true }));
+    ok(W.state().show.hype === 3 && /Game day/.test(q('#hypeName').textContent), 'moving it saves game day');
+    var loud = W.buildScript(Object.assign({}, g, { id: 'g3b', performances: [{ name: 'J.Carty', pos: 'QB', line: '19/24, 260 yds, 4 TD', verdict: 'standout' }] }));
+    ok(/standing up in this studio/.test(loud), 'game day is louder');
+    slider = q('#hype');
+    slider.value = '1'; slider.dispatchEvent(new Event('change', { bubbles: true }));
+    ok(W.state().show.hype === 1, 'film room saves');
+    ok(q('#scriptBox').value === W.state().games[0].script && W.state().games[0].script === W.state().games[0].scriptAuto, 'an untouched script is rewritten to match');
+    var calm = W.buildScript(Object.assign({}, g, { id: 'g3c', performances: [{ name: 'J.Carty', pos: 'QB', line: '19/24, 260 yds, 4 TD', verdict: 'standout' }] }));
+    var calmSaid = V.parseDialogue(calm).map(function (t) { return t.text; }).join('\n');
+    ok(!/!/.test(calmSaid) && !/\b(RESPECT|EVERYBODY|NOBODY|THAT|ONE)\b/.test(calmSaid), 'film room has no shouting and no exclamation marks', (calmSaid.match(/.{0,30}(!|RESPECT|EVERYBODY).{0,20}/) || [''])[0]);
+    ok(/HARD COUNT|Oregon/.test(calm), 'names in capitals are left alone');
+    q('#scriptBox').value += '\nWHITCOMB: My own line.';
+    slider = q('#hype'); slider.value = '2'; slider.dispatchEvent(new Event('change', { bubbles: true }));
+    ok(/My own line/.test(q('#scriptBox').value) && /Your edited script stays/.test(q('#toast').textContent), 'an edited script is kept when the energy changes', q('#toast').textContent);
+    click('[data-action="close"]');
+
+    /* the voices get the energy too */
+    var chunk = { speakers: ['WHITCOMB'], turns: [{ speaker: 'WHITCOMB', text: 'Hello.' }] };
+    var t1 = V.buildRequest(chunk, { WHITCOMB: 'Algieba' }, {}, 'Algieba', 'HARD COUNT', 1).contents[0].parts[0].text;
+    var t3 = V.buildRequest(chunk, { WHITCOMB: 'Algieba' }, {}, 'Algieba', 'HARD COUNT', 3).contents[0].parts[0].text;
+    ok(/film-room|Nobody raises their voice/.test(t1) && /High energy|game-day/.test(t3) && t1 !== t3, 'film room and game day direct the voices differently');
+
+    /* --- settings --- */
+    W.setView('settings');
+    ok(q('#sh-qlen') && q('#sh-qlen').value === '5', 'Settings shows the quarter length');
+    q('#sh-qlen').value = '8';
+    click('[data-action="save-show"]');
+    ok(W.state().quarterLen === 8 && JSON.parse(localStorage.getItem('warroom.v1')).quarterLen === 8, 'and saves it');
+    ok(W.state().show.hype === 2, 'saving the cast keeps the energy setting');
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

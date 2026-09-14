@@ -67,6 +67,7 @@
 
     click('[data-action="load-sample"]');
     var st = W.state();
+    st.quarterLen = 15;   /* these thresholds are the full-length ones */
     var qb = st.players.filter(function (p) { return p.pos === 'QB'; })[0];
     st.show = { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true };
     var spokenLines = function (s) { return WarRoomVoice.parseDialogue(s).map(function (t) { return t.text; }).join('\n'); };

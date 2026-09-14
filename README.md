@@ -137,6 +137,48 @@ that mattered most get argued, and the rest stay in the table.
 "Unbelievable."), and the team is called by its name and mascot, not "they"
 while the opponent gets named every time.
 
+**Stat lines are graded, not just hyped.** The panel reads each player's line
+(yards, touchdowns, interceptions, carries, catches, tackles, sacks, field
+goals, in shorthand or words) and sizes the reaction to it:
+
+- **What normal looks like.** In a full-length FBS game a team throws for about
+  220 yards and runs for about 160 at 4.6 a carry, around 62% completions and
+  7.2 yards an attempt. A starting quarterback's 300 is big, a back's or a
+  receiver's 100 is good, a linebacker's double-digit tackles is a busy day.
+  Rates (completion %, yards a carry or a catch) never scale; counting stats do.
+- **Quarter length** (Settings → The show) scales the counting stats. 5-minute
+  quarters are judged at about 0.6 of a full game, because a game you play
+  yourself runs more efficiently than the snap count suggests: that is where
+  134 passing yards is an ordinary day and 2 touchdowns on it is a good one.
+  13 minutes or more is a full game. The team-stat bars in the numbers segment
+  scale the same way.
+- **The reaction fits the grade.** A big line gets the big reaction. A good
+  one is called good ("Good game. Not a great one, and that's fine"). A modest
+  line you still marked Balled out gets the analyst pumping the brakes. A
+  decent line on the hot seat is argued over, and the interception or fumble
+  that put him there is named.
+- **Credit goes to whoever else is in the numbers.** Touchdown passes mean
+  somebody caught them, so the receivers (by name, if you logged them) get
+  credit. A back's yards credit the line; a receiver's big day credits the
+  quarterback; a sack credits the coverage. "He had no help" is only said when
+  the numbers show it: sacked three or more times, a lopsided loss, a receiver
+  who was the whole passing game. On the hot seat, the defense uses real
+  evidence (the sacks, the drops, a dead run game, being down big) or the
+  panel agrees it's on him.
+
+**The energy slider** sits under the script: **Film room**, **Studio**, **Game
+day**. It sets how hard the panel sells a performance (film room takes the
+shouting and exclamation marks out; game day turns it up) and how the voices
+deliver it (calm and measured, a lively debate, or loud sports TV). An
+untouched script is rewritten to match; an edited one is kept and only the
+delivery changes.
+
+**It flows as one show.** Segments pick up earlier threads (the numbers
+segment checks whether "it started up front" holds up), a team stat is tied to
+the player already discussed when both point the same way, consecutive players
+never get the same sentence, comebacks answer the line that was actually
+said, and long takes are broken up by the other voice.
+
 **Rankings and upsets.** Each game has **Our rank** and **Their rank**, the Top
 25 going into that game, blank for unranked. They are typed on the game and
 nothing carries from week to week: update them as the season goes. A win over
@@ -460,6 +502,9 @@ These suites are all driven through real DOM clicks with hit testing:
 - `casttest.html` — chairs that match their voices, contractions, the team's
   own name, and the season memory: streaks, callbacks, player history,
   averages, and that a later week is never mentioned.
+- `gradetest.html` — reading stat lines, grading them for the quarter length,
+  the size of the reaction, teammate credit and when "no help" is allowed,
+  hot-seat defenses, scaled team stats, the energy slider and quarter length.
 - `ranktest.html` — what counts as an upset, the rank fields, the game list,
   every place the show calls it, and that nothing is tracked across weeks.
 - `safetest.html` — data across an update: the copy made on the first open of

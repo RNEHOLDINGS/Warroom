@@ -655,3 +655,10 @@ table.plain td.num, table.plain th.num { text-align: right; }
 .snap-row > div { flex: 1; min-width: 0; }
 .snap-row b { display: block; font-size: var(--t-small); color: var(--ink); }
 .snap-row span { font-size: var(--t-small); color: var(--ink-muted); }
+
+/* the energy slider in the script dialog */
+.hype-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 2px; }
+.hype-row label { font-size: var(--t-small); font-weight: 600; color: var(--ink); }
+.hype-row input[type="range"] { flex: 0 1 160px; accent-color: var(--team, #2a78d6); }
+.hype-name { font-size: var(--t-small); color: var(--ink-muted); }
+.hype-name b { color: var(--ink); font-weight: 600; margin-right: 4px; }
