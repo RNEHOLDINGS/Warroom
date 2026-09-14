@@ -184,18 +184,37 @@
     ok(Object.keys(used).length >= 3, 'the cast gets distinct voices', JSON.stringify(used));
 
     var save = q('#voiceArea a[download]');
-    ok(!!save && /\.wav$/.test(save.getAttribute('download')) && /^hard-count-week-4/.test(save.getAttribute('download')), 'Save audio downloads a named .wav', save && save.getAttribute('download'));
+    ok(!!save && /\.mp3$/.test(save.getAttribute('download')) && /^hard-count-week-4/.test(save.getAttribute('download')), 'Save downloads a named .mp3', save && save.getAttribute('download'));
+    ok(!!save && /Save MP3/.test(save.textContent), 'and the button says MP3', save && save.textContent);
 
-    /* ---------- the WAV itself ---------- */
+    /* ---------- the MP3 itself ---------- */
+    var chunks2 = V.chunkTurns(V.parseDialogue(game.script));
+    var expectSecs = chunks2.length * 0.1 + chunks2.slice(1).reduce(function (a, c) { return a + (c.segmentBreak ? 0.9 : 0.3); }, 0);
     return fetch(audio.src).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+      var b = new Uint8Array(buf);
+      ok(b.length > 0 && b[0] === 0xFF && (b[1] & 0xE0) === 0xE0, 'it is an MP3 stream, frame sync on the first byte', b[0] + ',' + b[1]);
+      var wavBytes = Math.round(expectSecs * 48000) + 44;
+      ok(b.length * 4 < wavBytes, 'and a fraction of the size of the WAV it replaces', b.length + ' vs ' + wavBytes);
+      return new Promise(function (res) {
+        var a = new Audio();
+        a.onloadedmetadata = function () { res(a.duration); };
+        a.onerror = function () { res(-1); };
+        setTimeout(function () { res(-2); }, 6000);
+        a.src = audio.src;
+      });
+    }).then(function (dur) {
+      ok(dur > 0 && Math.abs(dur - expectSecs) < 0.6, 'it plays for as long as every voiced part plus the pauses', dur + ' vs ' + expectSecs.toFixed(2));
+
+      /* the WAV is still built first, and is the fallback if encoding fails */
+      var wav = V.toWav([{ pcm: new Uint8Array(4800), rate: 24000 }, { pcm: new Uint8Array(4800), rate: 24000, segmentBreak: true }]);
+      return wav.blob.arrayBuffer();
+    }).then(function (buf) {
       var v = new DataView(buf);
       var tag = function (o) { return String.fromCharCode(v.getUint8(o), v.getUint8(o + 1), v.getUint8(o + 2), v.getUint8(o + 3)); };
-      ok(tag(0) === 'RIFF' && tag(8) === 'WAVE' && tag(36) === 'data', 'a valid WAV header');
+      ok(tag(0) === 'RIFF' && tag(8) === 'WAVE' && tag(36) === 'data', 'the fallback WAV has a valid header');
       ok(v.getUint32(24, true) === 24000 && v.getUint16(22, true) === 1 && v.getUint16(34, true) === 16, '24 kHz, mono, 16-bit, as Google returns it');
-      var pieces = calls.length * 4800;
-      ok(v.getUint32(40, true) > pieces && v.getUint32(40, true) === buf.byteLength - 44, 'every part plus the pauses between them made it in', v.getUint32(40, true) + ' of ' + (buf.byteLength - 44));
-    });
-  }).then(function () {
+      ok(v.getUint32(40, true) === 9600 + 43200 && buf.byteLength === 44 + 9600 + 43200, 'both parts plus a segment-break pause made it in', v.getUint32(40, true));
+    });  }).then(function () {
     /* ---------- reopening does not pay twice ---------- */
     var before = calls.length;
     click('[data-action="close"]');

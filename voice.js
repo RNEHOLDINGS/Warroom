@@ -34,17 +34,26 @@
     { id: 'gemini-2.5-pro-preview-tts',   label: 'Gemini 2.5 Pro TTS (slower, richer)' }
   ];
 
-  /* The 30 prebuilt voices, with Google's own one-word description of each. */
+  /* The 30 prebuilt voices, with Google's own one-word description of each
+     and whether it sounds like a man or a woman. Google does not label that,
+     so this is by ear. It matters because the script is written around the
+     person: a woman's voice on the ex-player's chair was telling listeners
+     she spent five years on the offensive line. The app now writes each
+     chair to match the voice sitting in it. */
   var VOICES = [
-    ['Zephyr', 'Bright'], ['Puck', 'Upbeat'], ['Charon', 'Informative'], ['Kore', 'Firm'],
-    ['Fenrir', 'Excitable'], ['Leda', 'Youthful'], ['Orus', 'Firm'], ['Aoede', 'Breezy'],
-    ['Callirrhoe', 'Easy-going'], ['Autonoe', 'Bright'], ['Enceladus', 'Breathy'], ['Iapetus', 'Clear'],
-    ['Umbriel', 'Easy-going'], ['Algieba', 'Smooth'], ['Despina', 'Smooth'], ['Erinome', 'Clear'],
-    ['Algenib', 'Gravelly'], ['Rasalgethi', 'Informative'], ['Laomedeia', 'Upbeat'], ['Achernar', 'Soft'],
-    ['Alnilam', 'Firm'], ['Schedar', 'Even'], ['Gacrux', 'Mature'], ['Pulcherrima', 'Forward'],
-    ['Achird', 'Friendly'], ['Zubenelgenubi', 'Casual'], ['Vindemiatrix', 'Gentle'], ['Sadachbia', 'Lively'],
-    ['Sadaltager', 'Knowledgeable'], ['Sulafat', 'Warm']
-  ].map(function (v) { return { id: v[0], label: v[0] + ' — ' + v[1] }; });
+    ['Zephyr', 'Bright', 'F'], ['Puck', 'Upbeat', 'M'], ['Charon', 'Informative', 'M'], ['Kore', 'Firm', 'F'],
+    ['Fenrir', 'Excitable', 'M'], ['Leda', 'Youthful', 'F'], ['Orus', 'Firm', 'M'], ['Aoede', 'Breezy', 'F'],
+    ['Callirrhoe', 'Easy-going', 'F'], ['Autonoe', 'Bright', 'F'], ['Enceladus', 'Breathy', 'M'], ['Iapetus', 'Clear', 'M'],
+    ['Umbriel', 'Easy-going', 'M'], ['Algieba', 'Smooth', 'M'], ['Despina', 'Smooth', 'F'], ['Erinome', 'Clear', 'F'],
+    ['Algenib', 'Gravelly', 'M'], ['Rasalgethi', 'Informative', 'M'], ['Laomedeia', 'Upbeat', 'F'], ['Achernar', 'Soft', 'F'],
+    ['Alnilam', 'Firm', 'M'], ['Schedar', 'Even', 'M'], ['Gacrux', 'Mature', 'F'], ['Pulcherrima', 'Forward', 'F'],
+    ['Achird', 'Friendly', 'M'], ['Zubenelgenubi', 'Casual', 'M'], ['Vindemiatrix', 'Gentle', 'F'], ['Sadachbia', 'Lively', 'M'],
+    ['Sadaltager', 'Knowledgeable', 'M'], ['Sulafat', 'Warm', 'F']
+  ].map(function (v) { return { id: v[0], gender: v[2], label: v[0] + ' — ' + v[1] + ' · ' + (v[2] === 'F' ? 'woman' : 'man') }; });
+  function genderOf(id) {
+    for (var i = 0; i < VOICES.length; i++) if (VOICES[i].id === id) return VOICES[i].gender;
+    return '';
+  }
 
   function getKey() {
     try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; }
@@ -81,7 +90,7 @@
      single request straddles two topics, and at roughly a minute and a half
      of speech, beyond which Google says the voice starts to drift. */
   function chunkTurns(turns, maxChars) {
-    maxChars = maxChars || 1200;
+    maxChars = maxChars || 2200;
     var chunks = [], cur = null;
     turns.forEach(function (t) {
       var inRun = cur && cur.speakers.indexOf(t.speaker) >= 0;
@@ -100,7 +109,25 @@
 
   /* ---------- one request ---------- */
 
-  function buildRequest(chunk, voices, styles, fallbackVoice) {
+  /* Google's guidance for natural speech is to direct the model like an
+     actor -- who is talking, where they are, how it should sound -- rather
+     than hand it bare lines, which it reads like a teleprompter. Words in
+     capitals get the stress; nothing is put in brackets, because a tag the
+     model does not know gets read out. */
+  function direction(show, cast) {
+    return '# AUDIO PROFILE\n' +
+      (show || 'A college football debate show') + ', a college football debate show taped in front of a studio crew. ' + cast + '\n\n' +
+      '# THE SCENE\n' +
+      'Monday morning after a big Saturday. The panel has been arguing since before the cameras came on and they genuinely like needling each other. Nobody is reading; they are talking.\n\n' +
+      '# DIRECTOR’S NOTES\n' +
+      '- Conversational, unscripted delivery: natural pace changes, breaths, small hesitations, a laugh when a line is funny.\n' +
+      '- Replies come in quickly, right on the end of the last line. A heated line speeds up and gets louder; a dry line lands flat and slow.\n' +
+      '- Stress words written in CAPITALS. Short fragments like "Come on." or "No." are reactions, not sentences.\n' +
+      '- Sports-broadcast rhythm on names, scores and numbers. Never read out labels, punctuation or these notes.\n\n' +
+      '#### TRANSCRIPT\n';
+  }
+
+  function buildRequest(chunk, voices, styles, fallbackVoice, show) {
     var voiceOf = function (s) { return voices[s] || fallbackVoice; };
     /* "3 TD, 1 INT" becomes "3 touchdowns, 1 interception" here as well as
        when the script is written, so a script written before that existed,
@@ -112,12 +139,11 @@
       /* Single voice: speaker names are not stripped by the model in this
          mode, so the label comes off and the direction goes in front, which
          is the form Google's own examples use. */
-      text = 'Say this as ' + (styles[s] || 'a college football broadcaster') + ':\n\n' +
+      text = direction(show, 'The speaker is ' + (styles[s] || 'a college football broadcaster') + '.') +
         chunk.turns.map(function (t) { return say(t.text); }).join('\n');
       speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceOf(s) } } };
     } else {
-      text = 'Voice this exchange from a college football debate show as a natural, fast studio conversation. ' +
-        chunk.speakers.map(function (s) { return s + ' is ' + (styles[s] || 'a broadcaster'); }).join('. ') + '.\n\n' +
+      text = direction(show, chunk.speakers.map(function (s) { return 'The speaker labelled ' + s + ' is ' + (styles[s] || 'a broadcaster'); }).join('. ') + '.') +
         chunk.turns.map(function (t) { return t.speaker + ': ' + say(t.text); }).join('\n');
       speechConfig = {
         multiSpeakerVoiceConfig: {
@@ -158,7 +184,7 @@
   }
 
   function voiceChunk(opts, chunk, onWait) {
-    var body = JSON.stringify(buildRequest(chunk, opts.voices, opts.styles, opts.fallbackVoice));
+    var body = JSON.stringify(buildRequest(chunk, opts.voices, opts.styles, opts.fallbackVoice, opts.show));
     var attempt = 0;
     var go = function () {
       attempt++;
@@ -223,7 +249,29 @@
     str('data'); v.setUint32(o, len, true); o += 4;
     var bytes = new Uint8Array(buf);
     parts.forEach(function (p) { bytes.set(p, o); o += p.length; });
-    return { blob: new Blob([buf], { type: 'audio/wav' }), seconds: len / 2 / rate };
+    return { blob: new Blob([buf], { type: 'audio/wav' }), seconds: len / 2 / rate, rate: rate, pcm: new Uint8Array(buf, 44) };
+  }
+
+  /* MP3, because a WAV of a ten-minute show is over 25 MB and will not
+     attach to a message. LAME in a worker, so a long show encodes without
+     freezing the page; 64 kbps mono is plenty for speech and about a tenth
+     of the size. If the encoder cannot start (a file:// page, an old
+     browser) the WAV is still there. */
+  function toMp3(wav, onProgress) {
+    return new Promise(function (resolve, reject) {
+      var w;
+      try { w = new Worker('mp3/worker.js'); } catch (e) { reject(e); return; }
+      var pcm = wav.pcm.slice(0, wav.pcm.length - (wav.pcm.length % 2));
+      w.onmessage = function (e) {
+        var d = e.data || {};
+        if (d.progress != null) { if (onProgress) onProgress(d.progress); return; }
+        w.terminate();
+        if (d.error) reject(new Error(d.error));
+        else resolve({ blob: d.blob, seconds: wav.seconds });
+      };
+      w.onerror = function (e) { w.terminate(); reject(new Error((e && e.message) || 'The MP3 encoder did not start.')); };
+      w.postMessage({ pcm: pcm.buffer, rate: wav.rate, kbps: 64 }, [pcm.buffer]);
+    });
   }
 
   /* ---------- the whole script ---------- */
@@ -231,6 +279,8 @@
   function voiceScript(opts) {
     var turns = parseDialogue(opts.script);
     if (!turns.length) return Promise.reject(new Error('There are no spoken lines in that script to voice.'));
+    /* Longer runs than before: every request boundary is a place where
+       the voices lose the thread of the argument and reset. */
     var chunks = chunkTurns(turns, opts.maxChars);
     var pieces = [];
     var step = function (i) {
@@ -263,6 +313,9 @@
     chunkTurns: chunkTurns,
     buildRequest: buildRequest,
     toWav: toWav,
+    toMp3: toMp3,
+    genderOf: genderOf,
+    direction: direction,
     voiceScript: voiceScript
   };
 })();

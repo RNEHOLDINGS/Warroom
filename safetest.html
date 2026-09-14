@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Data safety test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>
+/* A phone that used the previous build: real data in storage, an older
+   build recorded. ?corrupt=1 instead leaves a store that will not parse. */
+localStorage.clear();
+var CORRUPT = location.search.indexOf('corrupt=1') >= 0;
+if (CORRUPT) {
+  localStorage.setItem('warroom.v1', '{"players":[{"name":"Half a file"');
+} else {
+  localStorage.setItem('warroom.v1', JSON.stringify({
+    v: 1, school: { name: 'Baylor', mascot: 'Bears' }, season: 2028, cap: 85, hours: 35,
+    players: [{ id: 'p1', name: 'Kept Player', pos: 'QB', year: 'JR', ovr: 81 }, { id: 'p2', name: 'Second Man', pos: 'WR', year: 'SO', ovr: 74 }],
+    recruits: [{ id: 'r1', type: 'hs', name: 'Kept Recruit', pos: 'CB', stars: 4, status: 'board' }],
+    games: [{ id: 'g1', season: 2028, week: 1, opponent: 'TCU', home: true, result: 'W', scoreFor: 21, scoreAgainst: 17, performances: [] }],
+    storylines: [], history: []
+  }));
+  localStorage.setItem('warroom.build', 'warroom-v15');
+}
+</script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function click(sel) { var el = q(sel); if (!el) { ok(false, 'element ' + sel, 'missing'); return; } el.click(); }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom;
+  try {
+    if (CORRUPT) {
+      ok(localStorage.getItem('warroom.v1.unreadable') === '{"players":[{"name":"Half a file"', 'a store that will not parse is set aside before anything can save over it');
+      finish();
+      return;
+    }
+
+    /* --- the update itself --- */
+    var st = W.state();
+    ok(st.players.length === 2 && st.recruits.length === 1 && st.games.length === 1 && st.school.name === 'Baylor', 'a new build opens with the data the old one saved', JSON.stringify({ p: st.players.length, r: st.recruits.length, g: st.games.length }));
+    var snaps = W.snapshots();
+    ok(snaps.length === 1 && snaps[0].why === 'Before the app updated', 'the first open of a new build copies the data first', JSON.stringify(snaps.map(function (x) { return x.why; })));
+    ok(snaps[0] && snaps[0].counts.players === 2 && snaps[0].counts.games === 1, 'the copy knows what it holds');
+    ok(localStorage.getItem('warroom.build') === 'warroom-v16', 'and the build is recorded, so it is not copied again on every open', localStorage.getItem('warroom.build'));
+
+    /* --- a save that would empty the program --- */
+    st.players = []; st.recruits = []; st.games = [];
+    W.render();
+    click('[data-view="settings"]');
+    click('[data-action="save-program"]');
+    snaps = W.snapshots();
+    ok(snaps[0].why === 'Before it was emptied' && snaps[0].counts.players === 2, 'emptying the program keeps what was there', snaps[0].why);
+
+    /* --- restoring --- */
+    W.setView('settings');
+    var rows = document.querySelectorAll('.snap-row');
+    ok(rows.length === snaps.length, 'Settings lists the automatic copies', rows.length + ' vs ' + snaps.length);
+    ok(/2 players, 1 recruit, 1 game/.test(rows[0].textContent), 'each copy says what is in it', rows[0].textContent);
+    click('.snap-row [data-action="restore-snap"][data-i="0"]');
+    ok(!q('#modal').hidden && /Go back to this copy/.test(q('#modal').textContent), 'restoring asks first');
+    click('#modal [data-action="do-restore-snap"]');
+    st = W.state();
+    ok(st.players.length === 2 && st.players[0].name === 'Kept Player' && st.recruits.length === 1, 'the data comes back', st.players.length);
+    ok(JSON.parse(localStorage.getItem('warroom.v1')).players.length === 2, 'and is saved');
+
+    /* --- starting over and the sample both copy first --- */
+    W.setView('settings');
+    click('[data-action="wipe"]');
+    click('#modal [data-action="do-wipe"]');
+    ok(W.state().players.length === 0, 'Start over still starts over');
+    ok(W.snapshots()[0].why === 'Before starting over' && W.snapshots()[0].counts.players === 2, 'but the data it cleared is kept as a copy', W.snapshots()[0].why);
+
+    W.setView('settings');
+    click('.snap-row [data-action="restore-snap"][data-i="0"]');
+    click('#modal [data-action="do-restore-snap"]');
+    ok(W.state().players.length === 2, 'and can be brought back');
+
+    W.setView('settings');
+    click('[data-action="load-sample"]');
+    click('#modal [data-action="do-sample"]');
+    ok(W.snapshots()[0].why === 'Before loading the sample' && W.snapshots()[0].counts.players === 2, 'loading the sample keeps what it replaced');
+
+    /* --- copies are capped, newest kept --- */
+    for (var i = 0; i < 10; i++) W.takeSnapshot(JSON.stringify({ players: [{ id: 'x' + i }], recruits: [], games: [] }), 'Filler ' + i);
+    var all = W.snapshots();
+    ok(all.length === 6 && all[0].why === 'Filler 9', 'at most six copies, the newest first', all.length + ' ' + all[0].why);
+    ok(!W.takeSnapshot(JSON.stringify({ players: [], recruits: [], games: [] }), 'Empty'), 'an empty program is not worth a copy');
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

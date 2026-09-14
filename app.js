@@ -216,16 +216,81 @@
           s.history = Array.isArray(parsed.history) ? parsed.history : [];
         }
       }
-    } catch (e) { /* corrupt store: start clean rather than crash */ }
+    } catch (e) {
+      /* An unreadable store is set aside, never overwritten: the first save
+         after starting clean would otherwise destroy the only copy. */
+      try { localStorage.setItem(STORE_KEY + '.unreadable', localStorage.getItem(STORE_KEY) || ''); } catch (e2) {}
+    }
     return s;
   }
+
+  /* ---------- automatic copies ----------
+     A user lost everything across an update (2026-09-13) with no way back
+     but an old export. So the data is copied, inside this browser, at the
+     moments it is at risk: the first open of a new build, once a day, and
+     before anything that replaces it wholesale -- a restore, the sample,
+     starting over, advancing the season. And a save that would empty a
+     program that had players, recruits or games copies what was there first.
+     Copies live in their own key, so they survive a bad save of the main one;
+     they do not survive the browser clearing the site, which is what Export
+     is for. */
+  var APP_BUILD = 'warroom-v16';   /* bump with CACHE in sw.js */
+  var SNAP_KEY = 'warroom.snapshots';
+  var SNAP_MAX = 6;
+  function countsOf(o) {
+    o = o || {};
+    return { players: (o.players || []).length, recruits: (o.recruits || []).length, games: (o.games || []).length };
+  }
+  function hasData(c) { return c.players + c.recruits + c.games > 0; }
+  function snapshots() {
+    try { var a = JSON.parse(localStorage.getItem(SNAP_KEY) || '[]'); return Array.isArray(a) ? a : []; }
+    catch (e) { return []; }
+  }
+  function takeSnapshot(raw, why) {
+    var o;
+    try { o = JSON.parse(raw); } catch (e) { return false; }
+    var c = countsOf(o);
+    if (!hasData(c)) return false;
+    var list = snapshots().filter(function (x) { return x && x.raw !== raw; });
+    list.unshift({ at: Date.now(), why: why, build: APP_BUILD, counts: c, school: (o.school && o.school.name) || '', season: o.season || '', raw: raw });
+    list = list.slice(0, SNAP_MAX);
+    /* storage is small; give up the oldest copies rather than the newest */
+    while (list.length) {
+      try { localStorage.setItem(SNAP_KEY, JSON.stringify(list)); return true; }
+      catch (e) { if (list.length === 1) return false; list.pop(); }
+    }
+    return false;
+  }
+  function snapshotNow(why) {
+    try { var raw = localStorage.getItem(STORE_KEY); if (raw) return takeSnapshot(raw, why); } catch (e) {}
+    return false;
+  }
+  (function snapshotOnOpen() {
+    var last;
+    try { last = localStorage.getItem('warroom.build'); } catch (e) {}
+    var newest = snapshots()[0];
+    if (last !== APP_BUILD) snapshotNow(last ? 'Before the app updated' : 'When the app opened');
+    else if (!newest || Date.now() - newest.at > 20 * 3600 * 1000) snapshotNow('Daily copy');
+    try { localStorage.setItem('warroom.build', APP_BUILD); } catch (e) {}
+    /* asks the browser not to clear this site under storage pressure */
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+  })();
+
   var state = load();
   function save() {
     /* One hook instead of eight: every mutation path ends up here, so
        storylines open and close themselves without any caller remembering to
        ask. */
     syncStorylines();
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+    try {
+      var before = localStorage.getItem(STORE_KEY);
+      if (before && !hasData(countsOf(state))) {
+        var old = null;
+        try { old = JSON.parse(before); } catch (e) {}
+        if (old && hasData(countsOf(old))) takeSnapshot(before, 'Before it was emptied');
+      }
+      localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    }
     catch (e) { toast('Could not save — storage is full or blocked.'); }
   }
 
@@ -481,8 +546,17 @@
      games, a result that disagrees with the yardage next because that is the
      argument, then the stats that decide drives. Only numbers somebody typed
      in are ever mentioned. */
-  function readBox(b, g, pick) {
+  function readBox(b, g, pick, T) {
+    T = T || {};
+    T.us = T.us || 'They'; T.them = T.them || 'them'; T.P = T.P || PERSONA.player.M; T.ctx = T.ctx || { avg: {} };
     var won = g.result === 'W', tied = g.result === 'T';
+    /* measured against what this team usually does, once there are games to
+       measure against */
+    var vsAvg = function (k, v, doing) {
+      var a = T.ctx.avg[k];
+      if (a == null || Math.abs(v - a) < 50) return '';
+      return ' And that’s way ' + (v > a ? 'above' : 'below') + ' the ' + a + ' they’d been ' + doing + '.';
+    };
     var m = gameMargin(g);
     var say = function (n) { return n < 0 ? 'minus ' + -n : String(n); };
     var has = function (k) { return b[k] !== ''; };
@@ -494,7 +568,7 @@
     if (has('toFor') || has('toAgainst')) {
       var toDiff = int(b.toAgainst, 0, 99) - int(b.toFor, 0, 99);
       if (toDiff < 0) {
-        add('to', 5, 'They lost the turnover battle by ' + -toDiff + (won ? ' and won anyway' : '') + '. Teams that do that lose about seven times in ten. That is not a narrative, that is the base rate. Every giveaway is a possession you never get back, and usually a short field for the other side.',
+        add('to', 5, T.us + ' lost the turnover battle by ' + -toDiff + (won ? ' and won anyway' : '') + '. Teams that do that lose about seven times in ten. That is not a narrative, that is the base rate. Every giveaway is a possession you never get back, and usually a short field for the other side.',
           pick([
             'See, this is where you and I live in different buildings. Turnovers are not a base rate. They are a man not wrapping up, or a quarterback getting hit as he throws because somebody lost a one-on-one.',
             'Every one of those numbers has a human being attached to it. You said seven in ten. I say somebody was careless with the football. Those are the same sentence.',
@@ -522,15 +596,15 @@
     if (has('yardsFor') && has('yardsAgainst')) {
       var yd = b.yardsFor - b.yardsAgainst;
       if (won && yd <= -50) {
-        add('yds', 4, 'They were outgained by ' + -yd + ' yards and still won. That is usually turnovers, special teams, or a couple of big plays, and none of those are promised to show up next week.',
+        add('yds', 4, T.us + ' got outgained by ' + -yd + ' yards and still won. That is usually turnovers, special teams, or a couple of big plays, and none of those are promised to show up next week.',
           pick(['A win is a win. Yards do not go on the scoreboard. They made the plays when it counted.',
-                'I have played in games like that. You bend, you do not break, and you get on the bus a winner.']));
+                T.P.been + ' You bend, you do not break, and you get on the bus a winner.']));
       } else if (!won && !tied && yd >= 50) {
-        add('yds', 4, 'Here is the one that should drive the staff crazy. They outgained them by ' + yd + ' yards and lost. Yards between the twenties do not count. That is the red zone, or giving the ball away, and it is fixable, which somehow makes it worse.',
+        add('yds', 4, 'Here’s the one that should drive the staff crazy. ' + T.us + ' outgained ' + T.them + ' by ' + yd + ' yards and lost. Yards between the twenties do not count. That is the red zone, or giving the ball away, and it is fixable, which somehow makes it worse.',
           'That is finishing. You drive it all the way down there and kick field goals, you lose football games. Punch it in.');
       } else if (Math.abs(yd) >= 150) {
         add('yds', 2, yd > 0
-          ? 'They outgained them by ' + yd + ' yards, ' + say(b.yardsFor) + ' to ' + say(b.yardsAgainst) + '. When the gap is that big, the scoreboard is telling the truth. It was not a fluke.'
+          ? T.us + ' outgained ' + T.them + ' by ' + yd + ' yards, ' + say(b.yardsFor) + ' to ' + say(b.yardsAgainst) + '. When the gap is that big, the scoreboard is telling the truth. It was not a fluke.'
           : 'Outgained by ' + -yd + ' yards, ' + say(b.yardsFor) + ' to ' + say(b.yardsAgainst) + '. That is not bad luck. That is getting beaten at the line of scrimmage, snap after snap.',
           yd > 0 ? 'They physically dominated them. That is what that number means to me.'
                  : 'They got pushed around. I do not need a spreadsheet to tell me that. I watched it.');
@@ -544,12 +618,12 @@
     if (has('rushFor')) {
       var rf = b.rushFor;
       if (rf >= 200) {
-        add('rushFor', 3, 'They ran for ' + rf + ' yards. That is the stat that controls a game. It eats the clock, it keeps the other offense on the sideline, and it pulls the safeties up so the play-action shots are open.',
+        add('rushFor', 3, T.us + ' ran for ' + rf + ' yards. That is the stat that controls a game. It eats the clock, it keeps the other offense on the sideline, and it pulls the safeties up so the play-action shots are open.' + vsAvg('rushFor', rf, 'averaging on the ground'),
           pick(['That is the offensive line, and nobody ever puts them on a graphic. ' + rf + ' yards on the ground means five men up front moved grown men where they did not want to go.',
                 'You run for ' + rf + ', you are telling the other sideline you are tougher than they are. By the fourth quarter, they believed it.']));
       } else if (rf < 90) {
-        add('rushFor', won ? 2 : 3, 'Only ' + say(rf) + ' rushing yards. When you cannot run, you are one-dimensional. The defense stops respecting the run, pins its ears back and comes after the quarterback, and every third down turns into third and long.',
-          'I played guard. When your team cannot run the football, I take that personally. That is the line losing at the point of attack, and no play call fixes it.');
+        add('rushFor', won ? 2 : 3, 'Only ' + say(rf) + ' rushing yards. When you cannot run, you are one-dimensional. The defense stops respecting the run, pins its ears back and comes after the quarterback, and every third down turns into third and long.' + vsAvg('rushFor', rf, 'averaging on the ground'),
+          T.P.trenches + ' That is the line losing at the point of attack, and no play call fixes it.');
       } else {
         add('rushFor', 1, 'They ran for ' + rf + '. Fine. Not the story either way.',
           'Fine is not a word I ever want to hear about a run game.');
@@ -558,10 +632,10 @@
     if (has('rushAgainst')) {
       var ra = b.rushAgainst;
       if (ra >= 200) {
-        add('rushAgainst', 3, 'The number I would lose sleep over is ' + ra + ' rushing yards allowed. A team that can run on you does not have to take a single risk, and it can drain the clock whenever it wants.',
+        add('rushAgainst', 3, 'The number I would lose sleep over is ' + ra + ' rushing yards allowed. A team that can run on you does not have to take a single risk, and it can drain the clock whenever it wants.' + vsAvg('rushAgainst', ra, 'giving up on the ground'),
           'That is not scheme, that is want-to. Getting off blocks, fitting your gap, wrapping up. You get run on for ' + ra + ', that is a toughness question, and they are going to hear about it in the film room.');
       } else if (ra < 90) {
-        add('rushAgainst', 2, 'They held them to ' + say(ra) + ' yards on the ground. Take the run away and an offense becomes predictable. The defense knew the pass was coming.',
+        add('rushAgainst', 2, T.us + ' held ' + T.them + ' to ' + say(ra) + ' yards on the ground. Take the run away and an offense becomes predictable. The defense knew the pass was coming.',
           'The front seven owned the line of scrimmage. That is where football games are won. Everything else is decoration.');
       }
     }
@@ -576,7 +650,7 @@
           ? ', and do not mistake that for balance. They could not run, so they had to throw.'
           : garbage
             ? ', and I would discount some of it. Passing yards pile up when the other team is sitting on a lead and giving you everything underneath.'
-            : '. That stretches a defense vertically, and it is part of why everything else opened up.'),
+            : '. That stretches a defense vertically, and it is part of why everything else opened up.') + vsAvg('passFor', pf, 'averaging through the air'),
           garbage ? 'Do not tell me garbage time. The kid was still out there competing when everybody else had stopped.'
                   : 'The quarterback stood in there and took shots to make those throws. Give the man his flowers.');
       } else if (pf < 150) {
@@ -590,10 +664,10 @@
     if (has('passAgainst')) {
       var pa = b.passAgainst;
       if (pa >= 300) {
-        add('passAgainst', 3, 'They gave up ' + pa + ' yards through the air. That is the secondary getting targeted and losing, and it usually means explosive plays, the kind that flip field position in one snap.',
+        add('passAgainst', 3, T.us + ' gave up ' + pa + ' yards through the air. That is the secondary getting targeted and losing, and it usually means explosive plays, the kind that flip field position in one snap.',
           'Corners on an island all day with no pass rush to help them. You cannot cover forever. That is a scheme problem before it is a player problem.');
       } else if (pa < 150) {
-        add('passAgainst', 2, 'They held them to ' + say(pa) + ' passing yards. The secondary won its matchups, and that let the front take chances.',
+        add('passAgainst', 2, T.us + ' held ' + T.them + ' to ' + say(pa) + ' passing yards. The secondary won its matchups, and that let the front take chances.',
           'That is a pass rush. The quarterback never got comfortable, and a quarterback who is not comfortable does not throw for yards.');
       }
     }
@@ -601,11 +675,12 @@
     /* third down: whether drives lived or died */
     if (has('thirdForAtt') && b.thirdForAtt > 0) {
       var tf = int(b.thirdFor, 0, b.thirdForAtt), tfa = b.thirdForAtt, tfp = Math.round(tf / tfa * 100);
+      var usual = T.ctx.avg.thirdPct != null && Math.abs(tfp - T.ctx.avg.thirdPct) >= 10 ? ' They came in converting ' + T.ctx.avg.thirdPct + ' percent.' : '';
       if (tfa >= 4 && tfp >= 50) {
-        add('thirdFor', 3, tf + ' of ' + tfa + ' on third down. That is ' + tfp + ' percent, and anything over about 45 is elite. Converting third downs keeps drives alive, keeps your own defense resting on the sideline, and never lets the other offense find a rhythm.',
+        add('thirdFor', 3, tf + ' of ' + tfa + ' on third down. That is ' + tfp + ' percent, and anything over about 45 is elite. Converting third downs keeps drives alive, keeps your own defense resting on the sideline, and never lets the other offense find a rhythm.' + usual,
           'Third down is the grown-man down. Everybody in the stadium knows what is coming and you convert anyway. That is execution, and that is the players.');
       } else if (tfa >= 4 && tfp < 34) {
-        add('thirdFor', won ? 2 : 3, 'They were ' + tf + ' of ' + tfa + ' on third down. ' + tfp + ' percent. Every failed third down is a punt, a drive that died, and the defense back on the field before it has caught its breath.',
+        add('thirdFor', won ? 2 : 3, T.us + ' was ' + tf + ' of ' + tfa + ' on third down. ' + tfp + ' percent. Every failed third down is a punt, a drive that died, and the defense back on the field before it has caught its breath.' + usual,
           'Third and long all day, and that starts on first down. Stay ahead of the chains and third down takes care of itself.');
       } else {
         add('thirdFor', 1, tf + ' of ' + tfa + ' on third down, ' + tfp + ' percent. Middle of the road. Nothing to build a case on.',
@@ -615,13 +690,13 @@
     if (has('thirdAgainstAtt') && b.thirdAgainstAtt > 0) {
       var ta = int(b.thirdAgainst, 0, b.thirdAgainstAtt), taa = b.thirdAgainstAtt, tap = Math.round(ta / taa * 100);
       if (taa >= 4 && tap >= 50) {
-        add('thirdAgainst', 3, 'Their offense converted ' + ta + ' of ' + taa + ' on third down. ' + tap + ' percent. That is the defense doing the hard part, getting them to third down, and then not getting off the field. Nothing wears a defense out faster.',
+        add('thirdAgainst', 3, T.them + ' converted ' + ta + ' of ' + taa + ' on third down. ' + tap + ' percent. That is the defense doing the hard part, getting them to third down, and then not getting off the field. Nothing wears a defense out faster.',
           'You got them to third down! That is the job half done, and then you let them off the hook. That is tackling, and eyes in the right place.');
       } else if (taa >= 4 && tap <= 30) {
         add('thirdAgainst', 3, 'And the defense held them to ' + ta + ' of ' + taa + ' on third down. Get off the field like that and you hand your own offense extra possessions all afternoon.',
           'That is a defense that wanted to get back to the sideline. You love to see it.');
       } else {
-        add('thirdAgainst', 1, 'They allowed ' + ta + ' of ' + taa + ' on third down. About average.',
+        add('thirdAgainst', 1, T.us + ' allowed ' + ta + ' of ' + taa + ' on third down. About average.',
           'Average does not win you a conference.');
       }
     }
@@ -630,16 +705,16 @@
     if (has('fourthForAtt') && b.fourthForAtt > 0) {
       var ff = int(b.fourthFor, 0, b.fourthForAtt), ffa = b.fourthForAtt;
       if (ff === ffa) {
-        add('fourthFor', ffa >= 2 ? 2 : 1, 'They went for it on fourth down ' + (ffa === 1 ? 'once and converted' : ffa + ' times and converted every one') + '. That is a staff playing to win, and every conversion is a possession they got to keep.',
+        add('fourthFor', ffa >= 2 ? 2 : 1, T.us + ' went for it on fourth down ' + (ffa === 1 ? 'once and converted' : ffa + ' times and converted every one') + '. That is a staff playing to win, and every conversion is a possession they got to keep.',
           'Love it. The coach trusted his guys, and his guys paid him back.');
       } else {
-        add('fourthFor', !won && m <= 8 ? 4 : 2, (ff === 0 ? 'They went 0 for ' + ffa : 'They were ' + ff + ' of ' + ffa) + ' on fourth down. A failed fourth down is a turnover by another name, and it usually hands the other side a short field.',
+        add('fourthFor', !won && m <= 8 ? 4 : 2, (ff === 0 ? T.us + ' went 0 for ' + ffa : T.us + ' was ' + ff + ' of ' + ffa) + ' on fourth down. A failed fourth down is a turnover by another name, and it usually hands the other side a short field.',
           'I will never criticize a coach for going for it. Call the play, then block the play. That is execution, not courage.');
       }
     }
     if (has('fourthAgainstAtt') && b.fourthAgainstAtt > 0 && int(b.fourthAgainst, 0, 20) > 0) {
       var fa = int(b.fourthAgainst, 0, b.fourthAgainstAtt);
-      add('fourthAgainst', 1, 'They converted ' + fa + ' of ' + b.fourthAgainstAtt + ' on fourth down against this defense, and a stop there would have been as good as a turnover.',
+      add('fourthAgainst', 1, T.them + ' converted ' + fa + ' of ' + b.fourthAgainstAtt + ' on fourth down against this defense, and a stop there would have been as good as a turnover.',
         'Fourth down is a gut check, and the defense did not win it.');
     }
 
@@ -655,7 +730,7 @@
       }
     }
     if (has('penAgainst') && (b.penAgainst >= 9 || (b.penAgainstYds !== '' && b.penAgainstYds >= 80))) {
-      add('penAgainst', 1, 'The other side gave away ' + plural(b.penAgainst, 'penalty', 'penalties') + (b.penAgainstYds !== '' ? ' for ' + b.penAgainstYds + ' yards' : '') + '. That is free yardage.',
+      add('penAgainst', 1, T.them + ' gave away ' + plural(b.penAgainst, 'penalty', 'penalties') + (b.penAgainstYds !== '' ? ' for ' + b.penAgainstYds + ' yards' : '') + '. That is free yardage.',
         'Take the gifts. Good teams do.');
     }
 
@@ -673,38 +748,163 @@
   }
 
   /* The cast. The two who argue do it from different sources of authority
-     rather than at different volumes — Mabry from having played, Harlan from
-     the evidence — which is what lets them clash over the same fact instead
-     of simply disagreeing louder. Plain names on purpose: these have to sound
-     like people on a Tuesday morning panel, not characters. All of them live
-     in settings so the show can be renamed to whatever it really is. */
+     rather than at different volumes — Mabry from having been down there,
+     Harlan from the evidence — which is what lets them clash over the same
+     fact instead of simply disagreeing louder. Plain names on purpose: these
+     have to sound like people on a Monday morning panel, not characters.
+
+     Each chair is written to match the voice sitting in it. Change the
+     ex-player's voice to a woman's and the default name, the background and
+     every "I played guard" line change with it; before, a woman's voice was
+     telling listeners she spent years on the offensive line. A name somebody
+     typed is theirs and is never swapped. Surnames stay the same either way,
+     so speaker labels and chosen voices keep lining up. */
+  var CHAIRS = {
+    host:    { M: 'Dale Whitcomb',  F: 'Dana Whitcomb',    voice: 'Algieba' },
+    player:  { M: 'Terrance Mabry', F: 'Tasha Mabry',      voice: 'Fenrir' },
+    analyst: { M: 'Kyle Harlan',    F: 'Kelsey Harlan',    voice: 'Kore' },
+    insider: { M: 'Nate Ridenour',  F: 'Natalie Ridenour', voice: 'Sadaltager' }
+  };
+  var PERSONA = {
+    host: {
+      M: { bio: ['host. Called Group of Five games on regional TV for years before', 'taking the studio chair. Keeps time, sets the question, needles both', 'of them. Never takes a side.'],
+           style: 'a smooth, quick-witted studio host in his fifties who keeps the show moving and enjoys stirring the pot' },
+      F: { bio: ['host. Called Group of Five games on regional TV for years before', 'taking the studio chair. Keeps time, sets the question, needles both', 'of them. Never takes a side.'],
+           style: 'a smooth, quick-witted studio host in her forties who keeps the show moving and enjoys stirring the pot' }
+    },
+    player: {
+      M: { bio: ['former player. Three years starting at guard in the Mountain West,', 'two on NFL practice squads, then into broadcasting. Argues from having', 'been in the huddle: defends players, blames coaches and scheme, no time', 'for analytics. Loud, interrupts.'],
+           style: 'a big, loud former college offensive guard with a booming laugh who talks over people and gets louder and faster when he disagrees',
+           trenches: 'I played guard. When your team can’t run the football, I take that personally.',
+           been: 'I’ve played in games like that.',
+           huddle: 'I’ve been in that huddle.' },
+      F: { bio: ['former player. Four years at point guard in the Mountain West, then', 'ten years as a college football sideline reporter before the studio.', 'Argues from the sideline and the locker room: defends players, blames', 'coaches and scheme, no time for analytics. Loud, interrupts.'],
+           style: 'a loud, quick former college athlete and sideline reporter with a big laugh who talks over people and gets louder and faster when she disagrees',
+           trenches: 'I stood on that sideline for ten years. When a team can’t run the football, you can see it on the linemen’s faces by the second quarter.',
+           been: 'I’ve covered a hundred games like that.',
+           huddle: 'I’ve been in that locker room after games like this.' }
+    },
+    analyst: {
+      M: { bio: ['college football analyst. Spent a decade charting film for a', 'recruiting service before TV. Argues from evidence. Dry, precise, and', 'will defend a player everybody hates if the numbers say so.'],
+           style: 'a dry, precise analyst, calm and cutting, with a deadpan sense of humor who lets the jokes land flat' },
+      F: { bio: ['college football analyst. Spent a decade charting film for a', 'recruiting service before TV. Argues from evidence. Dry, precise, and', 'will defend a player everybody hates if the numbers say so.'],
+           style: 'a dry, precise analyst, calm and cutting, with a deadpan sense of humor who lets the jokes land flat' }
+    },
+    insider: {
+      M: { bio: ['former walk-on safety turned recruiting reporter. Speaks in hedged', 'certainties. Never reveals a source.'],
+           style: 'a low-key, confident recruiting reporter who sounds like he knows more than he can say' },
+      F: { bio: ['former college soccer player turned recruiting reporter. Speaks in', 'hedged certainties. Never reveals a source.'],
+           style: 'a low-key, confident recruiting reporter who sounds like she knows more than she can say' }
+    }
+  };
   function showCfg() {
     var s = state.show || {};
-    return {
-      title:   s.title   || 'HARD COUNT',
-      host:    s.host    || 'Dale Whitcomb',
-      player:  s.player  || 'Terrance Mabry',
-      analyst: s.analyst || 'Kelsey Harlan',
-      insider: s.insider || 'Nate Ridenour',
+    var voices = {};
+    var genders = {};
+    var cast = {
+      title: s.title || 'HARD COUNT',
       useInsider: s.useInsider !== false,
-      /* Picked from Google's own one-word descriptions: a smooth host, an
-         excitable ex-lineman, a firm analyst, a knowledgeable insider. None
-         of the voices could be auditioned without a key, so these are the
-         first thing to change if one sounds wrong for the person. */
-      voices: {
-        host:    (s.voices && s.voices.host)    || 'Algieba',
-        player:  (s.voices && s.voices.player)  || 'Fenrir',
-        analyst: (s.voices && s.voices.analyst) || 'Kore',
-        insider: (s.voices && s.voices.insider) || 'Sadaltager'
-      },
+      voices: voices,
+      genders: genders,
       model: s.model || 'gemini-3.1-flash-tts-preview'
     };
+    Object.keys(CHAIRS).forEach(function (role) {
+      var c = CHAIRS[role];
+      voices[role] = (s.voices && s.voices[role]) || c.voice;
+      var gender = (window.WarRoomVoice && window.WarRoomVoice.genderOf(voices[role])) ||
+        (window.WarRoomVoice && window.WarRoomVoice.genderOf(c.voice)) || (role === 'analyst' ? 'F' : 'M');
+      genders[role] = gender;
+      /* a default name follows its voice; a name somebody typed stays */
+      var n = s[role];
+      cast[role] = !n || n === c.M || n === c.F ? c[gender] : n;
+    });
+    return cast;
   }
+  function personaOf(cast, role) { return PERSONA[role][cast.genders[role] || 'M']; }
   /* "Terrance Mabry" speaks as MABRY. */
   function speakerLabel(name) {
     var parts = String(name || '').replace(/"[^"]*"/g, ' ').trim().split(/\s+/);
     return (parts[parts.length - 1] || 'HOST').toUpperCase();
   }
+
+  /* Nobody on television says "I am not going to" or "that is not". The
+     script used to, all of it, and that alone is most of why the voices
+     sounded like people reading. Emphasis written in capitals ("NOT") is
+     left alone, and nothing is contracted at the end of a clause, where
+     "that's." would be wrong. */
+  function talk(s) {
+    var next = '(?=\\s+[A-Za-z0-9“"‘])';
+    return String(s)
+      /* "that's not" is how it is said; "that isn't" reads like a correction */
+      .replace(/\b([Tt]hat|[Ii]t|[Ww]hat|[Tt]here|[Hh]e|[Ss]he|[Ww]ho) is not\b/g, '$1’s not')
+      .replace(/\b([Yy]ou|[Ww]e|[Tt]hey) are not\b/g, '$1’re not')
+      .replace(/\bI am not\b/g, 'I’m not')
+      .replace(/\b([Ww]ill) not\b/g, function (m, w) { return w.charAt(0) === 'W' ? 'Won’t' : 'won’t'; })
+      .replace(/\b([Cc]an)not\b/g, '$1’t')
+      .replace(/\b([Dd]o|[Dd]oes|[Dd]id|[Ii]s|[Aa]re|[Ww]as|[Ww]ere|[Hh]as|[Hh]ave|[Hh]ad|[Ww]ould|[Ss]hould|[Cc]ould) not\b/g, '$1n’t')
+      .replace(new RegExp('\\bI am' + next, 'g'), 'I’m')
+      .replace(new RegExp('\\b(I|[Yy]ou|[Ww]e|[Tt]hey) have' + next + '(?=\\s+(?:been|got|seen|watched|said|never|defended|played|covered|told|heard|had|done|called|stood|already|always))', 'g'), '$1’ve')
+      .replace(new RegExp('\\b(I|[Yy]ou|[Ww]e|[Tt]hey|[Ii]t|[Tt]hat) will' + next, 'g'), '$1’ll')
+      .replace(new RegExp('\\b(I|[Yy]ou|[Ww]e|[Tt]hey) would' + next, 'g'), '$1’d')
+      .replace(new RegExp('\\b([Yy]ou|[Ww]e|[Tt]hey) are' + next, 'g'), '$1’re')
+      .replace(new RegExp('\\b([Ii]t|[Tt]hat|[Ww]hat|[Tt]here|[Hh]ere|[Hh]e|[Ss]he|[Ww]ho|[Ww]here) is' + next, 'g'), '$1’s')
+      .replace(/\b([Ll]et) us\b/g, '$1’s');
+  }
+
+  /* What the panel remembers. A show that follows a team talks about the
+     streak, last week, the kid who was on the hot seat seven days ago, and
+     what he said then; every one of those comes from games already logged
+     this season, and only earlier weeks, so rewriting week 3 never quotes
+     week 5. */
+  function seasonContext(g) {
+    var wk = int(g.week, 0, 99);
+    var same = function (a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); };
+    var prior = state.games.filter(function (x) {
+      return x !== g && x.id !== g.id && x.season === g.season && int(x.week, 0, 99) < wk;
+    }).sort(function (a, b) { return int(a.week, 0, 99) - int(b.week, 0, 99); });
+    var streak = function (list) {
+      if (!list.length) return null;
+      var r = list[list.length - 1].result, n = 0;
+      for (var i = list.length - 1; i >= 0 && list[i].result === r; i--) n++;
+      return { result: r, n: n };
+    };
+    var history = {};
+    prior.forEach(function (x) {
+      (x.performances || []).forEach(function (p) {
+        if (!p.name) return;
+        var k = p.name.trim().toLowerCase();
+        (history[k] = history[k] || []).push({ week: x.week, verdict: p.verdict, opponent: x.opponent, result: x.result });
+      });
+    });
+    var avg = {};
+    var boxes = prior.map(boxOf);
+    ['rushFor', 'rushAgainst', 'passFor', 'passAgainst'].forEach(function (k) {
+      var v = boxes.map(function (b) { return b[k]; }).filter(function (x) { return x !== ''; });
+      if (v.length >= 2) avg[k] = Math.round(v.reduce(function (a, c) { return a + c; }, 0) / v.length);
+    });
+    var made = 0, att = 0, n3 = 0;
+    boxes.forEach(function (b) { if (b.thirdForAtt > 0) { made += int(b.thirdFor, 0, 99); att += b.thirdForAtt; n3++; } });
+    if (n3 >= 2 && att) avg.thirdPct = Math.round(made / att * 100);
+    if (prior.length >= 2) {
+      avg.pointsFor = Math.round(prior.reduce(function (a, x) { return a + int(x.scoreFor, 0, 999); }, 0) / prior.length);
+      avg.pointsAgainst = Math.round(prior.reduce(function (a, x) { return a + int(x.scoreAgainst, 0, 999); }, 0) / prior.length);
+    }
+    var lastYear = state.games.filter(function (x) { return x.season === g.season - 1 && same(x.opponent, g.opponent); })
+      .sort(function (a, b) { return int(b.week, 0, 99) - int(a.week, 0, 99); })[0] || null;
+    return {
+      prior: prior,
+      last: prior[prior.length - 1] || null,
+      before: streak(prior),
+      after: streak(prior.concat([g])),
+      history: history,
+      avg: avg,
+      lastYear: lastYear
+    };
+  }
+
+  var WORD_NUM = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+  function numWord(n) { return WORD_NUM[n] || String(n); }
+  var ORDINAL_WORD = ['zeroth', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
 
   function buildScript(g) {
     var cast = showCfg();
@@ -712,158 +912,186 @@
     var PLAYER = speakerLabel(cast.player);
     var ANALYST = speakerLabel(cast.analyst);
     var INSIDER = speakerLabel(cast.insider);
+    var P = personaOf(cast, 'player');
     /* Speakers are labelled by surname but addressed by first name, because
        nobody on a panel says "MABRY, sixty seconds". */
     var firstOf = function (n) { return String(n || '').trim().split(' ')[0] || n; };
     var hostF = firstOf(cast.host), playerF = firstOf(cast.player), analystF = firstOf(cast.analyst);
 
     var pick = picker(hashStr(g.id + '|' + g.opponent + '|' + g.scoreFor));
-    var us = state.school.name || 'Our team';
+    var school = state.school.name || '';
     var mascot = state.school.mascot || '';
+    /* The show is about your team, so it says your team's name -- the
+       school, and now and then the mascot -- rather than "they" all the way
+       through while the opponent gets named every time. */
+    var US = school || (mascot ? 'the ' + mascot : 'this team');
+    var usAlt = function () { return mascot && school ? pick([school, 'the ' + mascot, school]) : US; };
     var them = g.opponent || 'the opponent';
+    var ctx = seasonContext(g);
     var m = gameMargin(g);
     var won = g.result === 'W', tied = g.result === 'T';
     var blowout = m >= 21, comfortable = m >= 11 && m < 21, tight = m <= 10;
-    var score = int(g.scoreFor, 0, 999) + '-' + int(g.scoreAgainst, 0, 999);
+    var pf = int(g.scoreFor, 0, 999), pa = int(g.scoreAgainst, 0, 999);
+    var score = pf + '-' + pa;
+    var said = Math.max(pf, pa) + '-' + Math.min(pf, pa);     /* the way a score is spoken */
     var rec = recordThrough(g);
     var perf = (g.performances || []).filter(function (p) { return p.name; });
     /* what gets said out loud: "J. Carty, quarterback. 24 of 31, 3 touchdowns" */
-    var said = perf.map(function (p) {
-      return { name: p.name.replace(/\b([A-Z])\.(?=[A-Z][a-z])/g, '$1. '), pos: sayPos(p.pos), line: spoken(p.line), verdict: p.verdict };
+    var voiced = perf.map(function (p) {
+      return { name: p.name.replace(/\b([A-Z])\.(?=[A-Z][a-z])/g, '$1. '), key: p.name.trim().toLowerCase(), pos: sayPos(p.pos), line: spoken(p.line), verdict: p.verdict };
     });
-    var stars = said.filter(function (p) { return p.verdict === 'standout'; });
-    var rough = said.filter(function (p) { return p.verdict === 'struggled'; });
+    var stars = voiced.filter(function (p) { return p.verdict === 'standout'; });
+    var rough = voiced.filter(function (p) { return p.verdict === 'struggled'; });
     var L = [];
     var w = function (s) { L.push(s == null ? '' : s); };
+    var say = function (label, text) { L.push(label + ': ' + talk(text)); L.push(''); };
     var rule = function () { w('============================================================'); };
+    var streakAfter = ctx.after && ctx.after.n >= 2 ? ctx.after : null;
+    var snapped = ctx.before && ctx.before.n >= 2 && ctx.before.result !== g.result ? ctx.before : null;
+    var last = ctx.last;
 
     rule();
     w('  ' + cast.title.toUpperCase().split('').join(' '));
     rule();
-    w('  ' + (mascot ? us + ' ' + mascot : us) + ' ' + (g.home ? 'vs' : 'at') + ' ' + them);
+    w('  ' + (mascot ? school + ' ' + mascot : US) + ' ' + (g.home ? 'vs' : 'at') + ' ' + them);
     w('  ' + g.season + ' · Week ' + (g.week || 1) + ' · ' + (won ? 'WIN' : tied ? 'TIE' : 'LOSS') + ' ' + score + ' · Now ' + rec);
     rule();
     w('');
     w('CAST — give each one its own voice.');
     w('');
-    /* Backgrounds for a regional college football panel: two former players
-       who went into broadcasting, two who came up through film rooms and
-       recruiting services. Deliberately fictional -- the names are meant to
-       sound like people you half-recognise from a conference network, not to
-       put invented opinions in real mouths. */
-    w('  ' + HOST + ' (' + cast.host + ') — host. Called Group of Five games on');
-    w('    regional TV for years before taking the studio chair. Keeps time,');
-    w('    sets the question, needles both of them. Never takes a side.');
-    w('');
-    w('  ' + PLAYER + ' (' + cast.player + ') — former player. Three years starting');
-    w('    at guard in the Mountain West, two on NFL practice squads, then into');
-    w('    broadcasting. Argues from having been in the huddle: defends players,');
-    w('    blames coaches and scheme, no time for analytics. Loud, interrupts.');
-    w('');
-    w('  ' + ANALYST + ' (' + cast.analyst + ') — college football analyst. Spent a');
-    w('    decade charting film for a recruiting service before TV. Argues from');
-    w('    evidence. Dry, precise, and will defend a player everybody hates if');
-    w('    the numbers say so.');
-    if (cast.useInsider) {
-      w('');
-      w('  ' + INSIDER + ' (' + cast.insider + ') — former walk-on safety turned');
-      w('    recruiting reporter. Speaks in hedged certainties. Never reveals a');
-      w('    source.');
-    }
+    /* Backgrounds for a regional college football panel. Deliberately
+       fictional -- the names are meant to sound like people you
+       half-recognise from a conference network, not to put invented
+       opinions in real mouths. */
+    [['host', HOST], ['player', PLAYER], ['analyst', ANALYST]].concat(cast.useInsider ? [['insider', INSIDER]] : []).forEach(function (r, i) {
+      var bio = personaOf(cast, r[0]).bio;
+      if (i) w('');
+      w('  ' + r[1] + ' (' + cast[r[0]] + ') — ' + bio[0]);
+      bio.slice(1).forEach(function (l) { w('    ' + l); });
+    });
     w('');
     w('');
 
     /* ---- cold open ---- */
+    var verb = won ? 'beat' : tied ? 'tied' : 'lost to';
+    var where = g.home ? 'at home' : 'on the road';
+    var context = [];
+    if (streakAfter && won) context.push('That’s ' + numWord(streakAfter.n) + ' straight.');
+    else if (streakAfter && !won && !tied) context.push('That’s ' + numWord(streakAfter.n) + ' losses in a row.');
+    if (snapped) context.push(snapped.result === 'W' ? 'And just like that, the ' + numWord(snapped.n) + '-game win streak is over.' : 'And that snaps a ' + numWord(snapped.n) + '-game skid.');
+    else if (last && !streakAfter) context.push('A week after ' + (last.result === 'W' ? 'beating ' : last.result === 'T' ? 'tying ' : 'losing to ') + (last.opponent || 'their last opponent') + '.');
+    if (ctx.lastYear) context.push('Last year this one went ' + (ctx.lastYear.result === 'W' ? 'their way' : 'the other way') + ', ' + Math.max(int(ctx.lastYear.scoreFor, 0, 999), int(ctx.lastYear.scoreAgainst, 0, 999)) + '-' + Math.min(int(ctx.lastYear.scoreFor, 0, 999), int(ctx.lastYear.scoreAgainst, 0, 999)) + '.');
+    var ctxLine = context.join(' ');
+
     w('--- COLD OPEN -------------------------------------------');
     w('');
-    w(HOST + ': ' + pick([
-      'This is ' + cast.title + '. Nobody here is getting the benefit of the doubt. ' + us + ' ' + (won ? 'won' : tied ? 'tied' : 'lost') + ' ' + score + ' ' + (g.home ? 'at home' : 'on the road') + ' against ' + them + ', and these two have already been arguing in the hallway.',
-      cast.title + '. ' + score + ', ' + (g.home ? 'at home' : 'on the road') + ' against ' + them + '. ' + (blowout ? 'It was over by the third quarter.' : tight ? 'It went to the wire.' : 'It got decided after half time.') + ' ' + PLAYER + ', you look like you have something to say.',
-      'Good morning, this is ' + cast.title + '. ' + us + ' are ' + rec + ' after ' + score + ' ' + (g.home ? 'at home' : 'on the road') + '. I am going to sit back for this one.'
-    ]));
-    w('');
-    w(PLAYER + ': ' + (won
-      ? pick([
-        (blowout ? 'THAT is what I have been waiting on all year. ' : '') + 'And I do not want to hear one word about how it looked. You go out there and put ' + int(g.scoreFor, 0, 999) + ' on a grown man, you earned the right to enjoy your Sunday.',
-        'Everybody in that building played angry today. You could see it in the first series. That is what I have been asking for.'
-      ])
-      : tied
-        ? 'A tie is the worst thing in sport. Nobody gets to be happy and nobody gets to be honest about it.'
-        : pick([
-          'No. No, ' + hostF + '. You do not lose ' + (tight ? 'a game that close' : 'like that') + ' and then walk in here and tell me about progress.',
-          'I have defended this football team on this show every week. I am not doing it today.'
-        ])));
-    w('');
-    w(ANALYST + ': ' + pick([
-      'And we are forty seconds in and nobody has said a number yet.',
-      playerF + ' is doing the thing where one afternoon becomes a personality trait.',
-      'I would like to enter some evidence before we sentence anybody.'
-    ]));
-    w('');
-    w(PLAYER + ': Here we go.');
-    w('');
+    say(HOST, pick([
+      'Welcome in, this is ' + cast.title + '. ' + US + ' ' + verb + ' ' + them + ' ' + said + ' ' + where + ', and they’re ' + rec + '. ' + ctxLine + ' ' + playerF + ', you’ve been pacing since we sat down.',
+      cast.title + '. It’s Monday. ' + US + ' ' + verb + ' ' + them + ', ' + said + '. ' + ctxLine + ' I’ve got two people here who watched the same game and somehow saw two different teams. ' + playerF + ', go.',
+      'Good morning, this is ' + cast.title + '. ' + US + ' is ' + rec + ' after ' + (won ? 'beating ' : tied ? 'tying ' : 'losing to ') + them + ' ' + said + ' ' + where + '. ' + ctxLine + ' I’m just gonna sit back for this one.'
+    ]).replace(/ {2,}/g, ' '));
+
+    var playerOpen;
+    if (won && streakAfter && streakAfter.n >= 3) playerOpen = numWord(streakAfter.n).toUpperCase() + ' straight, ' + hostF + '! ' + numWord(streakAfter.n).charAt(0).toUpperCase() + numWord(streakAfter.n).slice(1) + '! And I’m supposed to sit here and act calm about it?';
+    else if (won && snapped) playerOpen = 'See, THIS is what I was talking about. Everybody wanted to bury this team, and they come out and do that. Come on.';
+    else if (won && blowout) playerOpen = 'That wasn’t a football game. That was a statement. You put ' + pf + ' on a grown man and I do not want to hear ONE word about how it looked.';
+    else if (won) playerOpen = pick(['Hey. A win is a win. Good teams find a way, and they found a way. I don’t care how it looked.', 'Everybody in that building played angry. You could see it on the first series. That’s what I’ve been asking for.']);
+    else if (tied) playerOpen = 'A tie. A TIE. Nobody gets to be happy and nobody gets to be honest about it.';
+    else if (snapped) playerOpen = 'I’m not gonna lie to you. I thought this team was different. ' + numWord(snapped.n).charAt(0).toUpperCase() + numWord(snapped.n).slice(1) + ' straight wins, and they go lay THAT down?';
+    else if (tight) playerOpen = 'No. No, ' + hostF + '. You don’t lose a game that close and then walk in here and tell me about progress.';
+    else playerOpen = pick(['I’ve defended this football team on this show every single week. Not today. I’m not doing it today.', 'I watched that whole thing and I need a minute. Actually, no, I don’t need a minute. That was embarrassing.']);
+    say(PLAYER, playerOpen);
+
+    /* the callback: what he said last week, checked against what happened */
+    if (last && last.result === 'W' && !won) {
+      say(ANALYST, playerF + ', last week you told everybody to write it down. Where’d you write it? Pencil?');
+      say(PLAYER, 'Oh, here we go. It’s ONE game.');
+      say(ANALYST, 'Funny, that’s what I said last week.');
+    } else if (last && last.result !== 'W' && won) {
+      say(ANALYST, 'Last week it was blow the whole thing up. Now it’s a parade. That’s a fast turnaround, even for you.');
+      say(PLAYER, 'I’m allowed to change my mind when they change the tape!');
+    } else {
+      say(ANALYST, pick([
+        'And we’re forty seconds in and nobody has said a single number.',
+        playerF + ' is doing the thing again where one afternoon becomes a whole personality.',
+        'Can I enter some evidence before we sentence anybody?'
+      ]));
+      say(PLAYER, pick(['Here we go.', 'Oh, here comes the spreadsheet.']));
+    }
     w('');
 
     /* ---- segment 1 ---- */
     w('--- SEGMENT 1: THE QUESTION -----------------------------');
     w('');
-    var q = won
-      ? (blowout ? 'Is ' + us + ' actually this good, or is ' + them + ' just that bad?'
-                 : 'They won. Should they have won by more?')
-      : tied ? 'What does a tie actually tell you about this team?'
-             : (tight ? 'Who loses this football game — the players or the plan?'
-                      : 'Bad day, or is this just who they are?');
-    w(HOST + ': The question on the board. ' + q + ' ' + playerF + ', sixty seconds.');
-    w('');
-    w(PLAYER + ': ' + (won
-      ? 'I am not going to win a game and then go hunting for something to cry about. That is what analysts do. ' + (blowout ? 'They did not beat them, they embarrassed them, and that matters in a locker room.' : 'They are ' + rec + '. Bank it.')
-      : 'Both. And I will tell you where it starts — it starts up front. ' + (tight ? 'You lose a game that close, somebody did not finish a block on a critical down. I promise you that.' : 'When you get beaten by ' + m + ', that is not one man. That is a plan that did not survive contact.')));
-    w('');
-    w(ANALYST + ': ' + (won
-      ? (blowout || comfortable ? 'A ' + m + '-point margin hides a great deal, and I would rather look at how they got there than how it felt. Enjoy the win. The tape has notes.' : 'A ' + m + '-point game is a coin flip that landed correctly. I would not build a thesis on it, but winning coin flips is a repeatable skill and this team is doing it.')
-      : (tight ? 'They were inside one possession. If you want to tell me this team is broken, you need more than one afternoon and I do not have it yet.' : 'I am less interested in whether it was ugly than in whether it was predictable. And ' + (boxOf(g).yardsAgainst !== '' ? 'giving up ' + boxOf(g).yardsAgainst + ' yards was not an accident.' : 'this one was visible coming.'))));
-    w('');
-    w(PLAYER + ': ' + analystF + ', I watched the same football game you did. They were bleeding out there.');
-    w('');
-    w(ANALYST + ': And yet the scoreboard is the scoreboard.');
-    w('');
-    w(HOST + ': Hold it. We come back to this.');
-    w('');
+    var q;
+    if (won && streakAfter && streakAfter.n >= 3) q = numWord(streakAfter.n).charAt(0).toUpperCase() + numWord(streakAfter.n).slice(1) + ' straight. Is ' + US + ' for real?';
+    else if (won) q = blowout ? 'Is ' + US + ' actually this good, or is ' + them + ' just that bad?' : 'They won. Should they have won by more?';
+    else if (tied) q = 'What does a tie actually tell you about this team?';
+    else if (snapped && snapped.result === 'W') q = 'Does one loss undo ' + numWord(snapped.n) + ' wins, or did we just meet the real ' + US + '?';
+    else q = tight ? 'Who loses this football game, the players or the plan?' : 'Bad day, or is this just who ' + US + ' is?';
+    say(HOST, 'Question on the board. ' + q + ' ' + playerF + ', you’re up.');
+
+    say(PLAYER, won
+      ? 'Look, I’m not gonna win a football game and then go hunting for something to cry about. That’s what analysts do. ' + (blowout ? 'They didn’t beat ' + them + ', they embarrassed them, and that matters in a locker room. ' + P.huddle : 'They’re ' + rec + '. Bank it. Move on.')
+      : 'Both. But I’ll tell you where it starts. It starts up front. ' + (tight ? 'A game that close, somebody didn’t finish a block on a big down. I promise you that.' : 'You lose by ' + m + ', that’s not one guy. That’s a plan that didn’t survive the first punch.'));
+
+    var bx0 = boxOf(g);
+    var avgLine = ctx.avg.pointsFor != null
+      ? ' Coming in, ' + US + ' was scoring ' + ctx.avg.pointsFor + ' a game and giving up ' + ctx.avg.pointsAgainst + '. They scored ' + pf + ' and gave up ' + pa + '.'
+      : '';
+    say(ANALYST, (won
+      ? (blowout || comfortable ? 'A ' + m + '-point win hides a lot. I’d rather know how they got there than how it felt.' : 'A ' + m + '-point game is a coin flip that landed the right way. I wouldn’t build a whole theory on it. But closing out close games IS a skill, and they’ve got it.')
+      : (tight ? 'They were one possession away. If you want to tell me this team is broken, you need more than one afternoon.' : 'I care less about whether it was ugly than whether it was predictable. And ' + (bx0.yardsAgainst !== '' ? 'giving up ' + bx0.yardsAgainst + ' yards wasn’t an accident.' : 'this one was coming.'))) + avgLine);
+    if (won) {
+      say(PLAYER, analystF + '. Just once. Just ONCE, can we enjoy something?');
+      say(ANALYST, 'I AM enjoying it. This is what it looks like.');
+    } else {
+      say(PLAYER, analystF + ', I watched the same game you did. They were getting pushed around out there.');
+      say(ANALYST, 'Pushed around by who? Name the snap.');
+      say(PLAYER, '“Name the snap.” Unbelievable.');
+    }
+    say(HOST, 'Okay, hold it. We’re coming back to that.');
     w('');
 
     /* ---- segment 2: stock up ---- */
+    var histOf = function (p) { return ctx.history[p.key] || []; };
     w('--- SEGMENT 2: STOCK UP ---------------------------------');
     w('');
     if (stars.length) {
       stars.slice(0, 3).forEach(function (p, i) {
-        w(HOST + ': ' + (i === 0 ? 'Start me with ' : 'Next one. ') + p.name + (p.pos ? ', ' + p.pos : '') + '. ' + sentence(p.line || 'Big afternoon'));
-        w('');
-        w(PLAYER + ': ' + pick([
-          'Put some RESPECT on that young man. ' + (p.line ? sentence(p.line) + ' ' : '') + 'And he did it ' + (won ? 'when the game was still in doubt' : 'while the whole thing was falling apart around him') + '. That is not a stat, that is character.',
-          'I have been telling this audience about ' + p.name + ' since August. ' + (p.line ? sentence(p.line) + ' ' : '') + 'Nobody wanted to hear it.',
-          'You want to know what that is? That is a man who practises the way he plays. ' + (p.line ? sentence(p.line) + ' ' : '') + 'You cannot coach that in September.'
-        ]));
-        w('');
-        w(ANALYST + ': ' + pick([
-          'For once we agree, and I will go further — that is the most efficient game he has played. It is not close.',
-          'No argument. And the part ' + playerF + ' will not say is that he did it with almost no help around him.',
-          'He was the best player on that field by any measure I have, and I have several.'
-        ]));
-        w('');
-        if (i === 0) {
-          w(PLAYER + ': "By any measure." Just say the man balled out.');
-          w('');
-          w(ANALYST + ': The man balled out.');
-          w('');
+        var h = histOf(p);
+        var bigBefore = h.filter(function (x) { return x.verdict === 'standout'; }).length;
+        var lastH = h[h.length - 1];
+        var bounce = lastH && lastH.verdict === 'struggled';
+        var note = bounce ? ' And remember, he was on the hot seat last time we talked about him.'
+          : bigBefore >= 1 ? ' That’s his ' + (ORDINAL_WORD[bigBefore + 1] || (bigBefore + 1) + 'th') + ' big game this year.' : '';
+        say(HOST, (i === 0 ? 'Stock up. Start me with ' : 'Who else? ') + p.name + (p.pos ? ', ' + p.pos : '') + '. ' + sentence(p.line || 'Big afternoon') + note);
+        say(PLAYER, bounce
+          ? 'Last time, everybody wanted him benched. EVERYBODY. And he comes back and does THAT? That’s a grown man. That’s character.'
+          : bigBefore >= 1
+            ? pick(['I’ve been telling this audience about ' + p.name + ' since August. Nobody wanted to hear it. Now you have to hear it.', 'Again! He did it AGAIN. At some point you stop calling it a good game and start calling it who he is.'])
+            : pick(['Put some RESPECT on that young man. And he did it ' + (won ? 'when the game was still up for grabs' : 'while the whole thing was falling apart around him') + '. That’s not a stat, that’s character.',
+                    'You want to know what that is? That’s a guy who practices the way he plays. You can’t coach that in September.']));
+        var measured = 'He was the best player on that field by any measure I have, and I have several.';
+        var take = bigBefore >= 1
+          ? 'For once, I’m with ' + playerF + '. That’s not a hot streak anymore. That’s his level.'
+          : pick(['For once we agree, and I’ll go further. That’s the most efficient game he’s played. It’s not close.',
+                  'No argument. And the part ' + playerF + ' won’t tell you is he did it with almost no help around him.',
+                  measured]);
+        say(ANALYST, take);
+        /* the comeback has to answer the line that was actually said */
+        if (i === 0 && take === measured) {
+          say(PLAYER, '“Several.” Just say the man balled out.');
+          say(ANALYST, 'The man balled out.');
+        } else if (i === 0) {
+          say(PLAYER, 'Look at that. ' + (cast.genders.analyst === 'M' ? 'He' : 'She') + ' agrees with me. Somebody mark the date.');
+          say(ANALYST, 'Don’t get used to it.');
         }
       });
     } else {
-      w(HOST + ': Nobody got flagged as a standout this week. Who gets it?');
-      w('');
-      w(PLAYER + ': That is your story right there. ' + (won ? 'You won and you cannot name one man who won it for you.' : 'You lost and not one man stood up.'));
-      w('');
-      w(ANALYST + ': Or eleven people did their job competently and nobody made a highlight. That is allowed.');
-      w('');
+      say(HOST, 'Nobody got flagged as a standout this week. So who gets it?');
+      say(PLAYER, 'That’s your story right there. ' + (won ? 'You won, and you can’t name one guy who won it for you.' : 'You lost, and not one guy stood up.'));
+      say(ANALYST, 'Or eleven people did their jobs and nobody made a highlight. That’s allowed.');
     }
     w('');
 
@@ -872,41 +1100,42 @@
     w('');
     if (rough.length) {
       rough.slice(0, 3).forEach(function (p, i) {
-        w(HOST + ': ' + (i === 0 ? 'Now the other side. ' : 'One more. ') + p.name + (p.pos ? ' at ' + p.pos : '') + '. ' + sentence(p.line || 'It was not his day'));
-        w('');
-        w(ANALYST + ': ' + pick([
-          'I will start, because ' + playerF + ' is going to defend him and I want the facts on the table first. ' + (p.line ? sentence(p.line) + ' ' : '') + 'That is not a wobble. That is a pattern I can show you.',
-          (p.line ? sentence(p.line) + ' ' : '') + 'At some point the sample stops being small.',
-          'The uncomfortable version is that ' + (p.line ? 'this — ' + p.line + ' — ' : 'this ') + 'is closer to his average than anybody wants to admit.'
+        var h = histOf(p);
+        var lastH = h[h.length - 1];
+        var again = lastH && lastH.verdict === 'struggled';
+        /* "in a row" only when the rough one was the game right before */
+        var inARow = again && last && String(lastH.week) === String(last.week);
+        var fell = lastH && lastH.verdict === 'standout';
+        say(HOST, (i === 0 ? 'The hot seat. ' : 'One more. ') + p.name + (p.pos ? ' at ' + p.pos : '') + '. ' + sentence(p.line || 'It wasn’t his day') +
+          (inARow ? ' And that’s two rough ones in a row.' : again ? ' And he was on the hot seat the last time we talked about him, too.' : fell ? ' And this is a guy we had in stock up last time.' : ''));
+        say(ANALYST, again
+          ? 'Once is a bad day. Twice is a trend, and I’ve got the tape on both of them.'
+          : pick([
+            'I’ll start, because ' + playerF + ' is about to defend him and I want the facts out first. That’s not a wobble. That’s a pattern I can show you.',
+            'At some point the sample stops being small.',
+            'The uncomfortable part is that this is closer to his average than anybody wants to admit.'
+          ]));
+        say(PLAYER, pick([
+          'And what’s your plan? Bench him? Who’s behind him? This is where the spreadsheet runs out of road.',
+          'You’re talking about a kid. Twenty years old, ' + (g.home ? 'with the whole stadium watching' : 'on the road, in front of a hostile crowd') + '. You ever done that?',
+          'He wasn’t helped. I watched that film too, and nobody around him did their job either. But he’s the one on the graphic.'
         ]));
-        w('');
-        w(PLAYER + ': ' + pick([
-          'And what is your plan? Bench him? Who is behind him? This is where the spreadsheet runs out of road.',
-          'You are talking about a kid. Twenty years old, on the road, in front of a hostile crowd. You ever done that?',
-          'He was not helped. I watched that film too and nobody around him did their job either. But he is the one on the graphic.'
-        ]));
-        w('');
-        w(ANALYST + ': I am not blaming him for ' + (won ? 'anything' : 'the loss') + '. I am telling you what happened.');
-        w('');
-        w(PLAYER + ': It sounds like blame.');
-        w('');
-        if (i === 0) { w(HOST + ': It is definitely blame.'); w(''); }
+        say(ANALYST, 'I’m not blaming him for ' + (won ? 'anything' : 'the loss') + '. I’m telling you what happened.');
+        say(PLAYER, 'It sounds like blame.');
+        if (i === 0) say(HOST, 'It’s definitely blame.');
       });
     } else {
-      w(HOST + ': Nobody on the hot seat this week.');
-      w('');
-      w(ANALYST + ': Then somebody has not watched the whole tape.');
-      w('');
-      w(PLAYER + ': Or — and stay with me — everybody played fine.');
-      w('');
+      say(HOST, 'Nobody on the hot seat this week.');
+      say(ANALYST, 'Then somebody didn’t watch the whole tape.');
+      say(PLAYER, 'Or, and stay with me here, everybody just played fine.');
     }
     w('');
 
     /* ---- segment 4: numbers ----
        Each typed stat becomes a point the analyst makes about what it did to
        the game and one the ex-player answers from the field. The biggest
-       three get airtime; the rest stay in the table. The analyst never reads
-       "7 of 14" at anybody without saying what 7 of 14 means. */
+       three or four get airtime; the rest stay in the table. The analyst
+       never reads "7 of 14" at anybody without saying what 7 of 14 means. */
     var bx = boxOf(g);
     var nums = boxLines(bx);
     if (boxHasAny(bx)) {
@@ -914,29 +1143,29 @@
       w('');
       nums.forEach(function (n) { w(n); });
       w('');
-      var points = readBox(bx, g, pick);
+      var points = readBox(bx, g, pick, { us: US, them: them, P: P, ctx: ctx });
       var big = points.filter(function (p) { return p.weight >= 2; });
       /* three points, or four when four of them each moved the game */
       var cap = points.filter(function (p) { return p.weight >= 3; }).length >= 4 ? 4 : 3;
       points = (big.length ? big : points).slice(0, cap);
       var hasTO = bx.toFor !== '' || bx.toAgainst !== '';
-      w(HOST + ': ' + analystF + ', this is your segment. ' + playerF + ', try not to interrupt.');
-      w('');
+      say(HOST, analystF + ', this is your segment. ' + playerF + ', try not to interrupt.');
+      say(PLAYER, 'No promises.');
       points.forEach(function (p, i) {
-        if (i > 0 && i === points.length - 1) { w(HOST + ': Last one, and make it quick.'); w(''); }
-        else if (i > 0) { w(HOST + ': ' + (i === 1 ? pick(['What else is on the sheet?', 'Keep going.', 'Give me the next one.']) : 'Keep going.')); w(''); }
+        var nexts = [pick(['What else is on the sheet?', 'Give me the next one.']), 'Keep going.'];
+        if (i > 0 && i === points.length - 1) say(HOST, pick(['Last one. Make it quick.', 'One more, then we move.']));
+        else if (i > 0) say(HOST, nexts[i - 1] || 'Keep going.');
         /* Nothing typed for turnovers means no battle to call. Saying "even
            in turnovers" there was a fact the script made up. */
         var lead = i === 0 && !hasTO && points.length < 3 ? 'Nobody gave me turnovers, so I am not going to pretend I know who won that battle. ' : '';
-        w(ANALYST + ': ' + lead + p.analyst);
-        w('');
-        /* He answers what she actually said: arguing with "the rate" after
-           she never quoted one reads like two scripts spliced together. */
-        w(PLAYER + ': ' + (i === 0 ? pick(['', 'Hold on. ', 'Okay. ']) : '') + p.player);
-        w('');
+        say(ANALYST, lead + p.analyst);
+        /* The reply answers what was actually said: arguing with "the rate"
+           when nobody quoted one reads like two scripts spliced together. */
+        var opener = i === 0 ? pick(['', 'Hold on. ', 'Okay, but ']) : '';
+        var reply = opener === 'Okay, but ' && !/^I[\s’']/.test(p.player) ? p.player.charAt(0).toLowerCase() + p.player.slice(1) : p.player;
+        say(PLAYER, opener + reply);
       });
-      w(ANALYST + ': Those are compatible positions, which is why this is exhausting.');
-      w('');
+      say(ANALYST, 'Those are compatible positions, which is why this is exhausting.');
       w('');
     }
 
@@ -951,61 +1180,51 @@
 
       w('--- SEGMENT 5: THE INSIDER ------------------------------');
       w('');
-      w(HOST + ': ' + cast.insider + ' is with us. What are you hearing?');
-      w('');
+      say(HOST, cast.insider + ' is with us. What are you hearing out of ' + US + '?');
       if (holes.length) {
-        var h = holes.slice(0, 3).map(function (r) { return r.need + ' at ' + r.group.name.toLowerCase(); });
-        w(INSIDER + ': The number everybody inside that building knows is ' + n.totals.open + '. That is how many scholarships are open, and the shape of it matters more than the total — they are ' +
-          h.join(', ') + '. You do not fix that in January.');
+        var hs = holes.slice(0, 3).map(function (r) { return r.need + ' at ' + r.group.name.toLowerCase(); });
+        say(INSIDER, 'The number everybody inside that building knows is ' + n.totals.open + '. That’s how many scholarships are open, and honestly the shape of it matters more than the total. They need ' +
+          hs.join(', ') + '. You don’t fix that in January.');
       } else {
-        w(INSIDER + ': They are in the rare position of not needing much. ' + n.totals.open + ' open, and no hole you would call urgent. That changes how they can recruit — they get to be picky.');
+        say(INSIDER, 'They’re in a rare spot, they don’t need much. ' + n.totals.open + ' open, and no hole I’d call urgent. That changes how they recruit. They get to be picky.');
       }
-      w('');
       if (board.length) {
         var b = board[0];
-        var where = b.state ? ' out of ' + (STATE_NAMES[b.state] || b.state) : '';
-        var stand = b.standing ? ' I am told they are number ' + b.standing + ' on his list, and they know it.' : '';
-        w(INSIDER + ': The name to watch is the ' + (b.stars || 3) + '-star ' + sayPos(b.pos) + where + '.' + stand +
-          (b.dealbreaker ? ' Everything with him comes back to ' + b.dealbreaker + '.' : '') +
-          (b.hours ? ' They are spending ' + b.hours + ' hours a week on him, which tells you where he sits.' : ''));
-        w('');
+        var from = b.state ? ' out of ' + (STATE_NAMES[b.state] || b.state) : '';
+        var stand = b.standing ? ' I’m told ' + US + ' is number ' + b.standing + ' on his list, and they know it.' : '';
+        say(INSIDER, 'The name to watch is the ' + (b.stars || 3) + '-star ' + sayPos(b.pos) + from + '.' + stand +
+          (b.dealbreaker ? ' With him, everything comes back to ' + b.dealbreaker + '.' : '') +
+          (b.hours ? ' They’re putting ' + b.hours + ' hours a week into him, which tells you where he sits.' : ''));
         if (board.length > 1) {
-          w(INSIDER + ': Behind him there ' + (board.length - 1 === 1 ? 'is one more name' : 'are ' + (board.length - 1) + ' more names') + ' still live on that board, and ' + (committed === 1 ? 'one commitment' : committed + ' commitments') + ' in the bag.');
-          w('');
+          say(INSIDER, 'Behind him there ' + (board.length - 1 === 1 ? 'is one more name' : 'are ' + (board.length - 1) + ' more names') + ' still live on that board, and ' + (committed === 1 ? 'one commitment' : committed + ' commitments') + ' already in the bag.');
         }
       } else if (committed) {
-        w(INSIDER + ': ' + committed + ' committed and nothing else live on the board right now, which is quiet for this time of year.');
-        w('');
+        say(INSIDER, committed + ' committed and nothing else live on the board right now, which is quiet for this time of year.');
       }
       if (out.length || risk.length) {
-        w(INSIDER + ': And the part nobody enjoys — ' +
-          (out.length ? (out.length === 1 ? 'one man is already in the portal' : out.length + ' are already in the portal') + (out.length <= 3 ? ', ' + out.map(function (p) { return p.name; }).join(' and ') : '') : 'nobody has entered the portal yet') +
-          (risk.length ? ', and I am told ' + (risk.length === 1 ? 'another one is thinking about it' : risk.length + ' more are thinking about it') + '. If they all go, that ' + n.totals.open + ' becomes ' + n.totals.openIfRisk + '.' : '.'));
-        w('');
+        say(INSIDER, 'And the part nobody enjoys. ' +
+          (out.length ? (out.length === 1 ? 'One guy is already in the portal' : out.length + ' are already in the portal') + (out.length <= 3 ? ', ' + out.map(function (p) { return p.name; }).join(' and ') : '') : 'Nobody’s in the portal yet') +
+          (risk.length ? ', and I’m told ' + (risk.length === 1 ? 'another one is thinking about it' : risk.length + ' more are thinking about it') + '. If they all go, that ' + n.totals.open + ' becomes ' + n.totals.openIfRisk + '.' : '.'));
       }
-      w(PLAYER + ': That is the part people miss. You are not building a roster, you are plugging a hole while somebody drills a new one.');
-      w('');
-      w(ANALYST + ': That is the most agreeable thing you have said all morning.');
-      w('');
+      say(PLAYER, 'That’s the part people miss. You’re not building a roster. You’re plugging a hole while somebody drills a new one.');
+      say(ANALYST, 'That’s the most reasonable thing you’ve said all morning.');
+      say(PLAYER, 'I’m full of reasonable things.');
       w('');
     }
 
     /* ---- final take ---- */
+    var gp = ctx.prior.length + 1;
     w('--- SEGMENT 6: FINAL TAKE -------------------------------');
     w('');
-    w(HOST + ': Ten seconds each. Where does this team finish?');
-    w('');
-    w(PLAYER + ': ' + (won
-      ? 'They are ' + rec + ' and playing angry. I am not apologising for enjoying it. Write it down.'
-      : 'Until I see somebody get physical in the fourth quarter, I am out. ' + rec + ' is ' + rec + '.'));
-    w('');
-    w(ANALYST + ': ' + (won
-      ? 'Good process, good result. Next week tells us which one it was.'
-      : 'One data point. Ask me after the next two and I will give you an actual answer.'));
-    w('');
-    if (g.notes) { w(HOST + ': One more thing before we go. ' + sentence(spoken(g.notes))); w(''); }
-    w(HOST + ': That is ' + cast.title + '. Same time.');
-    w('');
+    say(HOST, 'Ten seconds each. Where does ' + US + ' finish?');
+    say(PLAYER, won
+      ? 'They’re ' + rec + ' and they’re playing angry. I’m not apologizing for enjoying it. Write it down' + (streakAfter && streakAfter.n >= 3 ? ', and this time use a pen.' : '.')
+      : 'Until I see somebody get physical in the fourth quarter, I’m out. ' + rec + ' is ' + rec + '.');
+    say(ANALYST, gp >= 4
+      ? rec + ' after ' + gp + ' games. That’s not a sample anymore, that’s a résumé. ' + (won ? 'And the résumé is starting to hold up.' : 'And the résumé has some holes in it.')
+      : (won ? 'Good process, good result. Next week tells us which one it was.' : 'One data point. Ask me after the next two and I’ll give you a real answer.'));
+    if (g.notes) say(HOST, 'One more thing before we go. ' + sentence(spoken(g.notes)));
+    say(HOST, 'That’s ' + cast.title + '. Same time next week.');
     w('');
 
     /* ---- facts ---- */
@@ -1013,11 +1232,12 @@
     w('  PRODUCER NOTES — raw facts, not to be read aloud');
     rule();
     w('Show:        ' + cast.title);
-    w('Team:        ' + (us + (mascot ? ' ' + mascot : '')));
+    w('Team:        ' + (school + (mascot ? ' ' + mascot : '')));
     w('Opponent:    ' + them + (g.home ? ' (home)' : ' (away)'));
     w('Season/Week: ' + g.season + ' / ' + (g.week || 1));
     w('Result:      ' + (won ? 'WIN' : tied ? 'TIE' : 'LOSS') + ' ' + score + '  (margin ' + m + ')');
     w('Record:      ' + rec);
+    if (ctx.prior.length) w('Earlier:     ' + ctx.prior.map(function (x) { return 'Wk ' + (x.week || '?') + ' ' + x.result + ' ' + int(x.scoreFor, 0, 999) + '-' + int(x.scoreAgainst, 0, 999) + ' ' + (x.home ? 'vs ' : 'at ') + (x.opponent || '?'); }).join('; '));
     nums.forEach(function (n2) { w(n2); });
     if (perf.length) {
       w('');
@@ -2328,11 +2548,11 @@
     if (!a) return;
     var mins = Math.floor(hit.seconds / 60), secs = Math.round(hit.seconds % 60);
     var file = (showCfg().title + '-week-' + (g.week || 1) + '-' + (g.opponent || 'game'))
-      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.wav';
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.' + (hit.ext || 'wav');
     a.innerHTML = '<div class="voice-done">' +
       '<audio controls preload="auto" src="' + hit.url + '"></audio>' +
       '<div class="voice-meta"><span class="num">' + mins + ':' + (secs < 10 ? '0' : '') + secs + '</span> · ' + hit.requests + ' ' + plural(hit.requests, 'part') + ' stitched</div>' +
-      '<a class="btn small" href="' + hit.url + '" download="' + esc(file) + '">' + icon('download') + 'Save audio</a>' +
+      '<a class="btn small" href="' + hit.url + '" download="' + esc(file) + '">' + icon('download') + 'Save ' + (hit.ext === 'mp3' ? 'MP3' : 'audio') + '</a>' +
     '</div>';
   }
 
@@ -2353,10 +2573,7 @@
     var c = showCfg();
     var voices = {}, styles = {};
     var role = function (name, voice, style) { var L = speakerLabel(name); voices[L] = voice; styles[L] = style; };
-    role(c.host, c.voices.host, 'a smooth, wry studio host who keeps the show moving');
-    role(c.player, c.voices.player, 'a loud, emphatic former offensive lineman who talks over people');
-    role(c.analyst, c.voices.analyst, 'a dry, precise analyst who stays calm and cutting');
-    role(c.insider, c.voices.insider, 'a low-key, confident recruiting reporter passing on what sources say');
+    ['host', 'player', 'analyst', 'insider'].forEach(function (r) { role(c[r], c.voices[r], personaOf(c, r).style); });
 
     var ctrl = new AbortController();
     voiceJob = { ctrl: ctrl, id: id };
@@ -2374,12 +2591,21 @@
 
     V.voiceScript({
       script: g.script, key: key, model: c.model,
-      voices: voices, styles: styles, fallbackVoice: c.voices.host,
+      voices: voices, styles: styles, fallbackVoice: c.voices.host, show: c.title,
       signal: ctrl.signal, onProgress: progress
     }).then(function (wav) {
+      if (ctrl.signal.aborted) throw Object.assign(new Error('Cancelled.'), { name: 'AbortError' });
+      var area = voiceArea(id);
+      if (area) area.innerHTML = '<div class="voice-progress"><b>Making the MP3</b><div class="meter"><i style="width:100%"></i></div></div>';
+      /* the MP3 is what gets saved and shared; the WAV stays as a fallback
+         so a failed encode never costs the voicing that was paid for */
+      return V.toMp3(wav).then(function (mp3) { return { audio: mp3, wav: wav, ext: 'mp3' }; },
+                              function () { return { audio: wav, wav: wav, ext: 'wav' }; });
+    }).then(function (res) {
+      if (ctrl.signal.aborted) throw Object.assign(new Error('Cancelled.'), { name: 'AbortError' });
       var old = voiceCache[id];
       if (old) URL.revokeObjectURL(old.url);
-      var hit = { hash: voiceHash(g), url: URL.createObjectURL(wav.blob), seconds: wav.seconds, requests: wav.requests };
+      var hit = { hash: voiceHash(g), url: URL.createObjectURL(res.audio.blob), seconds: res.wav.seconds, requests: res.wav.requests, ext: res.ext };
       voiceCache[id] = hit;
       showVoiced(g, hit);
       toast('Voiced. Press play.');
@@ -2463,6 +2689,7 @@
     '<label class="check"><input type="checkbox" id="sh-useins"' + (sh.useInsider ? ' checked' : '') + '> Include the recruiting segment, built from your own board</label>' +
 
     '<div class="side-title">Voices</div>' +
+    '<p class="box-help">Each chair is written for the voice in it. Put a woman’s voice on a chair and the default name and background change to match; a name you typed yourself stays.</p>' +
     (window.WarRoomVoice
       ? '<div class="row">' +
           '<div class="field" style="grid-column:1/-1"><label for="sh-key">Gemini API key</label>' +
@@ -2485,7 +2712,19 @@
     });
     html += '</div><div class="modal-actions"><button class="btn primary" data-action="save-targets">Save targets</button><button class="btn" data-action="reset-targets">Reset to defaults</button></div></div>';
 
+    var lastExport = 0;
+    try { lastExport = parseInt(localStorage.getItem('warroom.lastExport') || '0', 10) || 0; } catch (e) {}
+    var snaps = snapshots();
     html += '<div class="card"><div class="card-head"><h2>Your data</h2><span class="hint">Lives only in this browser. Export before you clear anything.</span></div>' +
+      '<p class="box-help">' + (lastExport ? 'Last exported ' + esc(snapLabel({ at: lastExport })) + '.' : 'Never exported.') +
+        ' Updates never touch your data, but a browser can clear a site it has not seen in a while (Safari does after about a week), and only an exported file survives that.</p>' +
+      '<div class="side-title">Automatic copies</div>' +
+      (snaps.length
+        ? '<div class="snap-list">' + snaps.map(function (sn, i) {
+            return '<div class="snap-row"><div><b>' + esc(sn.why || 'Copy') + '</b><span>' + esc(snapLabel(sn)) + ' · ' + esc(snapCounts(sn.counts)) + '</span></div>' +
+              '<button class="btn small" data-action="restore-snap" data-i="' + i + '">Restore</button></div>';
+          }).join('') + '</div>'
+        : '<p class="box-help">None yet. One is made before every update, once a day, and before anything that replaces your data.</p>') +
       '<div class="modal-actions" style="margin-top:4px">' +
       '<button class="btn" data-action="export">' + icon('download') + 'Export backup</button>' +
       '<button class="btn" data-action="import">' + icon('upload') + 'Restore backup</button>' +
@@ -2495,6 +2734,19 @@
       '<button class="btn danger" data-action="wipe">' + icon('trash') + 'Start over</button>' +
     '</div></div>';
     return html;
+  }
+  function snapLabel(sn) {
+    var d = new Date(sn.at || 0);
+    var days = Math.floor((Date.now() - d.getTime()) / 86400000);
+    var time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return days <= 0 && new Date().getDate() === d.getDate() ? 'today at ' + time
+      : days <= 1 ? 'yesterday at ' + time
+      : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' at ' + time;
+  }
+  function snapCounts(c) {
+    c = c || {};
+    var n = function (k, one, many) { var v = c[k] || 0; return v + ' ' + (v === 1 ? one : many); };
+    return n('players', 'player', 'players') + ', ' + n('recruits', 'recruit', 'recruits') + ', ' + n('games', 'game', 'games');
   }
   function sumTargets() {
     var s = 0;
@@ -3003,6 +3255,7 @@
       '<div class="modal-actions"><span class="spacer"></span><button class="btn" data-action="close">Not yet</button><button class="btn primary" data-action="do-advance">' + icon('forward') + 'Advance season</button></div>');
   }
   function doAdvance() {
+    snapshotNow('Before advancing the season');
     var leaving = state.players.filter(isLeaving);
     var incoming = state.recruits.filter(isIncoming);
     var dropped = state.recruits.length - incoming.length;
@@ -3047,6 +3300,7 @@
   /* ---------- sample program ---------- */
 
   function loadSample() {
+    snapshotNow('Before loading the sample');
     var seed = 27;
     var rnd = function () { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
     var pick = function (arr) { return arr[Math.floor(rnd() * arr.length)]; };
@@ -3109,6 +3363,7 @@
   /* ---------- backup ---------- */
 
   function exportBackup() {
+    try { localStorage.setItem('warroom.lastExport', String(Date.now())); } catch (e) {}
     var blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -3202,6 +3457,7 @@
       try {
         var parsed = JSON.parse(reader.result);
         if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.players)) throw new Error('bad');
+        snapshotNow('Before restoring a backup file');
         localStorage.setItem(STORE_KEY, JSON.stringify(tidyBackup(parsed)));
         state = load();
         view = 'home';
@@ -3379,7 +3635,21 @@
       case 'export': exportBackup(); break;
       case 'import': $('#importFile').click(); break;
       case 'wipe': confirmModal('Start over?', 'Every player, recruit and past class in this browser is deleted. There is no undo.', 'do-wipe', 'Delete everything'); break;
+      case 'restore-snap':
+        var sn = snapshots()[int(t.getAttribute('data-i'), 0, SNAP_MAX)];
+        if (sn) confirmModal('Go back to this copy?', 'Your data returns to how it was ' + esc(snapLabel(sn)) + ': ' + esc(snapCounts(sn.counts)) + '. What you have now is kept as a copy first, so this can be undone.', 'do-restore-snap" data-i="' + int(t.getAttribute('data-i'), 0, SNAP_MAX), 'Restore it');
+        break;
+      case 'do-restore-snap':
+        var rs = snapshots()[int(t.getAttribute('data-i'), 0, SNAP_MAX)];
+        if (rs) {
+          var cur = JSON.stringify(state);
+          takeSnapshot(cur, 'Before going back to an older copy');
+          localStorage.setItem(STORE_KEY, rs.raw);
+          state = load(); closeModal(); view = 'home'; render(); toast('Restored.');
+        }
+        break;
       case 'do-wipe':
+        snapshotNow('Before starting over');
         try { localStorage.removeItem(STORE_KEY); } catch (err) {}
         state = defaultState(); closeModal(); view = 'home'; render(); toast('Cleared.'); break;
     }
@@ -3469,6 +3739,11 @@
        recogniser */
     showScanReview: function (rows) { scanRows = rows; renderScanReview(); },
     buildScript: buildScript,
+    showCfg: showCfg,
+    talk: talk,
+    seasonContext: seasonContext,
+    snapshots: snapshots,
+    takeSnapshot: takeSnapshot,
     spoken: spoken,
     boxOf: boxOf,
     saveScriptBox: saveScriptBox,

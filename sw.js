@@ -6,13 +6,13 @@
    those live in localStorage on the device and are never
    fetched, so they never pass through here.
 
-   IF YOU EDIT ANY APP FILE, BUMP `CACHE`. Otherwise an installed copy
+   IF YOU EDIT ANY APP FILE, BUMP `CACHE` (and APP_BUILD in app.js to match). Otherwise an installed copy
    keeps serving the old version until it happens to revalidate — and it
    will look correct on your own machine, which is what makes it easy to
    miss.
    --------------------------------------------------------------- */
 
-var CACHE = 'warroom-v15';
+var CACHE = 'warroom-v16';
 
 var ASSETS = [
   './',
@@ -21,6 +21,8 @@ var ASSETS = [
   './app.js',
   './ocr.js',
   './voice.js',
+  './mp3/worker.js',
+  './mp3/lame.min.js',
   './manifest.webmanifest',
   /* If these are missing here the installed app renders in system-ui offline
      forever, on a machine that has them cached and therefore looks fine. */

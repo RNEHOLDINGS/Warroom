@@ -106,7 +106,7 @@
       'a stat is explained by what it did to the game, not just read out');
     var aLines = seg.split('\n').filter(function (l) { return /^HARLAN:/.test(l); });
     var pLines = seg.split('\n').filter(function (l) { return /^MABRY:/.test(l); });
-    ok(aLines.length === 5 && pLines.length === 4, 'a game where four stats each mattered gets four points, each answered, then the sign-off', aLines.length + ' analyst, ' + pLines.length + ' player');
+    ok(aLines.length === 5 && pLines.length === 5, 'a game where four stats each mattered gets four points, each answered, then the sign-off', aLines.length + ' analyst, ' + pLines.length + ' player');
     ok(!/Third down was/.test(seg), 'no bare "third down was 9 of 14"');
 
     /* each stat on its own says what it means */
@@ -116,12 +116,12 @@
     }
     ok(/one-dimensional/.test(only({ rushFor: 45 })), 'a stalled run game is called one-dimensional');
     ok(/245 rushing yards allowed/.test(only({ rushAgainst: 245 })), 'a run defence that got gashed is the headline');
-    ok(/could not run, so they had to throw/.test(only({ rushFor: 60, passFor: 340 })), '340 passing with no run game is not called balance');
+    ok(/couldn’t run, so they had to throw/.test(only({ rushFor: 60, passFor: 340 })), '340 passing with no run game is not called balance');
     ok(/discount some of it/.test(only({ passFor: 330 }, 'L', 10, 38)), 'a big passing day in a blowout loss is discounted');
     ok(/3 of 15 on third down\. 20 percent/.test(only({ thirdFor: 3, thirdForAtt: 15 })), 'a bad third-down day gets a percentage and a consequence');
     ok(/not getting off the field/.test(only({ thirdAgainst: 9, thirdAgainstAtt: 14 })), 'giving up third downs is about getting off the field');
     ok(/0 for 2 on fourth down.*turnover by another name/.test(only({ fourthFor: 0, fourthForAtt: 2 })), 'failed fourth downs are turnovers on downs');
-    ok(/outgained them by 120 yards and lost/.test(only({ yardsFor: 420, yardsAgainst: 300 })), 'outgaining a team and losing is the argument');
+    ok(/outgained Iowa by 120 yards and lost/.test(only({ yardsFor: 420, yardsAgainst: 300 })), 'outgaining a team and losing is the argument');
     ok(/outgained by 150 yards and still won/.test(only({ yardsFor: 250, yardsAgainst: 400 }, 'W', 24, 21)), 'winning while outgained is flagged as fragile');
     ok(/11 penalties for 98 yards/.test(only({ penFor: 11, penForYds: 98 })), 'penalties are counted with their yards');
     ok(/Nobody turned it over/.test(only({ toFor: 0, toAgainst: 0 })), 'zero turnovers is a real answer, not a blank');

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Cast and memory test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+/* The panel sounds like people who follow the team: each chair matches the
+   voice in it, they talk in contractions, they say the team's name, and they
+   remember earlier games. */
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function click(sel) { var el = q(sel); if (!el) { ok(false, 'element ' + sel, 'missing'); return; } el.click(); }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom, V = window.WarRoomVoice;
+  var spokenText = function (s) { return V.parseDialogue(s).map(function (t) { return t.text; }).join('\n'); };
+  var castNotes = function (s) { return s.split('--- COLD OPEN')[0]; };
+  try {
+    /* --- contractions --- */
+    var T = W.talk;
+    [
+      ['I am not going to do that.', 'I’m not going to do that.'],
+      ['That is not a narrative, that is the base rate.', 'That’s not a narrative, that’s the base rate.'],
+      ['You do not lose that. It is over.', 'You don’t lose that. It’s over.'],
+      ['They cannot run and will not try.', 'They can’t run and won’t try.'],
+      ['I have been telling you.', 'I’ve been telling you.'],
+      ['I am NOT doing it.', 'I’m NOT doing it.'],
+      ['Yes it is.', 'Yes it is.'],
+      ['I have a question.', 'I have a question.']
+    ].forEach(function (c) { var got = T(c[0]); ok(got === c[1], 'talks: "' + c[0] + '"', got); });
+
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    st.school = { name: 'Oregon', mascot: 'Ducks', state: 'OR', color: '#154733' };
+    st.games = [];
+    st.show = { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true };
+
+    /* --- the chairs match their voices --- */
+    var g = { id: 'c1', season: st.season, week: 1, opponent: 'Utah', home: true, result: 'L', scoreFor: 17, scoreAgainst: 24,
+      rushFor: 60, rushAgainst: 150, passFor: 250, passAgainst: 220, notes: '', performances: [] };
+    var male = W.buildScript(g);
+    ok(/MABRY \(Terrance Mabry\) — former player\. Three years starting\s+at guard/.test(male), 'with a man’s voice, the ex-player is Terrance, a former guard');
+    ok(/I played guard/.test(spokenText(male)), 'and says he played guard');
+
+    st.show.voices = { host: 'Algieba', player: 'Kore', analyst: 'Kore', insider: 'Sadaltager' };
+    var cfg = W.showCfg();
+    ok(cfg.player === 'Tasha Mabry' && cfg.genders.player === 'F', 'a woman’s voice on the ex-player chair makes it Tasha', cfg.player);
+    var fem = W.buildScript(g);
+    ok(!/played guard|at guard in the Mountain West|NFL practice squads/.test(fem), 'and nobody in a woman’s voice claims to have played on the line', (spokenText(fem).match(/.{0,40}played guard.{0,20}/) || [''])[0]);
+    ok(/MABRY \(Tasha Mabry\)/.test(fem) && /sideline reporter/.test(castNotes(fem)), 'her background is a sideline career instead');
+    ok(/^MABRY:/m.test(fem), 'the speaker label stays MABRY, so the chosen voice still lines up');
+
+    st.show.voices = { host: 'Algieba', player: 'Fenrir', analyst: 'Charon', insider: 'Sadaltager' };
+    ok(W.showCfg().analyst === 'Kyle Harlan', 'a man’s voice on the analyst chair makes it Kyle', W.showCfg().analyst);
+    st.show.player = 'Big Mike Jones'; st.show.voices.player = 'Kore';
+    ok(W.showCfg().player === 'Big Mike Jones', 'a name somebody typed is never swapped');
+    st.show = { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true };
+
+    /* --- the settings say which voice is which --- */
+    W.setView('settings');
+    var opt = q('#sh-v-player option[value="Kore"]');
+    ok(!!opt && /woman/.test(opt.textContent), 'voice choices say man or woman', opt && opt.textContent);
+
+    /* --- natural speech and the team's name --- */
+    var said = spokenText(male);
+    var formal = (said.match(/\b(I am|do not|does not|did not|is not|cannot|will not|That is|It is) [a-z]/g) || []);
+    ok(formal.length === 0, 'nobody on air says "I am" or "do not"', formal.slice(0, 5).join(' | '));
+    var ours = (said.match(/\bOregon\b|\bthe Ducks\b/g) || []).length;
+    ok(ours >= 4, 'the team’s own name is said, not just the opponent’s', ours + ' times');
+    ok(/Oregon (ran|was|lost|got|held|gave|allowed|went)|Oregon outgained/.test(numbersOf(male)) || /Only 60 rushing yards/.test(numbersOf(male)), 'the numbers segment talks about Oregon by name', numbersOf(male));
+    function numbersOf(s) { return (s.split('THE NUMBERS')[1] || '').split('--- SEGMENT')[0]; }
+
+    /* --- memory --- */
+    var hero = 'J.Carty', goat = 'D.Moss';
+    st.games = [
+      { id: 'w1', season: st.season, week: 1, opponent: 'Utah', home: true, result: 'W', scoreFor: 31, scoreAgainst: 10, rushFor: 210, passFor: 180, thirdFor: 8, thirdForAtt: 14,
+        performances: [{ name: hero, pos: 'QB', line: '3 TD', verdict: 'standout' }, { name: goat, pos: 'HB', line: '2 fum', verdict: 'struggled' }], notes: '' },
+      { id: 'w2', season: st.season, week: 2, opponent: 'Washington', home: false, result: 'W', scoreFor: 27, scoreAgainst: 20, rushFor: 190, passFor: 220, thirdFor: 7, thirdForAtt: 13,
+        performances: [{ name: hero, pos: 'QB', line: '2 TD', verdict: 'standout' }, { name: goat, pos: 'HB', line: '1 fum', verdict: 'struggled' }], notes: '' },
+      { id: 'w5', season: st.season, week: 5, opponent: 'Futureville', home: true, result: 'W', scoreFor: 50, scoreAgainst: 0, performances: [], notes: '' }
+    ];
+    var g3 = { id: 'w3', season: st.season, week: 3, opponent: 'USC', home: true, result: 'W', scoreFor: 35, scoreAgainst: 14, rushFor: 60, passFor: 330, thirdFor: 4, thirdForAtt: 12,
+      performances: [{ name: hero, pos: 'QB', line: '4 TD', verdict: 'standout' }, { name: goat, pos: 'HB', line: '8 car 20 yds', verdict: 'struggled' }], notes: '' };
+    st.games.push(g3);
+    var s3 = W.buildScript(g3);
+    var sp3 = spokenText(s3);
+    ok(/three straight/i.test(sp3), 'a third win in a row is called a streak');
+    ok(/third big game this year/.test(sp3), 'a standout for the third week is remembered as such');
+    ok(/two rough ones in a row/.test(sp3), 'a second straight rough game is called a trend');
+    ok(/Coming in, Oregon was scoring 29 a game and giving up 15/.test(sp3), 'the season averages so far are used', (sp3.match(/Coming in.{0,80}/) || [''])[0]);
+    ok(/way below the 200 they’d been averaging on the ground/.test(sp3), 'a stat is measured against what the team usually does', (sp3.match(/.{0,60}averaging on the ground/) || [''])[0]);
+    ok(!/Futureville/.test(s3), 'a later week is never mentioned');
+    ok(/Earlier:\s+Wk 1 W 31-10 vs Utah; Wk 2 W 27-20 at Washington/.test(s3), 'producer notes list the games before it');
+
+    var g4 = { id: 'w4', season: st.season, week: 4, opponent: 'Oregon State', home: false, result: 'L', scoreFor: 20, scoreAgainst: 23, performances: [], notes: '' };
+    st.games.push(g4);
+    var sp4 = spokenText(W.buildScript(g4));
+    ok(/write it down/i.test(sp4), 'after a win then a loss, last week’s take is thrown back at him');
+    ok(/three-game win streak is over/.test(sp4), 'and the snapped streak is named');
+    ok(/Does one loss undo three wins/.test(sp4), 'the question of the day comes from the season');
+
+    var first = spokenText(W.buildScript({ id: 'solo', season: st.season - 3, week: 1, opponent: 'Idaho', home: true, result: 'W', scoreFor: 20, scoreAgainst: 3, performances: [], notes: '' }));
+    ok(!/straight|last week|Coming in|told everybody to write it down/i.test(first), 'a first game makes no claims about history it does not have');
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

@@ -94,6 +94,15 @@ Type in what happened in a game and get a debate-show script out. The show is
 - **Nate Ridenour** — former walk-on safety turned recruiting reporter. Speaks
   in hedged certainties and never reveals a source.
 
+**Each chair is written for the voice sitting in it.** Put a woman's voice on
+the ex-player's chair and she becomes Tasha Mabry, a former college point guard
+who spent ten years as a sideline reporter, and her lines come from the
+sideline and the locker room instead of the offensive line. The analyst
+becomes Kyle with a man's voice, the host Dana and the insider Natalie with a
+woman's. The voice list in Settings says which voices sound like a man and
+which like a woman. A name you typed yourself is never swapped, and surnames
+stay the same so the chosen voices keep lining up.
+
 They are **fictional on purpose**. They are meant to sound like people you half
 recognise from a conference network, not to put invented opinions in real
 analysts' mouths — which matters more now that the script can be voiced.
@@ -123,6 +132,28 @@ on third down is a defense that could not get off the field. Outgaining a team
 and losing means points were left in the red zone. The three or four stats
 that mattered most get argued, and the rest stay in the table.
 
+**It talks like people, not a teleprompter.** Every line uses contractions
+("that's not", "I'm not gonna"), replies are short and quick ("Name the snap."
+"Unbelievable."), and the team is called by its name and mascot, not "they"
+while the opponent gets named every time.
+
+**The panel follows the team.** Everything logged earlier in the same season
+feeds the script, and nothing from a later week does:
+
+- streaks, and a streak that just ended ("the two-game win streak is over");
+- last week's take thrown back ("last week you told everybody to write it
+  down. Where'd you write it? Pencil?");
+- the question of the day ("Does one loss undo three wins?");
+- players with a history: a third big game this year, back-to-back rough
+  games called a trend, a kid who was on the hot seat and bounced back;
+- season averages: points for and against coming in, and a stat compared to
+  what the team usually does ("way below the 200 they'd been averaging on the
+  ground", "they came in converting 54 percent");
+- last season's result against the same opponent;
+- after four games the analyst stops calling it a sample.
+
+The producer notes list the earlier games the script drew on.
+
 **Shorthand is spoken as words.** "24/31, 312 yds, 3 TD, 1 INT" is read as "24
 of 31, 312 yards, 3 touchdowns, 1 interception", and QB becomes quarterback,
 3rd & 8 becomes third and 8, a 45 yd FG becomes a 45-yard field goal. The script
@@ -147,7 +178,23 @@ edited stays as it is until you ask for a rewrite.
 
 **Voice it** in the script dialog reads the script aloud with the whole cast,
 each in their own voice, using Google's Gemini text-to-speech. You get a
-player in the dialog and **Save audio** for a `.wav` named after the game.
+player in the dialog and **Save MP3** for a file named after the game.
+
+The audio is **MP3** (64 kbps mono), about a sixth the size of a WAV: roughly 5 MB for a ten-minute
+show instead of nearly 30. It is encoded on the phone by LAME
+(`mp3/lame.min.js`, lamejs 1.2.1, LGPL-3.0, unmodified) in a background
+worker, so the page does not freeze. If the encoder cannot start, you get the
+WAV instead rather than losing the voicing you paid for.
+
+**Why it sounded robotic, and what changed:** the script was written without a
+single contraction, and each request handed Gemini bare lines. Now the script
+talks the way people talk, and every request directs the voices the way
+Google's own guide recommends: who each speaker is, the scene (a Monday
+morning panel that has been arguing since before the cameras came on), and
+notes on delivery (quick replies, a heated line speeds up, a dry one lands
+flat, stress the words in capitals). Runs are longer too, up to about 2,200
+characters, because every break between requests is a place where the voices
+lose the thread.
 
 The app still writes the script — Gemini only does the voices. Only the
 spoken lines are sent: the masthead, the cast notes, the stat lines and the
@@ -178,8 +225,8 @@ How it works, and why:
   answers normally.
 - One request can voice **at most two speakers** and the show has four, so the
   script is split into runs of one or two voices, never across a segment, each
-  voiced separately and stitched into one WAV with short pauses between
-  (longer at a segment break).
+  voiced separately and stitched together with short pauses between
+  (longer at a segment break), then encoded to MP3.
 - A "slow down" from Google is waited out and retried; a bad key or a
   retired model is reported in plain words and stops before spending more.
 - Closing the dialog stops the voicing. Reopening an unchanged script shows
@@ -313,6 +360,33 @@ Double-click `index.html`. Nothing to install. Everything is stored in the
 browser's localStorage, so export a backup from Settings before clearing
 site data.
 
+## Keeping your data
+
+**An update never touches your data.** It lives in the browser, not in the
+files that get pushed, and nothing in the app deletes it without asking. On
+2026-09-13 a phone came back empty after an update anyway, and nothing in the
+update explains it. The likeliest causes are outside the app: a home-screen
+install and a Safari tab keep **separate** data, deleting and re-adding the
+home-screen icon deletes its data, and Safari clears a site that has not been
+opened in about a week. So the app now protects itself:
+
+- **Automatic copies.** Your data is copied inside the browser the first time
+  a new build opens, once a day, and before anything that replaces it:
+  restoring a backup file, loading the sample, starting over, advancing the
+  season. A save that would leave the program with no players, recruits or
+  games copies what was there first. The newest six are kept.
+- **Settings → Your data** lists them with what each holds ("2 players, 1
+  recruit, 1 game") and restores any of them. Restoring copies what you have
+  now first, so it can be undone.
+- A saved file that will not read is set aside under its own key instead of
+  being saved over.
+- The app asks the browser to treat its storage as persistent, so it is not
+  cleared to free space.
+
+Automatic copies live in the same browser, so they do not survive the browser
+clearing the site. **Export backup** is the only thing that does. Settings shows
+when you last exported.
+
 For reading screenshots -- and for the phone -- run the server instead:
 
 ```
@@ -352,7 +426,7 @@ between them.
 
 ## Checking it
 
-There are ten suites, all driven through real DOM clicks with hit testing:
+These suites are all driven through real DOM clicks with hit testing:
 
 - `selftest.html` — the app: counting, roster editing, season rollover,
   restoring a backup.
@@ -372,8 +446,14 @@ There are ten suites, all driven through real DOM clicks with hit testing:
 - `stattest.html` — shorthand said as words, the team-stats table, what each
   stat is argued to mean, 0 kept apart from blank, and old games' typed third
   downs and penalties still counting.
+- `casttest.html` — chairs that match their voices, contractions, the team's
+  own name, and the season memory: streaks, callbacks, player history,
+  averages, and that a later week is never mentioned.
+- `safetest.html` — data across an update: the copy made on the first open of
+  a new build, emptying, starting over, the sample, restoring a copy, the cap
+  on copies. Run with `?corrupt=1` too, for a store that will not read.
 - `voicetest.html` — Voice it against a stand-in for Google: what is sent, the
-  two-voice limit, the stitched WAV, retries, a bad key, cancelling, and that
+  two-voice limit, the MP3 and its length, the WAV fallback, retries, a bad key, cancelling, and that
   the key never reaches a backup. Run with `?custom=1` too, to check a cast
   someone typed survives the change of default names.
 - `boardtest.html` — recruiting-board recognition, scored against a known board.

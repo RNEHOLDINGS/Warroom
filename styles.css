@@ -648,3 +648,10 @@ table.plain td.num, table.plain th.num { text-align: right; }
   .box-pair { gap: 2px; }
   .box-pair span { font-size: 11px; }
 }
+
+/* automatic copies */
+.snap-list { display: grid; gap: 6px; margin-bottom: 10px; }
+.snap-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--grid); border-radius: 8px; }
+.snap-row > div { flex: 1; min-width: 0; }
+.snap-row b { display: block; font-size: var(--t-small); color: var(--ink); }
+.snap-row span { font-size: var(--t-small); color: var(--ink-muted); }
