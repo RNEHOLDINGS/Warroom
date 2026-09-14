@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Rankings test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+/* Each game carries both teams' rankings going in, and the show calls the
+   upsets. Nothing is tracked from week to week. */
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function set(sel, v) { var el = q(sel); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }
+  function click(sel) { var el = q(sel); if (!el) { ok(false, 'element ' + sel, 'missing'); return; } el.click(); }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom, V = window.WarRoomVoice;
+  var spokenText = function (s) { return V.parseDialogue(s).map(function (t) { return t.text; }).join('\n'); };
+  try {
+    /* --- what counts as an upset --- */
+    var U = function (result, us, them) { return W.upsetOf({ result: result, rankFor: us, rankAgainst: them }); };
+    ok(U('W', '', 5) && U('W', '', 5).kind === 'win' && U('W', '', 5).big, 'unranked over No. 5 is a big upset win');
+    ok(U('W', 20, 12) && U('W', 20, 12).kind === 'win' && !U('W', 20, 12).big, 'No. 20 over No. 12 is an upset, not a big one');
+    ok(!U('W', 5, 20), 'No. 5 beating No. 20 is not an upset');
+    ok(!U('W', '', ''), 'two unranked teams is never an upset');
+    ok(U('L', 8, '') && U('L', 8, '').kind === 'loss' && U('L', 8, '').big, 'No. 8 losing to an unranked team is a big upset loss');
+    ok(U('L', 3, 15) && U('L', 3, 15).big, 'losing to a team 12 spots lower is big');
+    ok(!U('L', 15, 3), 'losing to a higher-ranked team is not an upset');
+    ok(!U('L', '', 10), 'an unranked team losing is not an upset');
+    ok(!U('T', '', 1), 'a tie is not called an upset');
+
+    ok(W.spoken('No. 5 USC') === 'number 5 USC', 'No. 5 is said "number 5"', W.spoken('No. 5 USC'));
+    ok(W.spoken('No. No, Dale.') === 'No. No, Dale.', 'and "No." on its own is left alone');
+
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    st.school = { name: 'Oregon', mascot: 'Ducks', state: 'OR', color: '#154733' };
+    st.games = [];
+
+    /* --- the form --- */
+    W.setView('show');
+    click('[data-action="add-game"]');
+    ok(q('#g-rk') && q('#g-rk').placeholder === 'Unranked' && q('#g-rka'), 'the game form has both rankings, blank meaning unranked');
+    set('#g-opp', 'USC'); set('#g-sf', '31'); set('#g-sa', '27'); set('#g-rka', '4');
+    q('#g-where').value = '0';
+    click('[data-action="save-game"]');
+    var g = W.state().games[0];
+    ok(g && g.rankFor === '' && g.rankAgainst === 4, 'rankings are stored with the game', g && JSON.stringify({ u: g.rankFor, t: g.rankAgainst }));
+    var s = q('#scriptBox').value;
+    click('[data-action="close"]');
+    ok(/vs No\. 4 USC|at No\. 4 USC/.test(q('#view').textContent) && /upset win/.test(q('#view').textContent), 'the game list shows the ranking and says upset win', q('#view').textContent.slice(0, 200));
+
+    /* --- the script --- */
+    ok(/at No\. 4 USC\s+·\s+UPSET WIN/.test(s), 'the masthead calls it', s.split('\n').slice(3, 5).join(' | '));
+    var sp = spokenText(s);
+    ok(/UPSET/.test(sp) && /Unranked Oregon went on the road and took down No\. 4 USC/.test(sp), 'the host opens on the upset', sp.split('\n')[0]);
+    ok(/STORM THE FIELD/.test(sp) && /top-five team/.test(sp), 'the ex-player storms the field for a top-five upset');
+    ok(/were the rankings just wrong about Oregon/.test(sp), 'the question of the day is the upset');
+    ok(/you don’t just move up the poll/.test(sp), 'the analyst says what it does to the poll');
+    ok(/land in the poll/.test(sp) && /they’re moving/.test(sp), 'the final take is about the poll');
+    ok(/Rankings:\s+unranked vs No\. 4\s+\(UPSET WIN\)/.test(s), 'producer notes carry the rankings');
+
+    click('[data-action="edit-game"][data-id="' + g.id + '"]');
+    ok(q('#g-rka').value === '4' && q('#g-rk').value === '', 'editing shows the rankings again');
+    set('#g-rk', '9'); set('#g-rka', ''); q('#g-result').value = 'L'; set('#g-sf', '20'); set('#g-sa', '24');
+    click('[data-action="save-game"]');
+    var loss = spokenText(q('#scriptBox').value);
+    click('[data-action="close"]');
+    ok(/No\. 9 Oregon lost to unranked USC/.test(loss), 'a ranked team losing to an unranked one is called out', loss.split('\n')[0]);
+    ok(/top-ten team/.test(loss) && /didn’t block anybody/.test(loss), 'and the ex-player is not having it');
+    ok(/How does No\. 9 Oregon lose to an unranked USC/.test(loss), 'the question asks how');
+    ok(/They don’t forget losing to an unranked team/.test(loss), 'the analyst says it follows them');
+    ok(/other staffs will bring this one up/.test(loss) || !W.state().recruits.some(function (r) { return r.status === 'board'; }), 'the insider says rivals will use it on the trail');
+
+    var plain = spokenText(W.buildScript({ id: 'p', season: st.season, week: 9, opponent: 'Idaho', home: true, result: 'W', scoreFor: 40, scoreAgainst: 3, performances: [], notes: '' }));
+    ok(!/UPSET|poll|No\. \d/.test(plain), 'with no rankings typed, nobody mentions rankings');
+
+    var chalk = spokenText(W.buildScript({ id: 'c', season: st.season, week: 10, opponent: 'Utah', home: true, result: 'W', scoreFor: 30, scoreAgainst: 20, rankFor: 6, rankAgainst: 18, performances: [], notes: '' }));
+    ok(/No\. 6 Oregon beat No\. 18 Utah/.test(chalk) && !/UPSET/.test(chalk), 'a favourite winning is named with both rankings but not called an upset', chalk.split('\n')[0]);
+
+    /* --- backups keep them, and nothing else is carried between weeks --- */
+    var raw = JSON.parse(localStorage.getItem('warroom.v1'));
+    ok(raw.games[0].rankFor === 9 && raw.games[0].rankAgainst === '', 'saved to storage');
+    ok(!('rank' in st.school) && !('rankFor' in st) && !('ranks' in st), 'no season-long ranking is kept anywhere');
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

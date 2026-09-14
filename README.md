@@ -137,6 +137,17 @@ that mattered most get argued, and the rest stay in the table.
 "Unbelievable."), and the team is called by its name and mascot, not "they"
 while the opponent gets named every time.
 
+**Rankings and upsets.** Each game has **Our rank** and **Their rank**, the Top
+25 going into that game, blank for unranked. They are typed on the game and
+nothing carries from week to week: update them as the season goes. A win over
+a team ranked above you (unranked counts as below everybody) is an **upset
+win**; a loss to a team ranked below you is an **upset loss**. Unranked over a
+top-ten team, or a gap of ten spots or more, is a big one. The game list says
+so, and the show builds around it: the host opens on it, the ex-player storms
+the field (or is not having it), the question of the day is the upset, the
+analyst says what it does in the poll, the insider says how it plays on the
+recruiting trail, and the final take is where they land in the poll. A
+favourite beating a lower-ranked team gets both rankings named and no upset.
 **The panel follows the team.** Everything logged earlier in the same season
 feeds the script, and nothing from a later week does:
 
@@ -449,6 +460,8 @@ These suites are all driven through real DOM clicks with hit testing:
 - `casttest.html` — chairs that match their voices, contractions, the team's
   own name, and the season memory: streaks, callbacks, player history,
   averages, and that a later week is never mentioned.
+- `ranktest.html` — what counts as an upset, the rank fields, the game list,
+  every place the show calls it, and that nothing is tracked across weeks.
 - `safetest.html` — data across an update: the copy made on the first open of
   a new build, emptying, starting over, the sample, restoring a copy, the cap
   on copies. Run with `?corrupt=1` too, for a store that will not read.

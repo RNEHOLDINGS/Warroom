@@ -234,7 +234,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v16';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v17';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -359,8 +359,22 @@
   ];
 
   function gameLabel(g) {
-    return (g.home ? 'vs ' : 'at ') + (g.opponent || 'Opponent') + ' · ' +
+    var rT = rankOf(g.rankAgainst);
+    return (g.home ? 'vs ' : 'at ') + (rT ? 'No. ' + rT + ' ' : '') + (g.opponent || 'Opponent') + ' · ' +
       (g.result || 'W') + ' ' + int(g.scoreFor, 0, 999) + '–' + int(g.scoreAgainst, 0, 999);
+  }
+  /* Rankings are what the poll said going into this game, typed on the game
+     itself. Nothing is carried from week to week -- the user updates them
+     as the season goes, which is how the game shows them anyway. */
+  function rankOf(v) { var n = blankInt(v, 0, 25); return n === '' || n < 1 ? '' : n; }
+  /* An upset is a win over a team ranked above you (unranked counts as
+     below everybody), or a loss to one ranked below you. "Big" is the one
+     people remember: unranked over a top-ten team, or ten or more spots. */
+  function upsetOf(g) {
+    var us = rankOf(g.rankFor), them = rankOf(g.rankAgainst);
+    if (g.result === 'W' && them && (!us || us > them)) return { kind: 'win', us: us, them: them, big: (!us && them <= 10) || (!!us && us - them >= 10) };
+    if (g.result === 'L' && us && (!them || them > us)) return { kind: 'loss', us: us, them: them, big: (!them && us <= 10) || (!!them && them - us >= 10) };
+    return null;
   }
   function gameMargin(g) { return Math.abs(int(g.scoreFor, 0, 999) - int(g.scoreAgainst, 0, 999)); }
   function recordThrough(g) {
@@ -457,6 +471,7 @@
     if (!s) return s;
     s = s
       .replace(/\b([A-Z])\.(?=[A-Z][a-z])/g, '$1. ')             /* J.Carty */
+      .replace(/\bNo\. ?(\d{1,2})\b/g, 'number $1')                /* No. 5 USC */
       .replace(/\bw\/o\b/gi, 'without').replace(/\bw\/\s*/gi, 'with ')
       .replace(/(\d+)\s*(?:\/|-for-)\s*(\d+)/gi, '$1 of $2')
       .replace(/\b2\s*-?\s*pts?\b(?:\s*conv(?:ersion)?s?\b)?/gi, 'two-point conversion')
@@ -949,11 +964,16 @@
     var streakAfter = ctx.after && ctx.after.n >= 2 ? ctx.after : null;
     var snapped = ctx.before && ctx.before.n >= 2 && ctx.before.result !== g.result ? ctx.before : null;
     var last = ctx.last;
+    var rU = rankOf(g.rankFor), rT = rankOf(g.rankAgainst);
+    var up = upsetOf(g);
+    var US_R = rU ? 'No. ' + rU + ' ' + US : US;
+    var THEM_R = rT ? 'No. ' + rT + ' ' + them : them;
+    var themLow = rT ? THEM_R : 'unranked ' + them;
 
     rule();
     w('  ' + cast.title.toUpperCase().split('').join(' '));
     rule();
-    w('  ' + (mascot ? school + ' ' + mascot : US) + ' ' + (g.home ? 'vs' : 'at') + ' ' + them);
+    w('  ' + (rU ? 'No. ' + rU + ' ' : '') + (mascot ? school + ' ' + mascot : US) + ' ' + (g.home ? 'vs' : 'at') + ' ' + THEM_R + (up ? '  ·  UPSET ' + (up.kind === 'win' ? 'WIN' : 'LOSS') : ''));
     w('  ' + g.season + ' · Week ' + (g.week || 1) + ' · ' + (won ? 'WIN' : tied ? 'TIE' : 'LOSS') + ' ' + score + ' · Now ' + rec);
     rule();
     w('');
@@ -985,14 +1005,21 @@
 
     w('--- COLD OPEN -------------------------------------------');
     w('');
-    say(HOST, pick([
-      'Welcome in, this is ' + cast.title + '. ' + US + ' ' + verb + ' ' + them + ' ' + said + ' ' + where + ', and they’re ' + rec + '. ' + ctxLine + ' ' + playerF + ', you’ve been pacing since we sat down.',
-      cast.title + '. It’s Monday. ' + US + ' ' + verb + ' ' + them + ', ' + said + '. ' + ctxLine + ' I’ve got two people here who watched the same game and somehow saw two different teams. ' + playerF + ', go.',
-      'Good morning, this is ' + cast.title + '. ' + US + ' is ' + rec + ' after ' + (won ? 'beating ' : tied ? 'tying ' : 'losing to ') + them + ' ' + said + ' ' + where + '. ' + ctxLine + ' I’m just gonna sit back for this one.'
-    ]).replace(/ {2,}/g, ' '));
+    say(HOST, (up && up.kind === 'win'
+      ? 'Welcome in, this is ' + cast.title + ', and we have got an UPSET. ' + (rU ? US_R : 'Unranked ' + US) + ' ' + (g.home ? '' : 'went on the road and ') + 'took down ' + THEM_R + ', ' + said + '. ' + ctxLine + ' ' + playerF + ', I can see it on your face.'
+      : up
+        ? 'This is ' + cast.title + ', and it is not a good morning for ' + US + '. ' + US_R + ' lost to ' + themLow + ', ' + said + ' ' + where + '. ' + ctxLine + ' ' + playerF + ', go ahead.'
+        : pick([
+          'Welcome in, this is ' + cast.title + '. ' + US_R + ' ' + verb + ' ' + THEM_R + ' ' + said + ' ' + where + ', and they’re ' + rec + '. ' + ctxLine + ' ' + playerF + ', you’ve been pacing since we sat down.',
+          cast.title + '. It’s Monday. ' + US_R + ' ' + verb + ' ' + THEM_R + ', ' + said + '. ' + ctxLine + ' I’ve got two people here who watched the same game and somehow saw two different teams. ' + playerF + ', go.',
+          'Good morning, this is ' + cast.title + '. ' + US_R + ' is ' + rec + ' after ' + (won ? 'beating ' : tied ? 'tying ' : 'losing to ') + THEM_R + ' ' + said + ' ' + where + '. ' + ctxLine + ' I’m just gonna sit back for this one.'
+        ])).replace(/ {2,}/g, ' '));
 
     var playerOpen;
-    if (won && streakAfter && streakAfter.n >= 3) playerOpen = numWord(streakAfter.n).toUpperCase() + ' straight, ' + hostF + '! ' + numWord(streakAfter.n).charAt(0).toUpperCase() + numWord(streakAfter.n).slice(1) + '! And I’m supposed to sit here and act calm about it?';
+    if (up && up.kind === 'win' && up.big) playerOpen = 'STORM THE FIELD! I don’t care whose field it was, you STORM it. Nobody gave them a chance, ' + hostF + '. NOBODY. ' + (rT <= 5 ? 'That’s a top-five team!' : 'That’s a top-ten team!');
+    else if (up && up.kind === 'win') playerOpen = 'The rankings are somebody’s guess, and ' + US + ' just corrected it. ' + THEM_R + ' found out the hard way.';
+    else if (up) playerOpen = 'I don’t want to hear about the number next to ' + (rU <= 10 ? 'their name. You’re a top-ten team' : 'their name. You’re ranked') + ', and you lose to ' + (rT ? THEM_R : 'an unranked team') + '? The ranking didn’t block anybody. Come on.';
+    else if (won && streakAfter && streakAfter.n >= 3) playerOpen = numWord(streakAfter.n).toUpperCase() + ' straight, ' + hostF + '! ' + numWord(streakAfter.n).charAt(0).toUpperCase() + numWord(streakAfter.n).slice(1) + '! And I’m supposed to sit here and act calm about it?';
     else if (won && snapped) playerOpen = 'See, THIS is what I was talking about. Everybody wanted to bury this team, and they come out and do that. Come on.';
     else if (won && blowout) playerOpen = 'That wasn’t a football game. That was a statement. You put ' + pf + ' on a grown man and I do not want to hear ONE word about how it looked.';
     else if (won) playerOpen = pick(['Hey. A win is a win. Good teams find a way, and they found a way. I don’t care how it looked.', 'Everybody in that building played angry. You could see it on the first series. That’s what I’ve been asking for.']);
@@ -1024,7 +1051,10 @@
     w('--- SEGMENT 1: THE QUESTION -----------------------------');
     w('');
     var q;
-    if (won && streakAfter && streakAfter.n >= 3) q = numWord(streakAfter.n).charAt(0).toUpperCase() + numWord(streakAfter.n).slice(1) + ' straight. Is ' + US + ' for real?';
+    if (up && up.kind === 'win') q = 'An upset. Was it a fluke, or were the rankings just wrong about ' + US + '?';
+    else if (up) q = 'How does ' + US_R + ' lose to ' + (rT ? THEM_R : 'an unranked ' + them) + '?';
+    else if (won && rU && rT && !(streakAfter && streakAfter.n >= 3)) q = 'A ranked matchup, and the higher-ranked team won. So what did we actually learn about ' + US + '?';
+    else if (won && streakAfter && streakAfter.n >= 3) q = numWord(streakAfter.n).charAt(0).toUpperCase() + numWord(streakAfter.n).slice(1) + ' straight. Is ' + US + ' for real?';
     else if (won) q = blowout ? 'Is ' + US + ' actually this good, or is ' + them + ' just that bad?' : 'They won. Should they have won by more?';
     else if (tied) q = 'What does a tie actually tell you about this team?';
     else if (snapped && snapped.result === 'W') q = 'Does one loss undo ' + numWord(snapped.n) + ' wins, or did we just meet the real ' + US + '?';
@@ -1039,7 +1069,12 @@
     var avgLine = ctx.avg.pointsFor != null
       ? ' Coming in, ' + US + ' was scoring ' + ctx.avg.pointsFor + ' a game and giving up ' + ctx.avg.pointsAgainst + '. They scored ' + pf + ' and gave up ' + pa + '.'
       : '';
-    say(ANALYST, (won
+    var upsetTake = !up ? ''
+      : up.kind === 'win'
+        ? (up.big ? 'Beat a top-ten team as ' + (rU ? 'a team ranked that far below them' : 'an unranked team') + ' and you don’t just move up the poll. You change how every voter watches your next game. '
+                  : 'Careful. An upset tells you the rankings were wrong about one of these two teams. It doesn’t tell you which one yet. ')
+        : 'Voters forgive losing to good teams. They don’t forget losing to ' + (rT ? 'a team ranked below you' : 'an unranked team') + '. This one follows ' + US + ' around all year. ';
+    say(ANALYST, upsetTake + (won
       ? (blowout || comfortable ? 'A ' + m + '-point win hides a lot. I’d rather know how they got there than how it felt.' : 'A ' + m + '-point game is a coin flip that landed the right way. I wouldn’t build a whole theory on it. But closing out close games IS a skill, and they’ve got it.')
       : (tight ? 'They were one possession away. If you want to tell me this team is broken, you need more than one afternoon.' : 'I care less about whether it was ugly than whether it was predictable. And ' + (bx0.yardsAgainst !== '' ? 'giving up ' + bx0.yardsAgainst + ' yards wasn’t an accident.' : 'this one was coming.'))) + avgLine);
     if (won) {
@@ -1195,6 +1230,9 @@
         say(INSIDER, 'The name to watch is the ' + (b.stars || 3) + '-star ' + sayPos(b.pos) + from + '.' + stand +
           (b.dealbreaker ? ' With him, everything comes back to ' + b.dealbreaker + '.' : '') +
           (b.hours ? ' They’re putting ' + b.hours + ' hours a week into him, which tells you where he sits.' : ''));
+        if (up) say(INSIDER, up.kind === 'win'
+          ? 'And don’t think that doesn’t travel. A win over ' + THEM_R + ' is on every recruit’s phone by Sunday morning.'
+          : 'And other staffs will bring this one up in living rooms. Count on it.');
         if (board.length > 1) {
           say(INSIDER, 'Behind him there ' + (board.length - 1 === 1 ? 'is one more name' : 'are ' + (board.length - 1) + ' more names') + ' still live on that board, and ' + (committed === 1 ? 'one commitment' : committed + ' commitments') + ' already in the bag.');
         }
@@ -1216,8 +1254,12 @@
     var gp = ctx.prior.length + 1;
     w('--- SEGMENT 6: FINAL TAKE -------------------------------');
     w('');
-    say(HOST, 'Ten seconds each. Where does ' + US + ' finish?');
-    say(PLAYER, won
+    say(HOST, 'Ten seconds each. ' + (rU || rT ? 'Where does ' + US + ' land in the poll?' : 'Where does ' + US + ' finish?'));
+    say(PLAYER, up && up.kind === 'win'
+      ? 'They’re moving up. How far is up to the voters, but after beating ' + THEM_R + ', they’re moving.'
+      : up
+        ? 'They’re falling, and they earned the fall. ' + rec + ' is ' + rec + '.'
+        : won
       ? 'They’re ' + rec + ' and they’re playing angry. I’m not apologizing for enjoying it. Write it down' + (streakAfter && streakAfter.n >= 3 ? ', and this time use a pen.' : '.')
       : 'Until I see somebody get physical in the fourth quarter, I’m out. ' + rec + ' is ' + rec + '.');
     say(ANALYST, gp >= 4
@@ -1237,6 +1279,7 @@
     w('Season/Week: ' + g.season + ' / ' + (g.week || 1));
     w('Result:      ' + (won ? 'WIN' : tied ? 'TIE' : 'LOSS') + ' ' + score + '  (margin ' + m + ')');
     w('Record:      ' + rec);
+    if (rU || rT) w('Rankings:    ' + (rU ? 'No. ' + rU : 'unranked') + ' vs ' + (rT ? 'No. ' + rT : 'unranked') + (up ? '  (UPSET ' + (up.kind === 'win' ? 'WIN' : 'LOSS') + ')' : ''));
     if (ctx.prior.length) w('Earlier:     ' + ctx.prior.map(function (x) { return 'Wk ' + (x.week || '?') + ' ' + x.result + ' ' + int(x.scoreFor, 0, 999) + '-' + int(x.scoreAgainst, 0, 999) + ' ' + (x.home ? 'vs ' : 'at ') + (x.opponent || '?'); }).join('; '));
     nums.forEach(function (n2) { w(n2); });
     if (perf.length) {
@@ -2348,6 +2391,8 @@
       var sub = ['Week ' + (g.week || 1)];
       if (good) sub.push(good + ' stood out');
       if (bad) sub.push(bad + ' struggled');
+      var ups = upsetOf(g);
+      if (ups) sub.push(ups.kind === 'win' ? 'upset win' : 'upset loss');
       if (scriptEdited(g)) sub.push('script edited');
       html += '<div class="item game-row">' +
         '<span class="chip ' + (g.result === 'W' ? 'good' : g.result === 'L' ? 'crit' : 'outline') + '">' + (g.result || 'W') + '</span>' +
@@ -2386,6 +2431,10 @@
         '<div class="field"><label for="g-result">Result</label><select id="g-result">' + options([['W', 'Win'], ['L', 'Loss'], ['T', 'Tie']], g.result, function (x) { return x[1]; }, function (x) { return x[0]; }) + '</select></div>' +
         '<div class="field"><label for="g-sf">Our points</label><input type="number" id="g-sf" value="' + (g.scoreFor === '' ? '' : int(g.scoreFor, 0, 999)) + '" min="0" max="999"></div>' +
         '<div class="field"><label for="g-sa">Their points</label><input type="number" id="g-sa" value="' + (g.scoreAgainst === '' ? '' : int(g.scoreAgainst, 0, 999)) + '" min="0" max="999"></div>' +
+      '</div>' +
+      '<div class="row">' +
+        '<div class="field"><label for="g-rk">Our rank</label><input type="number" inputmode="numeric" id="g-rk" value="' + esc(rankOf(g.rankFor)) + '" min="1" max="25" placeholder="Unranked"></div>' +
+        '<div class="field"><label for="g-rka">Their rank</label><input type="number" inputmode="numeric" id="g-rka" value="' + esc(rankOf(g.rankAgainst)) + '" min="1" max="25" placeholder="Unranked"><div class="help">Top 25 going into the game. Blank is unranked.</div></div>' +
       '</div>' +
 
       '<div class="side-title">Who to talk about</div>' +
@@ -2452,6 +2501,8 @@
     g.result = $('#g-result').value;
     g.scoreFor = int($('#g-sf').value, 0, 999);
     g.scoreAgainst = int($('#g-sa').value, 0, 999);
+    g.rankFor = rankOf($('#g-rk').value);
+    g.rankAgainst = rankOf($('#g-rka').value);
     var ids = {
       rushFor: 'g-rf', rushAgainst: 'g-ra', passFor: 'g-pf', passAgainst: 'g-pa', yardsFor: 'g-yf', yardsAgainst: 'g-ya',
       toFor: 'g-tof', toAgainst: 'g-toa', thirdFor: 'g-3f', thirdForAtt: 'g-3fa', thirdAgainst: 'g-3a', thirdAgainstAtt: 'g-3aa',
@@ -3419,6 +3470,7 @@
       num(g, 'season', 1900, 2999); num(g, 'week', 1, 25); num(g, 'scoreFor', 0, 999); num(g, 'scoreAgainst', 0, 999);
       /* box-score numbers keep a real 0 -- "no turnovers" is not "not typed" */
       BOX.forEach(function (f) { if (f[0] in g) g[f[0]] = blankInt(g[f[0]], f[1], f[2]); });
+      ['rankFor', 'rankAgainst'].forEach(function (k) { if (k in g) g[k] = rankOf(g[k]); });
       if ('performances' in g) {
         g.performances = objs(g.performances);
         g.performances.forEach(function (p) { text(p, ['name', 'pos', 'line']); oneOf(p, 'verdict', ids(VERDICTS), 'standout'); });
@@ -3746,6 +3798,7 @@
     takeSnapshot: takeSnapshot,
     spoken: spoken,
     boxOf: boxOf,
+    upsetOf: upsetOf,
     saveScriptBox: saveScriptBox,
     stories: currentStories,
     rollStorylines: rollStorylines,
