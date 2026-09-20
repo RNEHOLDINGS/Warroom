@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Show rundown test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+/* The show is produced, not just spoken: a rundown up top, the other
+   sideline's mistakes, helmet stickers, calls that get graded next week, a
+   big finish, and a length you can pick. */
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function click(sel) { var el = q(sel); if (!el) { ok(false, 'element ' + sel, 'missing'); return; } el.click(); }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom, V = window.WarRoomVoice;
+  var said = function (s) { return V.parseDialogue(s).map(function (t) { return t.text; }).join('\n'); };
+  var seg = function (s, name) { return (s.split(name)[1] || '').split(/--- (?:SEGMENT|THE BIG|RUNDOWN)/)[0]; };
+  try {
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    st.school = { name: 'Oregon', mascot: 'Ducks', state: 'OR', color: '#154733' };
+    st.quarterLen = 5;
+    st.games = [];
+    st.show = { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true };
+
+    var wk1 = { id: 'w1', season: st.season, week: 1, opponent: 'Utah', home: true, result: 'W', scoreFor: 28, scoreAgainst: 14,
+      rushFor: 120, passFor: 150, rushAgainst: 80, passAgainst: 190, toFor: 1, toAgainst: 2, thirdFor: 5, thirdForAtt: 9, thirdAgainst: 3, thirdAgainstAtt: 12,
+      penAgainst: 9, penAgainstYds: 85, fourthAgainst: 0, fourthAgainstAtt: 2, notes: '',
+      performances: [
+        { name: 'J.Carty', pos: 'QB', line: '13/19, 150 yds, 2 TD', verdict: 'standout' },
+        { name: 'T.Reed', pos: 'WR', line: '6 rec 95 yds 1 TD', verdict: 'standout' },
+        { name: 'L.Clark', pos: 'MIKE', line: '9 tkl, 1 sk, 1 INT', verdict: 'standout' },
+        { name: 'D.Moss', pos: 'HB', line: '12 car 40 yds', verdict: 'struggled' }
+      ] };
+    st.games.push(wk1);
+    var s1 = W.buildScript(wk1);
+
+    /* --- the rundown --- */
+    ok(/--- RUNDOWN/.test(s1), 'the script opens with a rundown');
+    var run = (s1.split('--- RUNDOWN')[1] || '').split('--- COLD OPEN')[0];
+    ok(/1\. /.test(run) && /Helmet stickers/.test(run) && /What Utah gave away/.test(run) && /Calls for next week/.test(run), 'which lists the topics', run);
+    ok(/Here’s the rundown:/.test(said(s1)), 'and the host reads the top of it');
+
+    /* --- the other sideline --- */
+    var other = seg(s1, 'THE OTHER SIDELINE');
+    ok(other.length > 0, 'there is a segment about the other team');
+    ok(/Utah gave the ball away twice/.test(other), 'their giveaways are counted', other);
+    ok(/did what you have to do with a gift: take it/.test(other), 'and a win is credited with taking them');
+    ok(/came up short twice|converted 3 of 12 on third down|could not stay on the field|9 flags/.test(other), 'their other mistakes are in there too', other);
+
+    /* --- helmet stickers --- */
+    var stick = seg(s1, 'HELMET STICKERS');
+    ok(/Offense: /.test(stick) && /Defense: /.test(stick), 'stickers go to offense and defense', stick);
+    ok(/Unsung: /.test(stick), 'and one to the unsung unit');
+    ok(/J\. Carty|T\. Reed/.test(stick) && /L\. Clark/.test(stick), 'named from the game’s own players', stick);
+
+    /* --- calls --- */
+    ok(/Calls for next week, on the record/.test(said(s1)), 'the show ends with calls');
+    var calls1 = W.callsFor(wk1, 'Oregon');
+    ok(calls1.analyst.text && calls1.player.text && calls1.analyst.text !== calls1.player.text, 'each of them makes one', JSON.stringify(calls1.analyst.text));
+    ok(W.callsFor(wk1, 'Oregon').analyst.text === calls1.analyst.text, 'and the same game always produces the same call');
+    ok(!/Before anything else, the ledger/.test(s1), 'nothing is graded after the first game');
+
+    /* --- next week grades them --- */
+    var wk2 = { id: 'w2', season: st.season, week: 2, opponent: 'Washington', home: false, result: 'L', scoreFor: 17, scoreAgainst: 31,
+      rushFor: 40, passFor: 210, rushAgainst: 160, passAgainst: 200, toFor: 3, toAgainst: 0, thirdFor: 3, thirdForAtt: 12, notes: '',
+      performances: [
+        { name: 'J.Carty', pos: 'QB', line: '18/33, 210 yds, 1 TD, 3 INT', verdict: 'struggled' },
+        { name: 'T.Reed', pos: 'WR', line: '7 rec 105 yds', verdict: 'standout' },
+        { name: 'L.Clark', pos: 'MIKE', line: '11 tkl', verdict: 'solid' }
+      ] };
+    st.games.push(wk2);
+    var s2 = W.buildScript(wk2);
+    ok(/Before anything else, the ledger/.test(said(s2)), 'the next show opens with the ledger');
+    ok(/Right\.|Wrong\./.test(said(s2)), 'and grades what was said', (said(s2).match(/the ledger.{0,220}/) || [''])[0]);
+    var graded = W.gradeCalls(wk1, wk2, 'Oregon');
+    ok(graded.player.hit === false, 'a "they win again" call after a loss is wrong', JSON.stringify(graded.player));
+    ok(/On the season, Kelsey is \d+ and \d+, Terrance is \d+ and \d+/.test(said(s2)), 'and keeps a season record', (said(s2).match(/On the season.{0,60}/) || [''])[0]);
+    var rec = W.callRecord(wk2);
+    ok(rec.analyst.w + rec.analyst.l + rec.player.w + rec.player.l > 0, 'the record counts real results', JSON.stringify(rec));
+
+    /* --- a team that gave nothing away --- */
+    var clean = W.buildScript({ id: 'cl', season: st.season, week: 3, opponent: 'Idaho', home: true, result: 'L', scoreFor: 10, scoreAgainst: 20, toAgainst: 0, toFor: 1, performances: [], notes: '' });
+    ok(/didn’t turn it over once/.test(seg(clean, 'THE OTHER SIDELINE')) && /had to go win it outright/.test(clean), 'a clean opponent is credited, not invented mistakes', seg(clean, 'THE OTHER SIDELINE'));
+
+    /* --- season roles --- */
+    var wk3 = { id: 'w3', season: st.season, week: 4, opponent: 'USC', home: true, result: 'W', scoreFor: 24, scoreAgainst: 20,
+      rushFor: 90, passFor: 175, notes: '', performances: [
+        { name: 'J.Carty', pos: 'QB', line: '15/22, 175 yds, 2 TD', verdict: 'standout' },
+        { name: 'T.Reed', pos: 'WR', line: '5 rec 80 yds 1 TD', verdict: 'standout' },
+        { name: 'D.Moss', pos: 'HB', line: '10 car 30 yds', verdict: 'struggled' }
+      ] };
+    st.games.push(wk3);
+    var sp = W.seasonPlayers(wk3);
+    var carty = sp.byKey['j.carty'];
+    ok(carty && carty.games === 3 && carty.t.passTd === 5 && carty.t.ints === 3, 'a player’s season totals add up across games', JSON.stringify(carty && carty.t));
+    ok(W.roleOf(carty, sp) === 'the engine of this offense', 'and the touchdown leader is named the engine', W.roleOf(carty, sp));
+    ok(/5 touchdown passes in three games against 3 interceptions/.test(W.seasonLine(carty)), 'with a season line to say out loud', W.seasonLine(carty));
+    ok(W.roleOf(sp.byKey['t.reed'], sp) === 'the number one target', 'the receiving leader is the number one target', W.roleOf(sp.byKey['t.reed'], sp));
+    var s3 = said(W.buildScript(wk3));
+    ok(/the engine of this offense/.test(s3) && /touchdown passes in three games/.test(s3), 'and the panel uses it while talking about this week', (s3.match(/.{0,80}engine of this offense.{0,80}/) || [''])[0]);
+    ok(/This is the workhorse|For the season he’s at|One bad afternoon doesn’t change that/.test(s3) || !/D\. Moss/.test(s3), 'a struggling regular gets his season record brought up too', (s3.match(/.{0,120}Moss.{0,120}/) || [''])[0]);
+
+    /* --- the big finish --- */
+    ok(/--- THE BIG FINISH/.test(s3 + W.buildScript(wk3)), 'there is a big finish');
+    var bigf = (W.buildScript(wk3).split('--- THE BIG FINISH')[1] || '');
+    var bfHost = (bigf.match(/^WHITCOMB: .+\?$/gm) || []);
+    ok(bfHost.length >= 5, 'with at least five quick questions', bfHost.length + '');
+    ok((bigf.match(/^(MABRY|HARLAN): .+$/gm) || []).every(function (l) { return l.split(' ').length <= 8; }), 'and short answers', bigf);
+
+    /* --- length --- */
+    W.setView('show');
+    click('[data-action="script"][data-id="w1"]');
+    ok(!!q('#showlen') && q('#showlen').value === 'standard', 'the script dialog has a length control, on standard');
+    var full = q('#scriptBox').value;
+    q('#showlen').value = 'quick';
+    q('#showlen').dispatchEvent(new Event('change', { bubbles: true }));
+    var short = q('#scriptBox').value;
+    ok(W.state().show.length === 'quick', 'picking quick hit saves it');
+    ok(short.length < full.length * 0.75, 'a quick hit is much shorter', short.length + ' vs ' + full.length);
+    ok(!/THE QUESTION|STOCK UP|HOT SEAT|THE INSIDER/.test(short), 'it drops the long segments', short.slice(0, 400));
+    ok(/THE NUMBERS/.test(short) && /HELMET STICKERS/.test(short) && /THE OTHER SIDELINE/.test(short) && /Calls for next week/.test(short), 'and keeps the numbers, the stickers, the other sideline and the calls');
+    q('#showlen').value = 'full';
+    q('#showlen').dispatchEvent(new Event('change', { bubbles: true }));
+    var long = q('#scriptBox').value;
+    ok(long.length > full.length, 'a full show is longer than standard', long.length + ' vs ' + full.length);
+    ok(/SEGMENT 1: THE QUESTION/.test(long) && /SEGMENT \d: THE INSIDER/.test(long), 'segments stay numbered in order', (long.match(/--- SEGMENT \d+: [A-Z ]+/g) || []).join(' | '));
+    q('#showlen').value = 'standard';
+    q('#showlen').dispatchEvent(new Event('change', { bubbles: true }));
+    click('[data-action="close"]');
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

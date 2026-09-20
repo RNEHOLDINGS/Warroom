@@ -64,7 +64,7 @@ if (CORRUPT) {
     var snaps = W.snapshots();
     ok(snaps.length === 1 && snaps[0].why === 'Before the app updated', 'the first open of a new build copies the data first', JSON.stringify(snaps.map(function (x) { return x.why; })));
     ok(snaps[0] && snaps[0].counts.players === 2 && snaps[0].counts.games === 1, 'the copy knows what it holds');
-    ok(localStorage.getItem('warroom.build') === 'warroom-v18', 'and the build is recorded, so it is not copied again on every open', localStorage.getItem('warroom.build'));
+    ok(localStorage.getItem('warroom.build') === 'warroom-v19', 'and the build is recorded, so it is not copied again on every open', localStorage.getItem('warroom.build'));
 
     /* --- a save that would empty the program --- */
     st.players = []; st.recruits = []; st.games = [];

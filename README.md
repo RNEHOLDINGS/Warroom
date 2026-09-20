@@ -137,6 +137,44 @@ that mattered most get argued, and the rest stay in the table.
 "Unbelievable."), and the team is called by its name and mascot, not "they"
 while the opponent gets named every time.
 
+**It is produced like a real show.** The shows this is modelled on run on
+rituals, not on better arguing -- PTI puts the topics on screen before anybody
+speaks and finishes with a rapid-fire round, and College GameDay's headgear
+pick only matters because somebody keeps the record (Lee Corso finished
+286-144). So:
+
+- **A rundown** opens the script: the topics, numbered, the way they appear on
+  screen, and the host reads the top three.
+- **The other sideline** is its own segment. Every result has two halves, and
+  this is the other one: what the opponent gave away (giveaways, flags, failed
+  fourth downs, third downs they could not convert) and whether it was
+  punished. Win off two turnovers and they say so. Get handed two and lose by
+  four and they say that instead. An opponent who made no mistakes gets
+  credited for it rather than having mistakes invented.
+- **Helmet stickers**: offense, defense, special teams and an unsung one, with
+  a reason each. Units get them when a unit earned it -- the offensive line,
+  the third-down defense, ball security.
+- **Calls, and a record.** Each of them ends with one falsifiable call about
+  next week. The next show opens with the ledger: what they said, right or
+  wrong, and the season record. Nothing is stored for it -- a call is derived
+  from the game it was made about, so the same game always produces the same
+  call and next week can grade it.
+- **The big finish**: five to seven questions in the last thirty seconds,
+  answers of a few words, all of them from this game.
+- **Show length**, next to the energy slider: **Quick hit** (the result, the
+  numbers, the other sideline, stickers and the calls, about ninety seconds),
+  **Standard**, or **Full show** (more players, more numbers, a longer
+  finish). Segments renumber themselves to match.
+
+**Players have season-long roles.** Every performance you log builds a profile:
+the touchdown leader becomes "the engine of this offense", the back with the
+carries is "the workhorse", the receiving leader is "the number one target",
+and the panel says so while talking about this week ("For the season, he's the
+engine of this offense with 5 touchdown passes in three games"). A role has to
+be earned -- leading the team in something with too little behind it does not
+count, and the bar scales with quarter length. A regular having a bad day gets
+his season record brought up in his defence.
+
 **Stat lines are graded, not just hyped.** The panel reads each player's line
 (yards, touchdowns, interceptions, carries, catches, tackles, sacks, field
 goals, in shorthand or words) and sizes the reaction to it:
@@ -502,6 +540,9 @@ These suites are all driven through real DOM clicks with hit testing:
 - `casttest.html` — chairs that match their voices, contractions, the team's
   own name, and the season memory: streaks, callbacks, player history,
   averages, and that a later week is never mentioned.
+- `showruntest.html` — the rundown, the other sideline, helmet stickers,
+  calls and the ledger that grades them, season roles, the big finish, and
+  the three show lengths.
 - `gradetest.html` — reading stat lines, grading them for the quarter length,
   the size of the reaction, teammate credit and when "no help" is allowed,
   hot-seat defenses, scaled team stats, the energy slider and quarter length.
