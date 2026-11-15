@@ -118,28 +118,32 @@
     var lbRow = W.needs().rows.filter(function (r) { return r.group.id === 'LB'; })[0];
     ok(lbRow.on === lbRow.returning + lbRow.leaving, 'LB on = returning + leaving');
 
-    /* a refused Add must not leave a nameless player behind to be counted */
+    /* a cancelled Add must still leave nobody behind, but a blank name is
+       now a depth player rather than a refusal */
     var before2 = W.state().players.length, open2 = W.needs().totals.open;
     click('[data-action="add-player"]');
+    click('[data-action="close"]');
+    ok(W.state().players.length === before2, 'a cancelled Add adds nobody', W.state().players.length - before2);
+    click('[data-action="add-player"]');
     click('[data-action="save-player"]');
-    ok(!document.getElementById('modal').hidden && W.state().players.length === before2, 'Add with no name is refused and adds nobody', W.state().players.length - before2);
+    ok(document.getElementById('modal').hidden && W.state().players.length === before2 + 1, 'Add with no name files him as depth', W.state().players.length - before2);
+    ok(!W.state().players[W.state().players.length - 1].name, 'and he has no name');
+    click('[data-action="add-player"]');
     document.getElementById('p-name').value = 'Second Try';
     document.getElementById('p-year').value = 'SO';
     click('[data-action="save-player"]');
-    ok(W.state().players.length === before2 + 1, 'the retry adds exactly one player', W.state().players.length - before2);
-    ok(W.needs().totals.open === open2 - 1, 'and the count moves by one', open2 + ' -> ' + W.needs().totals.open);
-    ok(W.state().players.every(function (p) { return !!p.name; }), 'no nameless player on the roster');
+    ok(W.state().players.length === before2 + 2, 'a named one adds exactly one more', W.state().players.length - before2);
+    ok(W.needs().totals.open === open2 - 2, 'and the count moves by two', open2 + ' -> ' + W.needs().totals.open);
+    ok(W.state().players.filter(function (p) { return !p.name; }).length === 1, 'one player on the roster has no name');
 
-    /* nor may a refused edit survive Cancel */
+    /* nor may a cancelled edit survive Cancel */
     var st2x = W.state().players.filter(function (p) { return p.name === 'Second Try'; })[0];
     click('[data-action="edit-player"][data-id="' + st2x.id + '"]');
-    document.getElementById('p-name').value = '';
     document.getElementById('p-ovr').value = '99';
-    click('[data-action="save-player"]');
     click('[data-action="close"]');
     click('[data-action="add-player"]'); document.getElementById('p-name').value = 'Nudge'; click('[data-action="save-player"]');
     var kept = JSON.parse(localStorage.getItem('warroom.v1')).players.filter(function (p) { return p.id === st2x.id; })[0];
-    ok(kept.name === 'Second Try' && kept.ovr !== 99, 'Cancel after a refused save changes nothing', JSON.stringify({ n: kept.name, o: kept.ovr }));
+    ok(kept.name === 'Second Try' && kept.ovr !== 99, 'Cancel after an edit changes nothing', JSON.stringify({ n: kept.name, o: kept.ovr }));
 
     /* a drag that ends outside the dialog must not close it; a press on the backdrop does */
     click('[data-action="add-player"]');

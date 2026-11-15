@@ -662,3 +662,38 @@ table.plain td.num, table.plain th.num { text-align: right; }
 .hype-row input[type="range"] { flex: 0 1 160px; accent-color: var(--team, #2a78d6); }
 .hype-name { font-size: var(--t-small); color: var(--ink-muted); }
 .hype-name b { color: var(--ink); font-weight: 600; margin-right: 4px; }
+
+/* depth: the players nobody names, as four numbers */
+.depth-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 10px; border-top: 1px dashed var(--grid);
+}
+.depth-row .who { display: flex; flex-direction: column; min-width: 0; flex: 1 1 120px; }
+.depth-row .who b { font-size: var(--t-small); color: var(--ink); }
+.depth-row .who span { font-size: var(--t-small); color: var(--ink-muted); }
+.depth-years { display: flex; align-items: center; gap: 6px; margin-left: auto; max-width: 100%; overflow-x: auto; padding-bottom: 2px; }
+.depth-cell {
+  display: inline-flex; align-items: center; flex: 0 0 auto; height: 30px; padding: 0;
+  border: 1px solid var(--grid); border-radius: 8px; overflow: hidden;
+}
+.depth-cell.empty { opacity: .6; }
+.depth-cell .step {
+  width: 28px; height: 30px; border: 0; background: var(--wash);
+  color: var(--ink); font-size: 15px; line-height: 1; cursor: pointer;
+}
+.depth-cell .step:hover:not(:disabled) { background: var(--team); color: var(--team-ink); }
+.depth-cell .step:disabled { opacity: .35; cursor: default; }
+.depth-n {
+  display: flex; align-items: baseline; gap: 4px; justify-content: center;
+  min-width: 46px; height: 30px; padding: 0 6px; border: 0; cursor: pointer;
+  background: transparent; color: var(--ink-muted); font-size: var(--t-small);
+}
+.depth-n b { font-family: var(--font-num); color: var(--ink); font-size: 14px; }
+.depth-n:disabled { cursor: default; }
+.depth-n:hover:not(:disabled) b { color: var(--team); }
+@media (max-width: 560px) {
+  .depth-years { width: 100%; margin-left: 0; justify-content: space-between; gap: 3px; }
+  .depth-cell .step { width: 20px; font-size: 13px; }
+  .depth-n { min-width: 26px; padding: 0 1px; gap: 2px; font-size: 11px; }
+  .depth-n b { font-size: 12px; }
+}

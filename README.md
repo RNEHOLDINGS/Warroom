@@ -328,6 +328,38 @@ How it works, and why:
 thing it cannot check is Google itself: until it is run with a real key, the
 audio quality and the exact reply format are untested.
 
+## Name the ones worth naming
+
+A panel show never says a backup's name, and neither should you have to type
+one. **A player with no name is depth**: he counts against the 85, fills a
+spot at his position, ages a year every season and graduates on time. He is an
+ordinary player record with a blank name, so the count, the rollover and the
+class never knew the difference.
+
+The Roster shows every position, whether or not anybody is in it. Named
+players are listed; under them a **Depth** row carries four numbers, one per
+class, with a minus and a plus:
+
+```
+Wide Receiver                       8 · 6 back of 11        NEED 5
+  T.Reed            SO · Impact                                  84
+  Depth   7 with no name — tap a number to name one
+          − FR 2 +    − SO 3 +    − JR 1 +    − SR 1 +
+```
+
+- **Plus** adds a body at that position and class. **Minus** takes one away,
+  and takes one already marked as leaving first, so it never deletes somebody
+  who was still counting.
+- **Tap the number** to open one of them. Give him a name and he becomes a
+  normal player — which is what you do the week he does something worth
+  talking about on the show. Clear a name and he goes back into the count.
+- **Add player** no longer needs a name either; leave it blank and he is filed
+  as depth.
+- The Show's player suggestions and the Portal tick-list only offer players
+  with names. Depth losses come off with the minus button.
+- A signed recruit nobody named enrols as depth at his position rather than as
+  a man called "WR signee". The class history still files him under that name.
+
 ## Holding a spot
 
 Most of what sits on a recruiting board is "I am chasing somebody here" long
@@ -540,6 +572,9 @@ These suites are all driven through real DOM clicks with hit testing:
 - `casttest.html` — chairs that match their voices, contractions, the team's
   own name, and the season memory: streaks, callbacks, player history,
   averages, and that a later week is never mentioned.
+- `depthtest.html` — counting bodies in and out, naming one and unnaming him,
+  the scholarship count, the season rollover, and that only named players
+  reach the show and the portal list.
 - `showruntest.html` — the rundown, the other sideline, helmet stickers,
   calls and the ledger that grades them, season roles, the big finish, and
   the three show lengths.

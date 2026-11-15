@@ -111,6 +111,21 @@
   function nextYear(y) { var i = YEARS.indexOf(y); return i < 0 ? 'FR' : YEARS[Math.min(i + 1, 3)]; }
   function isSenior(p) { return p.year === 'SR'; }
   function isLeaving(p) { return isSenior(p) || !!p.exit; }
+  /* A player with no name is depth. He counts against the 85 and fills a
+     spot at his position, and that is all anyone needs from him -- a panel
+     show never says a backup's name either. Give him one the week he does
+     something, and he becomes a player like any other.
+
+     He is an ordinary record with a blank name, so the count, the season
+     rollover and the class all keep working untouched; only the roster
+     screen collapses them into a number. */
+  function isDepth(p) { return !String(p.name || '').trim(); }
+  function namedPlayers() { return state.players.filter(function (p) { return !isDepth(p); }); }
+  function depthAt(groupId, year) {
+    return state.players.filter(function (p) {
+      return isDepth(p) && groupOf(p.pos) === groupId && (!year || p.year === year);
+    });
+  }
   function exitLabel(p) {
     if (p.exit === 'draft') return 'Draft';
     if (p.exit === 'portal') return 'Portal';
@@ -236,7 +251,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v19';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v20';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -2915,6 +2930,22 @@
     '</button>';
   }
 
+  /* The bodies without names, as four numbers. Tapping the number itself
+     opens one of them, which is how a depth player gets a name. */
+  function depthRow(g, list) {
+    var cells = YEARS.map(function (y) {
+      var count = list.filter(function (p) { return p.year === y; }).length;
+      return '<span class="depth-cell' + (count ? '' : ' empty') + '">' +
+        '<button class="step" data-action="depth-less" data-group="' + g.id + '" data-year="' + y + '"' + (count ? '' : ' disabled') + ' aria-label="One fewer unnamed ' + y + ' at ' + esc(g.name) + '">−</button>' +
+        '<button class="depth-n" data-action="depth-name" data-group="' + g.id + '" data-year="' + y + '"' + (count ? '' : ' disabled') + ' aria-label="' + count + ' unnamed ' + y + ' at ' + esc(g.name) + ', give one a name">' + y + '<b>' + count + '</b></button>' +
+        '<button class="step" data-action="depth-more" data-group="' + g.id + '" data-year="' + y + '" aria-label="One more unnamed ' + y + ' at ' + esc(g.name) + '">+</button>' +
+      '</span>';
+    }).join('');
+    return '<div class="depth-row"><span class="who"><b>Depth</b><span>' +
+      (list.length ? list.length + ' with no name — tap a number to name one' : 'count the bodies you never talk about') +
+      '</span></span><span class="depth-years">' + cells + '</span></div>';
+  }
+
   function renderRoster() {
     var n = computeNeeds();
     var f = filters.roster;
@@ -2927,7 +2958,9 @@
 
     var html = '<div class="view-head"><h1>Roster</h1>' +
       '<div class="actions"><button class="btn" data-action="scan-roster">' + icon('camera') + 'Screenshot</button><button class="btn" data-action="paste-players">' + icon('paste') + 'Paste</button><button class="btn primary" data-action="add-player">' + icon('plus') + 'Add player</button></div>' +
-      '<p class="sub">' + state.players.length + ' of ' + state.cap + ' scholarships used. Tap a player to change their year, rating, or whether they are leaving.</p></div>';
+      '<p class="sub">' + state.players.length + ' of ' + state.cap + ' scholarships used' +
+        (state.players.length ? ' · ' + namedPlayers().length + ' named, ' + (state.players.length - namedPlayers().length) + ' depth' : '') +
+        '. Name the players you care about; count the rest.</p></div>';
 
     html += '<div class="filters">' +
       '<select data-filter="roster.group"><option value="">All positions</option>' + options(allGroups, f.group, function (g) { return g.name; }, function (g) { return g.id; }) + '</select>' +
@@ -2935,19 +2968,25 @@
     '</div>';
 
     if (!state.players.length) {
-      html += '<div class="card"><div class="empty"><b>No players yet</b>Add them one at a time, or paste the whole depth chart in one go.</div></div>';
-      return html;
+      html += '<div class="card"><div class="empty"><b>No players yet</b>Add the ones worth naming, count the rest with the plus buttons below, or paste the whole depth chart in one go.</div></div>';
     }
     html += '<div class="card">';
     var any = false;
+    /* With no filter on, every position shows even when it is empty: that is
+       where the count for the bodies you never name gets typed in. */
+    var showEmpty = f.show === 'all';
     groupsToShow.forEach(function (g) {
       var ps = list.filter(function (p) { return groupOf(p.pos) === g.id; }).sort(byOvr);
-      if (!ps.length) return;
+      var named = ps.filter(function (p) { return !isDepth(p); });
+      var depth = ps.filter(isDepth);
+      if (!ps.length && !showEmpty) return;
       any = true;
       var row = null;
       n.rows.forEach(function (r) { if (r.group.id === g.id) row = r; });
       html += '<div class="group-block"><div class="group-head"><h3>' + esc(g.name) + '</h3><span class="count">' + ps.length + (row ? ' · ' + row.returning + ' back of ' + row.target : '') + '</span>' + (row ? '<span class="need-chip">' + needChip(row.need) + '</span>' : '<span class="need-chip chip outline">Set a position</span>') + '</div><div class="list">';
-      ps.forEach(function (p) { html += playerRow(p); });
+      named.forEach(function (p) { html += playerRow(p); });
+      if (showEmpty && g.id !== 'ATH') html += depthRow(g, depth);
+      else depth.forEach(function (p) { html += playerRow(p); });
       html += '</div></div>';
     });
     if (!any) html += '<div class="empty">Nobody matches that filter.</div>';
@@ -3018,7 +3057,7 @@
     }
     var body = '';
     GROUPS.concat([ATH_GROUP]).forEach(function (g) {
-      var ps = state.players.filter(function (p) { return groupOf(p.pos) === g.id; }).sort(byOvr);
+      var ps = state.players.filter(function (p) { return groupOf(p.pos) === g.id && !isDepth(p); }).sort(byOvr);
       if (!ps.length) return;
       body += '<div class="pick-group"><div class="pick-head">' + esc(g.name) + '</div>';
       ps.forEach(function (p) {
@@ -3216,7 +3255,7 @@
     while (perf.length < 3) perf.push({ name: '', pos: '', line: '', verdict: 'standout' });
     var bx = boxOf(g);
 
-    var rosterNames = state.players.slice().sort(byOvr).map(function (p) { return p.name; });
+    var rosterNames = namedPlayers().sort(byOvr).map(function (p) { return p.name; });
 
     openModal('<h2>' + (isNew ? 'Add a game' : 'Edit the game') + '</h2>' +
       '<div class="row">' +
@@ -3648,8 +3687,10 @@
   function playerModal(p) {
     var isNew = !p;
     p = p || { name: '', pos: 'QB', year: 'FR', rs: false, redshirtNow: false, ovr: '', dev: 'Normal', exit: '', note: '' };
-    openModal('<h2>' + (isNew ? 'Add player' : 'Edit player') + '</h2>' +
-      '<div class="field"><label for="p-name">Name</label><input type="text" id="p-name" value="' + esc(p.name) + '" placeholder="Arch Manning"></div>' +
+    openModal('<h2>' + (isNew ? 'Add player' : isDepth(p) ? 'Name this player' : 'Edit player') + '</h2>' +
+      '<div class="field"><label for="p-name">Name <span style="font-weight:400;color:var(--ink-muted)">— optional</span></label>' +
+        '<input type="text" id="p-name" value="' + esc(p.name) + '" placeholder="Leave blank to keep him as depth">' +
+        '<div class="help">' + (isNew ? 'No name means he counts at his position and never gets talked about.' : 'Clear the name to put him back in the depth count.') + '</div></div>' +
       '<div class="row">' +
         '<div class="field"><label for="p-pos">Position</label>' + posSelect('p-pos', p.pos) + '</div>' +
         '<div class="field"><label for="p-year">Year</label><select id="p-year">' + options(YEARS, p.year) + '</select></div>' +
@@ -4169,7 +4210,9 @@
     });
     incoming.forEach(function (r) {
       state.players.push({
-        id: uid(), name: signee(r), pos: r.pos,
+        /* a signee nobody named is depth, not a man called "WR signee" --
+           the class history still files him under that name */
+        id: uid(), name: r.name || '', pos: r.pos,
         year: r.type === 'portal' ? (r.year || 'SO') : 'FR',
         rs: r.type === 'portal' ? !!r.rs : false,
         redshirtNow: false,
@@ -4393,13 +4436,28 @@
         if (p) playerModal(p);
         break;
       case 'save-player':
-        /* Checked before the form is read. Reading it first pushed a nameless
-           player on every refused Add -- saved, and counted against the cap,
-           with the next change -- and left a refused edit applied after
-           Cancel. */
-        if (!$('#p-name').value.trim()) { $('#p-name').focus(); return; }
+        /* No name needed: a blank one is depth. The form is still only read
+           on save, which is what keeps a cancelled Add from pushing a body
+           and a cancelled edit from applying. */
         readPlayerForm(id);
         save(); closeModal(); render(); break;
+      case 'depth-more':
+        state.players.push({
+          id: uid(), name: '', pos: t.getAttribute('data-group'), year: t.getAttribute('data-year'),
+          rs: false, redshirtNow: false, ovr: 0, dev: 'Normal', exit: '', note: ''
+        });
+        save(); render(); break;
+      case 'depth-less':
+        /* take the one already on his way out first, so the minus button
+           never deletes a body that was still counting */
+        var pool = depthAt(t.getAttribute('data-group'), t.getAttribute('data-year'));
+        var drop = pool.filter(isLeaving)[0] || pool[pool.length - 1];
+        if (drop) { state.players = state.players.filter(function (x) { return x !== drop; }); save(); render(); }
+        break;
+      case 'depth-name':
+        var one = depthAt(t.getAttribute('data-group'), t.getAttribute('data-year'))[0];
+        if (one) playerModal(one);
+        break;
       case 'delete-player':
         state.players = state.players.filter(function (x) { return x.id !== id; });
         save(); closeModal(); render(); toast('Removed.'); break;
@@ -4637,6 +4695,7 @@
   window.WarRoom = {
     state: function () { return state; },
     needs: computeNeeds,
+    groupOf: groupOf,
     parsePlayerLine: parsePlayerLine,
     parseRecruitLine: parseRecruitLine,
     render: render,
@@ -4652,6 +4711,8 @@
     takeSnapshot: takeSnapshot,
     spoken: spoken,
     boxOf: boxOf,
+    isDepth: isDepth,
+    namedPlayers: namedPlayers,
     gradeLine: gradeLine,
     statsOf: statsOf,
     teamContext: teamContext,

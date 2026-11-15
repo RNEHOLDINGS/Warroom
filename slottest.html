@@ -123,9 +123,11 @@
     var enrolLine = document.querySelectorAll('#modal .item .who span')[1].textContent;
     ok(enrolLine.indexOf(pos + ' spot') >= 0 && !/(^, |, ,|, $)/.test(enrolLine), 'the advance dialog names a held spot instead of a blank', enrolLine);
     click('[data-action="do-advance"]');
-    var enrolled = W.state().players.filter(function (p) { return p.name === pos + ' signee'; })[0];
-    ok(!!enrolled, 'it enrols with a usable name rather than a blank', pos + ' signee');
-    ok(W.state().players.every(function (p) { return !!p.name; }), 'no player on the roster is nameless');
+    var enrolled = W.state().players.filter(function (p) { return !p.name && p.pos === pos && p.year === 'FR'; })[0];
+    ok(!!enrolled, 'a signee nobody named enrols as depth at his position', pos + ' FR');
+    ok(!W.state().players.some(function (p) { return p.name === pos + ' signee'; }), 'nobody on the roster is called "' + pos + ' signee"');
+    var grp = W.needs().rows.filter(function (r) { return r.group.id === W.groupOf(pos); })[0];
+    ok(grp && grp.returning >= 1, 'and he counts at his position like anyone else', grp && grp.returning);
     var filedClass = W.state().history[W.state().history.length - 1].commits;
     ok(filedClass.every(function (c) { return !!c.name; }) && filedClass.some(function (c) { return c.name === pos + ' signee'; }),
       'and the past class files him by that name too', JSON.stringify(filedClass.map(function (c) { return c.name; })));

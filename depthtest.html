@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Depth test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+/* You name the players worth talking about and count the rest. A nameless
+   player still takes a scholarship, still ages, and can be given a name the
+   week he does something. */
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function qq(s) { return document.querySelectorAll(s); }
+  function hits(el) {
+    el.scrollIntoView({ block: 'center' });
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return 'zero-size';
+    var t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!t) return 'nothing at point';
+    return (t === el || el.contains(t)) ? true : 'covered by ' + t.tagName.toLowerCase();
+  }
+  function click(sel) { var el = q(sel); if (!el) { ok(false, 'element ' + sel, 'missing'); return null; } el.click(); return el; }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom;
+  var depthOf = function (g, y) { return W.state().players.filter(function (p) { return !p.name && W.groupOf(p.pos) === g && (!y || p.year === y); }).length; };
+  var plus = function (g, y) { return '[data-action="depth-more"][data-group="' + g + '"][data-year="' + y + '"]'; };
+  var minus = function (g, y) { return '[data-action="depth-less"][data-group="' + g + '"][data-year="' + y + '"]'; };
+  var nameBtn = function (g, y) { return '[data-action="depth-name"][data-group="' + g + '"][data-year="' + y + '"]'; };
+  try {
+    W.state().school = { name: 'Oregon', mascot: 'Ducks', state: 'OR', color: '#154733' };
+    W.setView('roster');
+
+    /* --- every position is there to count into, even empty --- */
+    ok(qq('.depth-row').length >= 12, 'every position has a depth row, even with an empty roster', qq('.depth-row').length);
+    ok(!!q(plus('WR', 'FR')), 'with a plus button per class');
+    ok(hits(q(plus('WR', 'FR'))) === true, 'and it is clickable', hits(q(plus('WR', 'FR'))));
+    ok(q(minus('WR', 'FR')).disabled && q(nameBtn('WR', 'FR')).disabled, 'minus and name are dead until there is somebody');
+
+    /* --- counting bodies in --- */
+    click(plus('WR', 'FR')); click(plus('WR', 'FR')); click(plus('WR', 'SO'));
+    click(plus('OL', 'SR')); click(plus('OL', 'JR'));
+    ok(depthOf('WR') === 3 && depthOf('WR', 'FR') === 2, 'the plus button adds a nameless player at that position and class', depthOf('WR') + ' / ' + depthOf('WR', 'FR'));
+    ok(W.state().players.length === 5, 'each one is a real player, so each one takes a scholarship', W.state().players.length);
+    /* four of the five count as returning -- the OL senior is already on his way out */
+    ok(W.needs().totals.open === W.state().cap - 4, 'and the open count moves with them', W.needs().totals.open);
+    var wrRow = W.needs().rows.filter(function (r) { return r.group.id === 'WR'; })[0];
+    ok(wrRow.returning === 3, 'they count at their own position', wrRow.returning);
+    ok(/FR.*2/.test(q(nameBtn('WR', 'FR')).textContent), 'the number on screen matches', q(nameBtn('WR', 'FR')).textContent);
+    ok(!/Unnamed/.test(q('#view').textContent), 'nobody is listed as "Unnamed"');
+    ok(/3 with no name/.test(q('#view').textContent), 'the row says how many have no name');
+
+    /* --- and back out --- */
+    click(minus('WR', 'SO'));
+    ok(depthOf('WR') === 2 && depthOf('WR', 'SO') === 0, 'the minus button takes one away', depthOf('WR'));
+
+    /* --- naming one, the week he does something --- */
+    click(nameBtn('WR', 'FR'));
+    ok(/Name this player/.test(q('#modal h2').textContent), 'tapping the number opens one of them', q('#modal h2').textContent);
+    ok(q('#p-pos').value === 'WR' && q('#p-year').value === 'FR', 'with his position and class already right', q('#p-pos').value + ' ' + q('#p-year').value);
+    q('#p-name').value = 'Breakout Kid';
+    q('#p-ovr').value = '78';
+    click('[data-action="save-player"]');
+    ok(depthOf('WR', 'FR') === 1, 'naming him takes him out of the depth count', depthOf('WR', 'FR'));
+    ok(W.state().players.length === 4, 'without changing the scholarship count', W.state().players.length);
+    ok(/Breakout Kid/.test(q('#view').textContent), 'and he is listed by name now');
+
+    /* --- a named player can go back to being depth --- */
+    var kid = W.state().players.filter(function (p) { return p.name === 'Breakout Kid'; })[0];
+    click('[data-action="edit-player"][data-id="' + kid.id + '"]');
+    q('#p-name').value = '  ';
+    click('[data-action="save-player"]');
+    ok(depthOf('WR', 'FR') === 2 && !/Breakout Kid/.test(q('#view').textContent), 'clearing the name puts him back in the count', depthOf('WR', 'FR'));
+
+    /* --- Add player with no name is depth too --- */
+    click('[data-action="add-player"]');
+    q('#p-pos').value = 'CB'; q('#p-year').value = 'JR';
+    click('[data-action="save-player"]');
+    ok(q('#modal').hidden, 'Add player takes a blank name now');
+    ok(depthOf('CB', 'JR') === 1, 'and files him as depth', depthOf('CB', 'JR'));
+
+    /* --- the season rolls them over like anyone else --- */
+    var srBefore = depthOf('OL', 'SR'), jrBefore = depthOf('OL', 'JR');
+    ok(srBefore === 1 && jrBefore === 1, 'an OL senior and junior to roll', srBefore + '/' + jrBefore);
+    click('[data-view="class"]');
+    click('[data-action="advance"]');
+    click('[data-action="do-advance"]');
+    ok(depthOf('OL', 'SR') === 1 && depthOf('OL', 'JR') === 0, 'the junior became a senior and the senior graduated', depthOf('OL', 'SR') + '/' + depthOf('OL', 'JR'));
+    ok(W.state().players.length === 4, 'one body left, the rest stayed', W.state().players.length);
+
+    /* --- the show only knows the named ones --- */
+    W.state().players.push({ id: 'named1', name: 'Real Player', pos: 'QB', year: 'JR', ovr: 88, dev: 'Star', exit: '' });
+    W.setView('show');
+    click('[data-action="add-game"]');
+    var names = Array.prototype.map.call(qq('#rosterNames option'), function (o) { return o.value; });
+    ok(names.length === 1 && names[0] === 'Real Player', 'the game form suggests only players with names', JSON.stringify(names));
+    click('[data-action="close"]');
+
+    /* --- the portal list is for people with names --- */
+    W.setView('portal');
+    var pick = q('[data-action="portal-picker"]') || q('[data-action="pick-portal"]');
+    if (pick) {
+      pick.click();
+      var rows = qq('#modal .pick-row');
+      ok(rows.length === 1, 'the bulk tick-list skips the nameless', rows.length);
+      click('[data-action="close"]');
+    } else {
+      ok(true, 'no portal picker button on this screen');
+    }
+
+    /* --- it survives a save and reload --- */
+    var raw = JSON.parse(localStorage.getItem('warroom.v1'));
+    var nameless = function (list) { return list.filter(function (p) { return !p.name; }).length; };
+    ok(nameless(raw.players) === nameless(W.state().players) && nameless(raw.players) > 0,
+      'depth players are stored like any other', nameless(raw.players) + ' of ' + raw.players.length);
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>
