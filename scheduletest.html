@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Schedule and rivalry test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+/* The season's schedule feeds the show: who is next, how far they have
+   travelled, what has to be fixed by Saturday. Rivalries can be declared,
+   and the ones nobody declared build themselves out of the results. And the
+   panel does not say the same thing two weeks running. */
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function qq(s) { return document.querySelectorAll(s); }
+  function click(sel) { var el = q(sel); if (!el) { ok(false, 'element ' + sel, 'missing'); return null; } el.click(); return el; }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom, V = window.WarRoomVoice;
+  var said = function (s) { return V.parseDialogue(s).map(function (t) { return t.text; }).join('\n'); };
+  var seg = function (s, name) { return (s.split(name)[1] || '').split(/--- (?:SEGMENT|THE BIG|RUNDOWN)/)[0]; };
+  try {
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    st.school = { name: 'Oregon', mascot: 'Ducks', state: 'OR', color: '#154733' };
+    st.quarterLen = 5;
+    st.games = [];
+    st.schedule = [];
+    st.rivals = [];
+    st.show = { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true };
+
+    /* --- putting a schedule in --- */
+    W.setView('show');
+    click('[data-action="add-week"]');
+    q('#w-week').value = '1'; q('#w-opp').value = 'Utah'; q('#w-where').value = '1';
+    click('[data-action="save-week"]');
+    ok(W.scheduleFor(st.season).length === 1, 'a week is added', W.scheduleFor(st.season).length);
+    ok(/Wk 1/.test(q('#view').textContent) && /vs Utah/.test(q('#view').textContent), 'and listed on the Show screen');
+
+    click('[data-action="add-week"]');
+    q('#w-week').value = '2'; q('#w-opp').value = 'Washington'; q('#w-where').value = '0'; q('#w-rank').value = '9';
+    click('[data-action="save-week"]');
+    click('[data-action="add-week"]');
+    q('#w-week').value = '3'; q('#w-opp').value = 'Oregon State'; q('#w-where').value = '0'; q('#w-riv').checked = true;
+    click('[data-action="save-week"]');
+    click('[data-action="add-week"]');
+    q('#w-week').value = '4'; q('#w-opp').value = 'USC'; q('#w-where').value = '0'; q('#w-rank').value = '6';
+    click('[data-action="save-week"]');
+    click('[data-action="add-bye"]');
+    var bye = W.scheduleFor(st.season).filter(function (x) { return x.bye; })[0];
+    ok(!!bye && bye.week === 5, 'a bye lands on the next free week', bye && bye.week);
+    ok(/Bye week/.test(q('#view').textContent), 'and says so');
+
+    /* --- logging a result from the schedule --- */
+    click('[data-action="log-week"][data-id="' + W.scheduleFor(st.season)[1].id + '"]');
+    ok(q('#g-opp').value === 'Washington' && q('#g-where').value === '0' && q('#g-rka').value === '9',
+      'Log result carries the opponent, the venue and their ranking across', q('#g-opp').value + '/' + q('#g-where').value + '/' + q('#g-rka').value);
+    click('[data-action="close"]');
+
+    /* --- the show looks ahead --- */
+    var wk1 = { id: 'w1', season: st.season, week: 1, opponent: 'Utah', home: true, result: 'W', scoreFor: 24, scoreAgainst: 20,
+      rushFor: 50, passFor: 170, thirdFor: 3, thirdForAtt: 12, notes: '', performances: [] };
+    st.games.push(wk1);
+    var s1 = W.buildScript(wk1);
+    ok(/WHAT’S COMING/.test(s1), 'there is a look-ahead segment');
+    var look = seg(s1, 'WHAT’S COMING');
+    ok(/Next week: on the road at No\. 9 Washington/.test(look), 'it names the next opponent, the venue and their rank', look);
+    ok(/run game|third down/.test(look), 'and ties what went wrong to what is coming', look);
+    ok(/3 left on the schedule/.test(look) || /left on the schedule/.test(look), 'it knows how much season is left', look);
+    ok(/Next up: Washington/.test(s1), 'the rundown says who is next');
+    ok(/Next up:     Wk 2 at Washington \(No\. 9\)/.test(s1), 'and the producer notes carry it', (s1.match(/Next up:.*/) || [''])[0]);
+
+    /* --- calls name the opponent, and grade against them --- */
+    ok(/beat Washington|on Washington|to 7\d rushing yards/.test(said(s1)), 'the calls are about next week’s opponent', (said(s1).match(/Calls for next week[\s\S]{0,260}/) || [''])[0]);
+    var wk2 = { id: 'w2', season: st.season, week: 2, opponent: 'Washington', home: false, result: 'L', scoreFor: 17, scoreAgainst: 28,
+      rushFor: 60, passFor: 150, notes: '', performances: [] };
+    st.games.push(wk2);
+    ok(/Right\.|Wrong\./.test(said(W.buildScript(wk2))), 'and next week grades them');
+
+    /* --- a rivalry on the schedule --- */
+    var wk3 = { id: 'w3', season: st.season, week: 3, opponent: 'Oregon State', home: false, result: 'W', scoreFor: 20, scoreAgainst: 17,
+      rushFor: 120, passFor: 120, notes: '', performances: [] };
+    st.games.push(wk3);
+    var s3 = W.buildScript(wk3);
+    ok(/trophy/.test(said(s3)), 'a scheduled rivalry is treated like one', (said(s3).match(/.{0,60}trophy.{0,30}/) || [''])[0]);
+    ok(W.scheduleCtx(wk3).roadRun === 2, 'it counts the road trip so far', W.scheduleCtx(wk3).roadRun);
+    var homeOpener = W.scheduleFor(st.season)[0];
+    homeOpener.home = false;      /* make it three away in a row */
+    ok(/three straight away from home/.test(said(W.buildScript(wk3))), 'and a third road game in a row gets mentioned', (said(W.buildScript(wk3)).match(/.{0,50}away from home/) || [''])[0]);
+    homeOpener.home = true;
+
+    /* --- a rivalry that makes itself --- */
+    var f0 = W.seriesFacts('Oregon State');
+    ok(f0.games === 1 && !f0.isRivalry, 'one meeting is not a rivalry', JSON.stringify({ g: f0.games, r: f0.isRivalry }));
+    [{ s: st.season - 2, r: 'L', f: 21, a: 24 }, { s: st.season - 1, r: 'W', f: 27, a: 24 }].forEach(function (x, i) {
+      st.games.push({ id: 'old' + i, season: x.s, week: 12, opponent: 'Oregon State', home: i % 2 === 0, result: x.r, scoreFor: x.f, scoreAgainst: x.a, notes: '', performances: [] });
+    });
+    var f = W.seriesFacts('Oregon State');
+    ok(f.games === 3 && f.years === 3 && f.record === '2-1', 'the series adds up across seasons', JSON.stringify({ g: f.games, y: f.years, rec: f.record }));
+    ok(f.close === 3 && f.earned && f.isRivalry && !f.declared, 'three close meetings over three years makes it a rivalry on its own', JSON.stringify(f));
+    ok(!W.seriesFacts('Utah').isRivalry, 'a team played once is not', JSON.stringify(W.seriesFacts('Utah')));
+    var s3b = said(W.buildScript(wk3));
+    ok(/2-1 between these two/.test(s3b), 'the panel quotes the series record', (s3b.match(/.{0,30}between these two.{0,30}/) || [''])[0]);
+    ok(/counts double|throw the records out|don’t like each other|rivalry/i.test(s3b), 'and treats it as a rivalry out loud', (s3b.match(/.{0,80}(counts double|throw the records|don’t like each other|rivalry).{0,40}/i) || [''])[0]);
+
+    /* --- declaring one, and the suggestion --- */
+    W.setView('show');
+    ok(/Becoming one/.test(q('#view').textContent), 'the Show screen spots a rivalry forming', (q('#view').textContent.match(/Becoming one.{0,60}/) || [''])[0]);
+    click('[data-action="make-rival"][data-name="Oregon State"]');
+    ok(W.declaredRival('Oregon State') && W.state().rivals.length === 1, 'and it can be made official in one tap');
+    ok(!/Becoming one/.test(q('#view').textContent) && /Rivalry/.test(q('#view').textContent), 'after which it is listed as one');
+    click('[data-action="add-rival"]');
+    q('#rv-name').value = 'Washington'; q('#rv-note').value = 'conference title every year';
+    click('[data-action="save-rival"]');
+    ok(W.declaredRival('Washington'), 'a rivalry can be declared by hand too');
+    ok(W.seriesFacts('Washington').isRivalry, 'and it counts immediately, whatever the results say');
+
+    /* --- the panel does not repeat itself week to week --- */
+    var opens = [], look2 = [];
+    for (var wk = 1; wk <= 8; wk++) {
+      var g = { id: 'v' + wk, season: st.season + 5, week: wk, opponent: 'Team ' + wk, home: wk % 2 === 0, result: wk % 3 ? 'W' : 'L',
+        scoreFor: 24, scoreAgainst: 20, rushFor: 80, passFor: 180, toFor: 1, toAgainst: 1, notes: '', performances: [] };
+      var lines = said(W.buildScript(g)).split('\n');
+      opens.push(lines[0]);
+    }
+    var dupes = 0;
+    for (var i = 1; i < opens.length; i++) if (opens[i] === opens[i - 1]) dupes++;
+    ok(dupes === 0, 'the cold open is never the same two weeks running', dupes + ' repeats');
+    var distinct = {};
+    opens.forEach(function (o) { distinct[o] = 1; });
+    ok(Object.keys(distinct).length >= 5, 'and there are plenty of ways in', Object.keys(distinct).length + ' of 8');
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

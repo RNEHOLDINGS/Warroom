@@ -195,6 +195,8 @@
       recruits: [],
       storylines: [],
       games: [],
+      schedule: [],
+      rivals: [],
       quarterLen: 5,
       show: { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true },
       history: []
@@ -216,6 +218,8 @@
           s.recruits = Array.isArray(parsed.recruits) ? parsed.recruits : [];
           s.storylines = Array.isArray(parsed.storylines) ? parsed.storylines : [];
           s.games = Array.isArray(parsed.games) ? parsed.games : [];
+          s.schedule = Array.isArray(parsed.schedule) ? parsed.schedule : [];
+          s.rivals = Array.isArray(parsed.rivals) ? parsed.rivals : [];
           if (parsed.show && typeof parsed.show === 'object') {
             var ps = parsed.show;
             /* Every save writes the cast into storage, so a phone that has
@@ -251,7 +255,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v20';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v21';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -1205,6 +1209,101 @@
   var WORD_NUM = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
   function numWord(n) { return WORD_NUM[n] || String(n); }
   var ORDINAL_WORD = ['zeroth', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
+  /* ---------- rivalries ----------
+     Some are declared: the trophy game everybody circles. Others are made,
+     year after year, by two teams finishing in each other's way -- and the
+     app can see that happening in the results it already has. A series earns
+     the word when it has been played enough times, stayed close, and both
+     sides have won some of it.
+
+     `state.rivals` holds the declared ones. Everything else is read out of
+     the games. */
+  function sameTeam(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
+  function declaredRival(name) {
+    return state.rivals.some(function (r) { return sameTeam(r.name, name); });
+  }
+  /* every meeting with one opponent, newest last */
+  function series(name) {
+    if (!String(name || '').trim()) return [];
+    return state.games.filter(function (g) { return sameTeam(g.opponent, name); })
+      .sort(function (a, b) { return (a.season - b.season) || (int(a.week, 0, 99) - int(b.week, 0, 99)); });
+  }
+  function seriesFacts(name, upTo) {
+    var all = series(name);
+    if (upTo) {
+      all = all.filter(function (g) {
+        return g.season < upTo.season || (g.season === upTo.season && int(g.week, 0, 99) <= int(upTo.week, 0, 99));
+      });
+    }
+    var w = 0, l = 0, t = 0, close = 0, seasons = {};
+    all.forEach(function (g) {
+      if (g.result === 'W') w++; else if (g.result === 'L') l++; else t++;
+      if (gameMargin(g) <= 8) close++;
+      seasons[g.season] = 1;
+    });
+    /* the current run in the series, from the most recent meeting back */
+    var runBy = all.length ? all[all.length - 1].result : '';
+    var run = 0;
+    for (var i = all.length - 1; i >= 0 && all[i].result === runBy; i--) run++;
+    var years = Object.keys(seasons).length;
+    /* Three or more meetings across at least two seasons, mostly tight, and
+       neither side running away with it. That is a rivalry whether or not
+       anybody printed a trophy. */
+    var earned = all.length >= 3 && years >= 2 && close >= Math.ceil(all.length / 2) && w > 0 && l > 0;
+    return {
+      games: all.length, years: years, w: w, l: l, t: t, close: close,
+      runBy: runBy, run: run, earned: earned,
+      declared: declaredRival(name),
+      isRivalry: earned || declaredRival(name),
+      record: w + '-' + l + (t ? '-' + t : '')
+    };
+  }
+
+  /* ---------- the schedule ----------
+     Knowing who is next, who was before and how far they have travelled is
+     most of what a studio panel talks about. Entries are one per week, and a
+     week can be a bye. A logged game finds its schedule row by week, so the
+     opponent only gets typed once. */
+  function scheduleFor(season) {
+    return state.schedule.filter(function (x) { return x.season === season; })
+      .sort(function (a, b) { return int(a.week, 0, 99) - int(b.week, 0, 99); });
+  }
+  function slotFor(season, week) {
+    return scheduleFor(season).filter(function (x) { return int(x.week, 0, 99) === int(week, 0, 99); })[0] || null;
+  }
+  function scheduleCtx(g) {
+    var wk = int(g.week, 0, 99);
+    var all = scheduleFor(g.season);
+    var here = slotFor(g.season, wk);
+    var played = state.games.filter(function (x) { return x.season === g.season && int(x.week, 0, 99) <= wk; });
+    var after = all.filter(function (x) { return int(x.week, 0, 99) > wk; });
+    var next = after.filter(function (x) { return !x.bye; })[0] || null;
+    var bye = after[0] && after[0].bye ? after[0] : null;
+    /* how hard it has been lately: road trips in a row, and games in a row
+       with no week off */
+    var roadRun = 0;
+    for (var i = all.length - 1; i >= 0; i--) {
+      var x = all[i];
+      if (int(x.week, 0, 99) > wk) continue;
+      if (x.bye) break;
+      if (x.home) break;
+      roadRun++;
+    }
+    var left = after.filter(function (x) { return !x.bye; });
+    var ranked = left.filter(function (x) { return rankOf(x.rank); });
+    return {
+      all: all, here: here, next: next, bye: bye,
+      roadRun: roadRun,
+      left: left.length,
+      rankedLeft: ranked.length,
+      nextRanked: next ? rankOf(next.rank) : '',
+      rivalryNext: !!(next && (next.rivalry || seriesFacts(next.opponent).isRivalry)),
+      rivalry: !!(here && here.rivalry),
+      played: played.length,
+      total: all.filter(function (x) { return !x.bye; }).length
+    };
+  }
+
   /* ---------- who these players are, across the season ----------
      A show that follows a team knows its players by role, not just by what
      they did on Saturday: the guy who has thrown for a dozen touchdowns is
@@ -1386,7 +1485,8 @@
      game always produces the same call, and next week's script can work out
      what was said and whether it came true. That is the College GameDay
      mechanic -- the pick only matters because somebody keeps the record. */
-  function callsFor(g, us) {
+  function callsFor(g, us, nextName) {
+    var foe = nextName || 'next week’s opponent';
     var b = boxOf(g), S = quarterScale();
     var seed = picker(hashStr('call|' + g.id + '|' + g.opponent + '|' + g.scoreFor + '|' + g.week));
     var won = g.result === 'W';
@@ -1403,16 +1503,16 @@
       test: function (n) { return int(n.scoreAgainst, 0, 999) < allowed + 7; }
     });
     analyst.push({
-      text: won ? 'This is not a team that wins the next one comfortably. Single digits again, or a loss.' : 'They bounce back and win the next one.',
+      text: won ? 'This isn’t a team that beats ' + foe + ' comfortably. Single digits again, or a loss.' : 'They bounce back and beat ' + foe + '.',
       test: function (n) { return won ? (n.result !== 'W' || gameMargin(n) <= 9) : n.result === 'W'; }
     });
     var player = [];
     player.push({
-      text: won ? 'They win again. Write it down.' : 'They win the next one. I’m telling you now.',
+      text: won ? 'They beat ' + foe + '. Write it down.' : 'They beat ' + foe + '. I’m telling you now.',
       test: function (n) { return n.result === 'W'; }
     });
     player.push({
-      text: us + ' scores more than ' + Math.max(17, scored - 3) + ' next week. This offense is coming.',
+      text: us + ' scores more than ' + Math.max(17, scored - 3) + ' on ' + foe + '. This offense is coming.',
       test: function (n) { return int(n.scoreFor, 0, 999) > Math.max(17, scored - 3); }
     });
     if (rushed != null) player.push({
@@ -1424,7 +1524,8 @@
 
   /* Grade the calls made about this game, using the game itself. */
   function gradeCalls(prev, now, us) {
-    var c = callsFor(prev, us), nb = boxOf(now), out = {};
+    /* the call was made about this game, so it names this game's opponent */
+    var c = callsFor(prev, us, now.opponent || ''), nb = boxOf(now), out = {};
     ['analyst', 'player'].forEach(function (who) {
       var call = c[who];
       var hit = null;
@@ -1473,6 +1574,11 @@
     var usAlt = function () { return mascot && school ? pick([school, 'the ' + mascot, school]) : US; };
     var them = g.opponent || 'the opponent';
     var ctx = seasonContext(g);
+    var sch = scheduleCtx(g);
+    var ser = seriesFacts(g.opponent, g);
+    var nextSer = sch.next ? seriesFacts(sch.next.opponent) : null;
+    var nextUp = sch.next ? (sch.next.home ? 'at home against ' : 'on the road at ') + (rankOf(sch.next.rank) ? 'No. ' + rankOf(sch.next.rank) + ' ' : '') + (sch.next.opponent || 'next week’s opponent') : '';
+    var nextName = sch.next ? (sch.next.opponent || 'next week’s opponent') : '';
     var m = gameMargin(g);
     var won = g.result === 'W', tied = g.result === 'T';
     var blowout = m >= 21, comfortable = m >= 11 && m < 21, tight = m <= 10;
@@ -1491,6 +1597,19 @@
     var w = function (s) { L.push(s == null ? '' : s); };
     var S = quarterScale();
     var H = cast.hype;
+    /* pick() is random-ish per game, which still let the same line land two
+       weeks running. beat() walks one step through its list every week, so
+       a beat that happens every episode never says the same thing twice in a
+       row -- which is what made it feel written rather than talked. */
+    var beat = function (key, arr) { return arr[(hashStr(key) + int(g.week, 0, 99) + int(g.season, 0, 9999)) % arr.length]; };
+    /* Everybody has their tells. Used sparingly -- a catchphrase is a
+       catchphrase until it is every other line. */
+    var TIC = {
+      player: ['I’ve been saying it since August.', 'Put some respect on it.', 'That’s a man’s game out there.', 'I don’t need a chart to tell me that.', 'I played in that league.'],
+      analyst: ['The tape says otherwise.', 'That’s a sample, not a trend.', 'I can show you the clip.', 'I have the numbers in front of me.', 'One afternoon is one afternoon.'],
+      host: ['Somebody has to keep time around here.', 'I’m staying out of this one.', 'We’ve got two minutes.', 'I just read the cards.']
+    };
+    var tic = function (role) { return beat('tic-' + role, TIC[role]); };
     var LEN = cast.length, quick = LEN === 'quick', full = LEN === 'full';
     var bx0 = boxOf(g);
     var histOf = function (p) { return ctx.history[p.key] || []; };
@@ -1551,6 +1670,21 @@
     w('');
     w('');
 
+    /* What there is to be hard about. The panel used to run out of material
+       after the turnover margin; this is a list of real, specific complaints
+       pulled from the box score, so the criticism has somewhere to go. */
+    var gripes = [];
+    if (bx0.thirdForAtt > 0 && int(bx0.thirdFor, 0, 99) / bx0.thirdForAtt < 0.34) gripes.push('third down was a coin flip they kept losing');
+    if (bx0.rushFor !== '' && bx0.rushFor < 90 * S) gripes.push('they couldn’t run it when everybody in the stadium knew they had to');
+    if (bx0.penForYds !== '' && bx0.penForYds >= 70 * S) gripes.push('they gave away ' + bx0.penForYds + ' yards in flags, which is just lack of discipline');
+    if (int(bx0.toFor, 0, 99) >= 2) gripes.push('they put the ball on the ground ' + numWord(int(bx0.toFor, 0, 99)) + ' times');
+    if (bx0.fourthForAtt > 0 && int(bx0.fourthFor, 0, 99) < bx0.fourthForAtt) gripes.push('they went for it on fourth down and didn’t get it');
+    if (bx0.rushAgainst !== '' && bx0.rushAgainst >= 200 * S) gripes.push('anybody who wanted to run on this defense did');
+    if (bx0.passAgainst !== '' && bx0.passAgainst >= 250 * S) gripes.push('the secondary got thrown at and lost');
+    if (won && m <= 7 && !rT) gripes.push('they needed the whole afternoon to beat a team they should handle');
+    if (!won && !tied && bx0.yardsFor !== '' && bx0.yardsAgainst !== '' && bx0.yardsFor > bx0.yardsAgainst) gripes.push('they outgained them and still lost, which means points were left on the field');
+    var gripe = gripes.length ? beat('gripe', gripes) : '';
+
     /* ---- cold open ---- */
     var verb = won ? 'beat' : tied ? 'tied' : 'lost to';
     var where = g.home ? 'at home' : 'on the road';
@@ -1559,6 +1693,12 @@
     else if (streakAfter && !won && !tied) context.push('That’s ' + numWord(streakAfter.n) + ' losses in a row.');
     if (snapped) context.push(snapped.result === 'W' ? 'And just like that, the ' + numWord(snapped.n) + '-game win streak is over.' : 'And that snaps a ' + numWord(snapped.n) + '-game skid.');
     else if (last && !streakAfter) context.push('A week after ' + (last.result === 'W' ? 'beating ' : last.result === 'T' ? 'tying ' : 'losing to ') + (last.opponent || 'their last opponent') + '.');
+    var isRiv = sch.rivalry || ser.isRivalry;
+    if (isRiv) context.push(ser.declared || (sch.here && sch.here.rivalry)
+      ? (won ? 'And they keep the trophy.' : 'And the trophy stays where it is.')
+      : 'And whatever you want to call that series, it’s a rivalry now.');
+    if (ser.games >= 2) context.push('That’s ' + ser.record + ' between these two' + (ser.years >= 2 ? ' over ' + numWord(ser.years) + ' seasons' : '') + '.');
+    if (sch.roadRun >= 3) context.push('That’s ' + numWord(sch.roadRun) + ' straight away from home.');
     if (ctx.lastYear) context.push('Last year this one went ' + (ctx.lastYear.result === 'W' ? 'their way' : 'the other way') + ', ' + Math.max(int(ctx.lastYear.scoreFor, 0, 999), int(ctx.lastYear.scoreAgainst, 0, 999)) + '-' + Math.min(int(ctx.lastYear.scoreFor, 0, 999), int(ctx.lastYear.scoreAgainst, 0, 999)) + '.');
     var ctxLine = context.join(' ');
 
@@ -1576,7 +1716,7 @@
     topics.push('What ' + them + ' gave away');
     topics.push('Helmet stickers');
     if (cast.useInsider && !quick) topics.push('The board');
-    topics.push('Calls for next week');
+    topics.push(sch.next ? 'Next up: ' + nextName : 'Calls for next week');
     w('--- RUNDOWN ---------------------------------------------');
     w('');
     topics.forEach(function (t, i) { w('   ' + (i + 1) + '. ' + t); });
@@ -1588,10 +1728,14 @@
       ? 'Welcome in, this is ' + cast.title + ', and we have got an UPSET. ' + (rU ? US_R : 'Unranked ' + US) + ' ' + (g.home ? '' : 'went on the road and ') + 'took down ' + THEM_R + ', ' + said + '. ' + ctxLine + ' ' + playerF + ', I can see it on your face.'
       : up
         ? 'This is ' + cast.title + ', and it is not a good morning for ' + US + '. ' + US_R + ' lost to ' + themLow + ', ' + said + ' ' + where + '. ' + ctxLine + ' ' + playerF + ', go ahead.'
-        : pick([
+        : beat('open-host', [
           'Welcome in, this is ' + cast.title + '. ' + US_R + ' ' + verb + ' ' + THEM_R + ' ' + said + ' ' + where + ', and they’re ' + rec + '. ' + ctxLine + ' ' + playerF + ', you’ve been pacing since we sat down.',
           cast.title + '. It’s Monday. ' + US_R + ' ' + verb + ' ' + THEM_R + ', ' + said + '. ' + ctxLine + ' I’ve got two people here who watched the same game and somehow saw two different teams. ' + playerF + ', go.',
-          'Good morning, this is ' + cast.title + '. ' + US_R + ' is ' + rec + ' after ' + (won ? 'beating ' : tied ? 'tying ' : 'losing to ') + THEM_R + ' ' + said + ' ' + where + '. ' + ctxLine + ' I’m just gonna sit back for this one.'
+          'Good morning, this is ' + cast.title + '. ' + US_R + ' is ' + rec + ' after ' + (won ? 'beating ' : tied ? 'tying ' : 'losing to ') + THEM_R + ' ' + said + ' ' + where + '. ' + ctxLine + ' I’m just gonna sit back for this one.',
+          'This is ' + cast.title + '. ' + said + ', ' + US_R + ' and ' + THEM_R + ', ' + where + '. ' + ctxLine + ' Two takes, one football game. ' + playerF + ', you first.',
+          'You’re on ' + cast.title + '. ' + US_R + ' ' + verb + ' ' + THEM_R + ', ' + said + ', and nobody in this studio agrees about what it meant. ' + ctxLine + ' ' + playerF + '.',
+          cast.title + ', and we’re already behind. ' + US_R + ' ' + verb + ' ' + THEM_R + ' ' + said + ' ' + where + '. ' + ctxLine + ' ' + tic('host') + ' ' + playerF + ', sixty seconds.',
+          'Here we are. ' + cast.title + '. ' + US_R + ', ' + rec + ', after ' + said + ' ' + where + ' with ' + THEM_R + '. ' + ctxLine + ' ' + analystF + ' has notes. ' + playerF + ' has feelings. Go.'
         ])).replace(/ {2,}/g, ' '));
 
     /* the printed rundown is a list; the spoken one is a sentence */
@@ -1625,12 +1769,17 @@
       say(ANALYST, 'Last week it was blow the whole thing up. Now it’s a parade. That’s a fast turnaround, even for you.');
       say(PLAYER, 'I’m allowed to change my mind when they change the tape!');
     } else {
-      say(ANALYST, pick([
+      say(ANALYST, beat('needle', [
         'And we’re forty seconds in and nobody has said a single number.',
         playerF + ' is doing the thing again where one afternoon becomes a whole personality.',
-        'Can I enter some evidence before we sentence anybody?'
+        'Can I enter some evidence before we sentence anybody?',
+        'I love this part, where we decide the whole season off three hours of football.',
+        'Everything he just said could be true. None of it is checked.',
+        'I’ll wait. I’ve got the charts and the patience.',
+        tic('analyst') + ' Shall we look at it?',
+        'That was a lot of volume for a game decided by ' + (m || 'a possession') + '.'
       ]));
-      say(PLAYER, pick(['Here we go.', 'Oh, here comes the spreadsheet.']));
+      say(PLAYER, beat('groan', ['Here we go.', 'Oh, here comes the spreadsheet.', 'The charts. Every week, the charts.', 'Say the number. Go on, say it.', 'I can feel a percentage coming.', 'And there it is.']));
     }
     /* last week's calls, graded, and the season record they add up to.
        A prediction nobody keeps score of is just noise. */
@@ -1660,6 +1809,18 @@
     else if (snapped && snapped.result === 'W') q = 'Does one loss undo ' + numWord(snapped.n) + ' wins, or did we just meet the real ' + US + '?';
     else q = tight ? 'Who loses this football game, the players or the plan?' : 'Bad day, or is this just who ' + US + ' is?';
     say(HOST, 'Question on the board. ' + q + ' ' + playerF + ', you’re up.');
+    if (isRiv && ser.games >= 2) {
+      say(PLAYER, beat('riv', [
+        'And before we start: this one counts double and everybody in both buildings knows it. ' + ser.record + ' in this series.',
+        'You can throw the records out for this one. ' + (ser.run > 1 ? (ser.runBy === 'W' ? 'That’s ' + ser.run + ' straight for us now.' : 'That’s ' + ser.run + ' straight the other way.') : 'It’s been a coin flip every year.'),
+        'These two don’t like each other, and it shows up on the tape. ' + ser.record + ' says it’s even.'
+      ]));
+      say(ANALYST, beat('riv-a', [
+        'Rivalry games are their own category. Close, ugly, and the better team loses more often than anybody admits.',
+        'Agreed, and that’s the one thing that makes me cautious about reading anything into it.',
+        ser.close + ' of ' + ser.games + ' meetings decided by a score. That’s not noise, that’s a rivalry.'
+      ]));
+    }
 
     say(PLAYER, up && up.kind === 'win'
       ? 'Wrong. They were WRONG about ' + US + '. You don’t beat ' + THEM_R + ' by accident. ' + P.huddle + ' That locker room knew they were better.'
@@ -1683,15 +1844,38 @@
     say(ANALYST, upsetTake + (won
       ? (blowout || comfortable ? 'A ' + m + '-point win hides a lot. I’d rather know how they got there than how it felt.' : 'A ' + m + '-point game is a coin flip that landed the right way. I wouldn’t build a whole theory on it. But closing out close games IS a skill, and they’ve got it.')
       : (tight ? 'They were one possession away. If you want to tell me this team is broken, you need more than one afternoon.' : 'I care less about whether it was ugly than whether it was predictable. And ' + (bx0.yardsAgainst !== '' ? 'giving up ' + bx0.yardsAgainst + ' yards wasn’t an accident.' : 'this one was coming.'))) + avgLine);
-    if (won) {
-      say(PLAYER, analystF + '. Just once. Just ONCE, can we enjoy something?');
-      say(ANALYST, 'I AM enjoying it. This is what it looks like.');
+    if (won && gripe) {
+      say(PLAYER, beat('won-gripe-p', [
+        'And before ' + analystF + ' starts: yes, ' + gripe + '. I watched it too. They still won.',
+        'I know what’s coming. ' + cap1(gripe) + '. Fine. The scoreboard doesn’t ask how.',
+        analystF + ' is about to tell you ' + gripe + '. ' + cap1(tic('player'))
+      ]));
+      say(ANALYST, beat('won-gripe-a', [
+        'I was, and I will. ' + cap1(gripe) + ', and that catches up with you in November.',
+        'Saying it first doesn’t make it go away. ' + cap1(gripe) + '.',
+        'Right, so we agree on the facts. ' + cap1(gripe) + '. We just disagree about whether it matters.'
+      ]));
+    } else if (won) {
+      say(PLAYER, beat('won-enjoy', [
+        analystF + '. Just once. Just ONCE, can we enjoy something?',
+        'Can we have one Monday where nobody brings a chart?',
+        'A win! A whole win! And we’re sat here frowning at it.'
+      ]));
+      say(ANALYST, beat('won-enjoy-a', ['I AM enjoying it. This is what it looks like.', 'This is my enjoying face.', 'I’m thrilled. I’m also still right.']));
     } else {
-      say(PLAYER, analystF + ', I watched the same game you did. They were getting pushed around out there.');
-      say(ANALYST, 'Pushed around by who? Name the snap.');
-      say(PLAYER, '“Name the snap.” Unbelievable.');
+      say(PLAYER, beat('lost-push', [
+        analystF + ', I watched the same game you did. They were getting pushed around out there.',
+        gripe ? 'You want a number? Here’s one: ' + gripe + '. That’s not scheme, that’s will.' : analystF + ', they got out-toughed. There’s no chart for that.',
+        'I don’t need the sheet to tell me what that was. That was a team getting bullied.'
+      ]));
+      say(ANALYST, beat('lost-push-a', [
+        'Pushed around by who? Name the snap.',
+        'Bullied is a word, not a measurement. Give me a down.',
+        'Everybody says toughness when they mean execution. ' + (gripe ? cap1(gripe) + '.' : '')
+      ]));
+      say(PLAYER, beat('lost-push-p2', ['“Name the snap.” Unbelievable.', 'Measurement. He wants a MEASUREMENT.', 'This is why nobody invites analysts to tailgates.']));
     }
-    say(HOST, 'Okay, hold it. We’re coming back to that.');
+    say(HOST, beat('hold', ['Okay, hold it. We’re coming back to that.', 'Park that. It’s coming back.', 'Hold that thought, both of you.', 'We’ll settle this in the numbers.']));
     w('');
     }
 
@@ -1721,8 +1905,10 @@
         var note = bounce ? ' And remember, he was on the hot seat last time we talked about him.'
           : bigBefore >= 1 ? ' That’s his ' + (ORDINAL_WORD[bigBefore + 1] || (bigBefore + 1) + 'th') + ' good game this year.' : '';
         var opener = i === 0
-          ? pick(won ? ['Let’s hand out some credit. Stock up for ' + US + '. Start me with', 'Stock up. First ' + US + ' name on my list is'] : ['Even in a loss, somebody on ' + US + ' showed up. Stock up. Start me with', 'Stock up, and yes, ' + US + ' has one. Start me with'])
-          : pick(['Who else?', 'Give me another one.', 'Next name.']);
+          ? beat('stock-open', won
+            ? ['Let’s hand out some credit. Stock up for ' + US + '. Start me with', 'Stock up. First ' + US + ' name on my list is', 'Credit where it’s earned. Stock up, and we start with', 'Stock up. The one ' + US + ' fan who slept well is', 'Let’s do the good news first. Stock up:']
+            : ['Even in a loss, somebody on ' + US + ' showed up. Stock up. Start me with', 'Stock up, and yes, ' + US + ' has one. Start me with', 'There’s always somebody. Stock up:', 'Find me a bright spot. Stock up. Start with', 'Stock up, short list this week. Start with'])
+          : beat('stock-next', ['Who else?', 'Give me another one.', 'Next name.', 'Keep it going. Who else?', 'One more name.', 'And after him?']);
         say(HOST, opener + ' ' + p.name + (p.pos ? ', ' + p.pos : '') + '. ' + sentence(p.line || 'Big afternoon') + note);
 
         var best = G && G.plus.length ? cap1(list2(G.plus.slice(0, 2))) + '.' : '';
@@ -1742,11 +1928,11 @@
                 ? hy(rot([best + ' That’s a winning performance.', 'Nice, efficient day. ' + best]),
                      rot(['I love it. ' + best + ' That’s how you win football games.', best + ' Give me that every week and I’ll never complain.', 'That’s a winner’s game. ' + best]),
                      rot(['Come ON! ' + best + ' That’s how you WIN football games!', best + ' Every week! Give me THAT every week!']))
-                : hy('He did what they needed. That counts.', rot(['Hey, he showed up when it mattered. That counts for something.', 'He made the plays in front of him. That’s the job.']), 'He showed UP when it mattered! That counts!'));
+                : hy('He did what they needed. That counts.', rot(['Hey, he showed up when it mattered. That counts for something.', 'He made the plays in front of him. That’s the job.', 'Nothing flashy. Did his job. I’ll take eleven of him.']), 'He showed UP when it mattered! That counts!'));
 
         var take, quoted = '“Not a great one.”';
         if (lvl == null) take = pick(['No argument. He earned it.', 'Fair. I’ll give him that one.']);
-        else if (lvl >= 3) take = (bigBefore >= 1 ? 'That’s not a hot streak anymore, that’s his level. ' : 'No argument. ') + cap1(G.label) + ' by any standard: ' + list2(G.plus.slice(0, 2)) + '. ' +
+        else if (lvl >= 3) take = (bigBefore >= 1 ? 'That’s not a hot streak anymore, that’s his level. ' : beat('stock-agree', ['No argument. ', 'For once, nothing to argue with. ', 'He’s right, and I’ll go further. ', 'Agreed, and the tape backs him up. '])) + cap1(G.label) + ' by any standard: ' + list2(G.plus.slice(0, 2)) + '. ' +
           (T.alone && T.aloneWhy ? 'And ' + T.aloneWhy + '.' : T.credit ? 'And credit where it’s due, ' + T.credit : '');
         else if (lvl === 2) quoted = rot(['“Not a great one.”', '“Solid.”', '“Not a historic one.”']), take = rot([
             'Good game. Not a great one, and that’s fine. What made it work was ' + (G.plus[0] || 'not making mistakes') + '.',
@@ -1808,7 +1994,9 @@
         var profH = sp.byKey[p.key];
         var roleH = roleOf(profH, sp);
         var seasonH = seasonLine(profH);
-        var opener = i === 0 ? pick(['Okay, enough nice. The hot seat.', 'Now the part ' + playerF + ' hates. The hot seat.', 'Hot seat.']) : pick(['One more.', 'And one more.']);
+        var opener = i === 0
+          ? beat('hot-open', ['Okay, enough nice. The hot seat.', 'Now the part ' + playerF + ' hates. The hot seat.', 'Hot seat.', 'Right. Somebody has to sit in it. Hot seat.', 'The uncomfortable chair. Hot seat.', 'Enough flowers. Hot seat.'])
+          : beat('hot-next', ['One more.', 'And one more.', 'Next one, and it’s not pretty.', 'One more name for the chair.']);
         say(HOST, opener + ' ' + p.name + (p.pos ? ' at ' + p.pos : '') + '. ' + sentence(p.line || 'It wasn’t his day') +
           (inARow ? ' And that’s two rough ones in a row.' : again ? ' And he was on the hot seat the last time we talked about him, too.' : fell ? ' And this is a guy we had in stock up last time.' : ''));
 
@@ -1831,7 +2019,12 @@
             ? 'I’ll start, because ' + playerF + ' is about to defend him. ' + cap1(list2(G.minus)) + '. ' + (/interception|fumble|drop|missed/.test(G.minus.join(' ')) ? 'Those are plays that hand the other team the ball, or points.' : 'That’s not enough to keep an offense on schedule.')
             : G && G.facts.length
               ? 'The production just wasn’t there. ' + cap1(G.facts[0]) + ' is ' + (G.overall === 0 ? 'a quiet day' : 'barely an ordinary day') + ', even in a game this length.'
-              : pick(['I’ll start, because ' + playerF + ' is about to defend him and I want the facts out first.', 'That one’s pretty simple. It wasn’t his day.']));
+              : beat('hot-analyst', [
+                'I’ll start, because ' + playerF + ' is about to defend him and I want the facts out first.',
+                'That one’s pretty simple. It wasn’t his day.',
+                'No need to dress it up. That was a hard afternoon.',
+                tic('analyst') + ' It was a rough one, and the film agrees.'
+              ]));
 
         if (T.excuse) {
           say(PLAYER, 'Hold on. ' + T.excuse);
@@ -1842,9 +2035,12 @@
                          'I defend these kids EVERY week. Not this one! That one’s on HIM, and he knows it.'));
           say(ANALYST, pick(['See? We can agree on things.', 'Write that down. We agree.']));
         } else {
-          say(PLAYER, pick([
+          say(PLAYER, beat('hot-defence', [
             'And what’s your plan? Bench him? Who’s behind him? This is where the spreadsheet runs out of road.',
-            'You’re talking about a kid. Twenty years old, ' + (g.home ? 'with the whole stadium watching' : 'on the road, in front of a hostile crowd') + '. You ever done that?'
+            'You’re talking about a kid. Twenty years old, ' + (g.home ? 'with the whole stadium watching' : 'on the road, in front of a hostile crowd') + '. You ever done that?',
+            'Nobody in that building is harder on him this morning than he is. Nobody.',
+            'He’ll be the first one in the facility tomorrow. I’d bet my cheque on it.',
+            'You grade him on a Monday. He plays it on a Saturday. Different jobs.'
           ]));
           say(ANALYST, 'I’m not blaming him for ' + (won ? 'anything' : 'the loss') + '. I’m telling you what happened.');
           say(PLAYER, 'It sounds like blame.');
@@ -1923,8 +2119,8 @@
           : ['That’s what we were just saying about ' + who.name + '.', 'You saw it with ' + who.name + ' on the hot seat.']);
       };
       points.forEach(function (p, i) {
-        var nexts = [pick(['What else is on the sheet?', 'Give me the next one.']), 'Keep going.'];
-        if (i > 0 && i === points.length - 1) say(HOST, pick(['Last one. Make it quick.', 'One more, then we move.']));
+        var nexts = [beat('nums-next', ['What else is on the sheet?', 'Give me the next one.', 'What else have you got?', 'Next number.']), beat('nums-next2', ['Keep going.', 'Carry on.', 'And?'])];
+        if (i > 0 && i === points.length - 1) say(HOST, beat('nums-last', ['Last one. Make it quick.', 'One more, then we move.', 'Give me one more and we’re out.', 'Last number, then stickers.']));
         else if (i > 0) say(HOST, nexts[i - 1] || 'Keep going.');
         /* Nothing typed for turnovers means no battle to call. Saying "even
            in turnovers" there was a fact the script made up. */
@@ -1936,7 +2132,13 @@
         var reply = opener === 'Okay, but ' && !/^I[\s’']/.test(p.player) ? p.player.charAt(0).toLowerCase() + p.player.slice(1) : p.player;
         say(PLAYER, opener + reply + tieBack(p.key));
       });
-      say(ANALYST, pick(['Those are compatible positions, which is why this is exhausting.', 'For the record, we agree. You’re just louder about it.', 'We’re saying the same thing. One of us is using numbers.']));
+      say(ANALYST, beat('nums-signoff', [
+        'Those are compatible positions, which is why this is exhausting.',
+        'For the record, we agree. You’re just louder about it.',
+        'We’re saying the same thing. One of us is using numbers.',
+        'Two roads, same destination. His has more shouting on it.',
+        'I’ll put that down as violent agreement.'
+      ]));
       w('');
     }
 
@@ -1946,13 +2148,20 @@
     var gifts = opponentGifts(bx0, g, them, US, S, pick);
     if (gifts.length) {
       head('THE OTHER SIDELINE');
-      say(HOST, pick(['Flip it around. What did ' + them + ' give away?', 'Let’s talk about the other sideline. What did ' + them + ' hand over?']));
+      say(HOST, beat('other-open', [
+        'Flip it around. What did ' + them + ' give away?',
+        'Let’s talk about the other sideline. What did ' + them + ' hand over?',
+        'Other sideline. What did ' + them + ' hand ' + US + '?',
+        'Half this game belongs to ' + them + '. What did they give up?'
+      ]));
       gifts.slice(0, quick ? 1 : full ? 3 : 2).forEach(function (x, i) {
         if (i) say(HOST, pick(['What else?', 'And?']));
         say(ANALYST, x.analyst);
         say(PLAYER, x.player);
       });
-      if (!quick) say(HOST, won ? 'Good teams take what they’re given. Noted.' : 'And that’s the part that’ll sting on the bus.');
+      if (!quick) say(HOST, won
+        ? beat('other-close-w', ['Good teams take what they’re given. Noted.', 'Take the gifts, win the game. Noted.', 'Duly noted, and duly cashed.'])
+        : beat('other-close-l', ['And that’s the part that’ll sting on the bus.', 'That’s the one they’ll watch twice.', 'Handed chances, took none. Noted.']));
       w('');
     }
 
@@ -1962,13 +2171,18 @@
     var stickers = helmetStickers(g, voiced, bx0, S, sp);
     if (stickers.length) {
       head('HELMET STICKERS');
-      say(HOST, pick(['Helmet stickers. ' + playerF + ', hand them out.', 'Stickers on the helmet. Who gets one?']));
+      say(HOST, beat('stick-open', [
+        'Helmet stickers. ' + playerF + ', hand them out.',
+        'Stickers on the helmet. Who gets one?',
+        'Time for the stickers. Go.',
+        'Helmet stickers, and be quick about it.'
+      ]));
       stickers.slice(0, quick ? 2 : 4).forEach(function (x, i) {
         var line = x.unit + ': ' + x.who + (x.why ? '. ' + cap1(sentence(x.why)) : '.');
         if (i % 2 === 0) say(PLAYER, (i === 0 ? '' : 'And ') + line);
         else say(ANALYST, line);
       });
-      if (!quick) say(HOST, pick(['Stickers earned.', 'That’s the helmet sorted.']));
+      if (!quick) say(HOST, beat('stick-close', ['Stickers earned.', 'That’s the helmet sorted.', 'Stickers awarded. Appeals go to nobody.', 'Helmet’s full. Moving on.']));
       w('');
     }
 
@@ -1982,7 +2196,12 @@
       var risk = state.players.filter(function (p) { return p.risk && !isLeaving(p); });
 
       head('THE INSIDER');
-      say(HOST, pick([cast.insider + ' is with us. What are you hearing out of ' + US + '?', 'Let’s step away from Saturday for a second. ' + insiderF + ', what are you hearing?']));
+      say(HOST, beat('ins-open', [
+        cast.insider + ' is with us. What are you hearing out of ' + US + '?',
+        'Let’s step away from Saturday for a second. ' + insiderF + ', what are you hearing?',
+        insiderF + ' is on the line. What’s the word around that program?',
+        'Recruiting. ' + insiderF + ', what do you know that we don’t?'
+      ]));
       if (holes.length) {
         var hs = holes.slice(0, 3).map(function (r) { return r.need + ' at ' + r.group.name.toLowerCase(); });
         say(INSIDER, 'The number everybody inside that building knows is ' + n.totals.open + '. That’s how many scholarships are open, and honestly the shape of it matters more than the total. They need ' +
@@ -2034,8 +2253,47 @@
       : (won ? 'Good process, good result. Next week tells us which one it was.' : 'One data point. Ask me after the next two and I’ll give you a real answer.'));
     if (g.notes) say(HOST, 'One more thing before we go. ' + sentence(spoken(g.notes)));
 
+    /* ---- what is coming ----
+       A recap that stops at Saturday is a box score read aloud. The schedule
+       is what lets them point forward and at the thing that just went wrong
+       at the same time. */
+    if (sch.next || sch.bye) {
+      var worst = readBox(bx0, g, pick, { us: US, them: them, P: P, ctx: ctx })
+        .filter(function (p) { return p.weight >= 3; })[0];
+      var sore = bx0.rushFor !== '' && bx0.rushFor < 90 * S ? 'the run game'
+        : bx0.rushAgainst !== '' && bx0.rushAgainst >= 200 * S ? 'a defense that just got run on'
+        : bx0.thirdForAtt > 0 && int(bx0.thirdFor, 0, 99) / bx0.thirdForAtt < 0.34 ? 'third down'
+        : int(bx0.toFor, 0, 99) > 1 ? 'a team that keeps giving the ball away'
+        : rough.length ? rough[0].name + ' still searching for it'
+        : '';
+      head('WHAT’S COMING');
+      if (sch.bye && !sch.next) {
+        say(HOST, 'And that’s the regular season. Nothing left on the schedule.');
+        say(ANALYST, 'Then the only thing left to argue about is what it added up to.');
+      } else if (sch.bye) {
+        say(HOST, 'They’ve got a bye, and then ' + nextUp + '. Two weeks to fix things, ' + playerF + '.');
+        say(PLAYER, 'Two weeks is a gift. ' + (sore ? 'If they come out of an open week and ' + sore + ' still looks like that, that’s on the staff.' : 'No excuses after an open week.'));
+        say(ANALYST, 'Open weeks help the team that knows what its problem is. ' + (sore ? 'Theirs is ' + sore + ', and everybody in that building knows it.' : 'This staff seems to.'));
+      } else {
+        say(HOST, 'Next week: ' + nextUp + '.' +
+          (sch.rivalryNext ? ' And that one’s a rivalry' + (nextSer && nextSer.games ? ', ' + nextSer.record + ' in the series' : '') + '.' : '') +
+          ' ' + playerF + ', what has to change by Saturday?');
+        say(PLAYER, (sore ? cap1(sore) + '. You can’t take that into ' + nextName + ' and expect a different ending. ' : 'Honestly? Nothing structural. ') +
+          (sch.rivalryNext
+            ? 'And in a rivalry game none of the records matter anyway. Throw them out.' + (nextSer && nextSer.run > 1 && nextSer.runBy === 'L' ? ' Especially when you’ve lost ' + nextSer.run + ' in a row in it.' : '')
+            : 'Clean it up in practice and go win a football game.'));
+        say(ANALYST, (sch.nextRanked
+            ? nextName + ' is ranked, so ' + (sore ? sore + ' is about to get examined properly.' : 'this is the week we find out what this team is.')
+            : sore ? 'The gap between ' + sore + ' and what ' + nextName + ' does well is the whole game next week.'
+              : nextName + ' is the next test, and on this evidence they should be favoured.') +
+          (sch.left ? ' ' + sch.left + ' left on the schedule' + (sch.rankedLeft ? ', ' + sch.rankedLeft + ' of them ranked.' : '.') : ''));
+        if (sch.roadRun >= 2 && sch.next && !sch.next.home) say(PLAYER, 'And they’re on the road AGAIN. At some point that schedule becomes an excuse nobody wants to use.');
+      }
+      w('');
+    }
+
     /* the calls that next week's show will grade */
-    var calls = callsFor(g, US);
+    var calls = callsFor(g, US, nextName);
     var recNow = callRecord(g);
     say(HOST, 'Calls for next week, on the record. ' + analystF + '?');
     say(ANALYST, calls.analyst.text);
@@ -2092,6 +2350,8 @@
     w('Rundown:     ' + topics.join(' · '));
     w('Calls:       ' + analystF + ': ' + calls.analyst.text + '  |  ' + playerF + ': ' + calls.player.text);
     w('Call record: ' + analystF + ' ' + recNow.analyst.w + '-' + recNow.analyst.l + ', ' + playerF + ' ' + recNow.player.w + '-' + recNow.player.l);
+    if (ser.games >= 2) w('Series:      ' + ser.record + ' vs ' + them + (ser.isRivalry ? ' (rivalry)' : ''));
+    if (sch.next) w('Next up:     Wk ' + int(sch.next.week, 0, 99) + ' ' + (sch.next.home ? 'vs ' : 'at ') + (sch.next.opponent || '?') + (rankOf(sch.next.rank) ? ' (No. ' + rankOf(sch.next.rank) + ')' : '') + (sch.next.rivalry ? ' — rivalry' : ''));
     if (ctx.prior.length) w('Earlier:     ' + ctx.prior.map(function (x) { return 'Wk ' + (x.week || '?') + ' ' + x.result + ' ' + int(x.scoreFor, 0, 999) + '-' + int(x.scoreAgainst, 0, 999) + ' ' + (x.home ? 'vs ' : 'at ') + (x.opponent || '?'); }).join('; '));
     nums.forEach(function (n2) { w(n2); });
     if (perf.length) {
@@ -2932,6 +3192,14 @@
 
   /* The bodies without names, as four numbers. Tapping the number itself
      opens one of them, which is how a depth player gets a name. */
+  /* Not "depth" -- a room. The offensive line and the edge rushers are not
+     backups, they are positions a panel show never names, which is exactly
+     why they get counted instead of typed out. */
+  var ROOM = {
+    QB: 'The quarterback room', HB: 'The backfield', WR: 'The receiver room', TE: 'The tight ends',
+    OL: 'The offensive line', EDGE: 'The edge rushers', DT: 'The interior line', LB: 'The linebacker room',
+    CB: 'The corners', S: 'The safeties', K: 'Kickers', P: 'Punters', ATH: 'Unassigned'
+  };
   function depthRow(g, list) {
     var cells = YEARS.map(function (y) {
       var count = list.filter(function (p) { return p.year === y; }).length;
@@ -2941,8 +3209,8 @@
         '<button class="step" data-action="depth-more" data-group="' + g.id + '" data-year="' + y + '" aria-label="One more unnamed ' + y + ' at ' + esc(g.name) + '">+</button>' +
       '</span>';
     }).join('');
-    return '<div class="depth-row"><span class="who"><b>Depth</b><span>' +
-      (list.length ? list.length + ' with no name — tap a number to name one' : 'count the bodies you never talk about') +
+    return '<div class="depth-row"><span class="who"><b>' + esc(ROOM[g.id] || g.name) + '</b><span>' +
+      (list.length ? list.length + ' counted, not named — tap a number to name one' : 'count them instead of naming them') +
       '</span></span><span class="depth-years">' + cells + '</span></div>';
   }
 
@@ -2959,8 +3227,8 @@
     var html = '<div class="view-head"><h1>Roster</h1>' +
       '<div class="actions"><button class="btn" data-action="scan-roster">' + icon('camera') + 'Screenshot</button><button class="btn" data-action="paste-players">' + icon('paste') + 'Paste</button><button class="btn primary" data-action="add-player">' + icon('plus') + 'Add player</button></div>' +
       '<p class="sub">' + state.players.length + ' of ' + state.cap + ' scholarships used' +
-        (state.players.length ? ' · ' + namedPlayers().length + ' named, ' + (state.players.length - namedPlayers().length) + ' depth' : '') +
-        '. Name the players you care about; count the rest.</p></div>';
+        (state.players.length ? ' · ' + namedPlayers().length + ' named, ' + (state.players.length - namedPlayers().length) + ' counted' : '') +
+        '. Name the players the show talks about; count the rooms it never does.</p></div>';
 
     html += '<div class="filters">' +
       '<select data-filter="roster.group"><option value="">All positions</option>' + options(allGroups, f.group, function (g) { return g.name; }, function (g) { return g.id; }) + '</select>' +
@@ -2968,7 +3236,7 @@
     '</div>';
 
     if (!state.players.length) {
-      html += '<div class="card"><div class="empty"><b>No players yet</b>Add the ones worth naming, count the rest with the plus buttons below, or paste the whole depth chart in one go.</div></div>';
+      html += '<div class="card"><div class="empty"><b>No players yet</b>Name the ones the show will talk about, count the rest with the plus buttons below, or paste the whole depth chart in one go.</div></div>';
     }
     html += '<div class="card">';
     var any = false;
@@ -3206,6 +3474,114 @@
     return html;
   }
 
+  function rivalsCard() {
+    var found = {};
+    /* opponents the results have turned into rivals without anybody saying so */
+    state.games.forEach(function (g) {
+      var nm = String(g.opponent || '').trim();
+      if (!nm || found[nm.toLowerCase()]) return;
+      var f = seriesFacts(nm);
+      if (f.earned && !f.declared) found[nm.toLowerCase()] = { name: nm, facts: f };
+    });
+    var emerging = Object.keys(found).map(function (k) { return found[k]; });
+    var rows = state.rivals.map(function (r) {
+      var f = seriesFacts(r.name);
+      return '<div class="item"><span class="chip warn">Rivalry</span>' +
+        '<span class="who"><b>' + esc(r.name) + '</b><span>' + (f.games ? 'series ' + f.record + (f.run > 1 ? ' · ' + (f.runBy === 'W' ? 'won' : 'lost') + ' ' + f.run + ' straight' : '') : 'no meetings logged yet') + (r.note ? ' · ' + esc(r.note) : '') + '</span></span>' +
+        '<span class="meta"><button class="btn small" data-action="edit-rival" data-id="' + r.id + '">Edit</button></span></div>';
+    }).join('');
+    var sugg = emerging.map(function (e) {
+      return '<div class="item"><span class="chip outline">Becoming one</span>' +
+        '<span class="who"><b>' + esc(e.name) + '</b><span>' + e.facts.games + ' meetings, ' + e.facts.record + ', ' + e.facts.close + ' decided by a score</span></span>' +
+        '<span class="meta"><button class="btn small primary" data-action="make-rival" data-name="' + esc(e.name) + '">Make it official</button></span></div>';
+    }).join('');
+    return '<div class="card"><div class="card-head"><h2>Rivalries</h2>' +
+      '<span class="hint">Trophy games you declare, and the ones the results make for you. The panel treats both like it matters.</span></div>' +
+      (rows || sugg ? '<div class="list">' + rows + sugg + '</div>' : '<div class="empty">None yet. Play somebody three times in close games and this fills itself in.</div>') +
+      '<div class="modal-actions" style="margin-top:8px"><button class="btn" data-action="add-rival">' + icon('plus') + 'Add a rivalry</button></div></div>';
+  }
+
+  function rivalModal(r) {
+    var isNew = !r;
+    r = r || { id: '', name: '', note: '' };
+    openModal('<h2>' + (isNew ? 'Add a rivalry' : 'Rivalry') + '</h2>' +
+      '<div class="field"><label for="rv-name">Opponent</label><input type="text" id="rv-name" value="' + esc(r.name) + '" placeholder="Oregon State"></div>' +
+      '<div class="field"><label for="rv-note">What it is</label><input type="text" id="rv-note" value="' + esc(r.note || '') + '" placeholder="Civil War, the trophy, conference title every year…"><div class="help">Every game against them is treated as a rivalry, whatever the schedule says.</div></div>' +
+      '<div class="modal-actions">' +
+        (isNew ? '' : '<button class="btn danger" data-action="delete-rival" data-id="' + r.id + '">' + icon('trash') + 'Remove</button>') +
+        '<span class="spacer"></span>' +
+        '<button class="btn" data-action="close">Cancel</button>' +
+        '<button class="btn primary" data-action="save-rival" data-id="' + (r.id || '') + '">' + (isNew ? 'Add' : 'Save') + '</button>' +
+      '</div>');
+  }
+
+  function scheduleCard() {
+    var rows = scheduleFor(state.season);
+    var logged = {};
+    state.games.forEach(function (g) { if (g.season === state.season) logged[int(g.week, 0, 99)] = g; });
+    var body = rows.map(function (x) {
+      var wk = int(x.week, 0, 99);
+      var g = logged[wk];
+      var rk = rankOf(x.rank);
+      var where = x.bye ? 'Bye week' : (x.home ? 'vs ' : 'at ') + (rk ? 'No. ' + rk + ' ' : '') + (x.opponent || '—');
+      var tags = [];
+      if (x.rivalry) tags.push('rivalry');
+      if (x.note) tags.push(esc(x.note));
+      if (g) tags.push(g.result + ' ' + int(g.scoreFor, 0, 999) + '–' + int(g.scoreAgainst, 0, 999));
+      return '<div class="item sched-row' + (x.bye ? ' bye' : '') + '">' +
+        '<span class="chip outline">Wk ' + wk + '</span>' +
+        '<span class="who"><b>' + esc(where) + '</b><span>' + (tags.length ? tags.join(' · ') : (x.bye ? 'nobody to play' : 'not played yet')) + '</span></span>' +
+        '<span class="meta">' +
+          '<button class="btn small" data-action="edit-week" data-id="' + x.id + '">Edit</button>' +
+          (x.bye ? '' : g
+            ? '<button class="btn small" data-action="script" data-id="' + g.id + '">' + icon('mic') + 'Script</button>'
+            : '<button class="btn small primary" data-action="log-week" data-id="' + x.id + '">Log result</button>') +
+        '</span></div>';
+    }).join('');
+    return '<div class="card"><div class="card-head"><h2>Schedule</h2>' +
+      '<span class="hint">' + state.season + ' · the panel talks about who is next, who you have just played and how far you have been travelling.</span></div>' +
+      (rows.length ? '<div class="list">' + body + '</div>' : '<div class="empty">No schedule yet. Put the season in and every script knows what is coming.</div>') +
+      '<div class="modal-actions" style="margin-top:8px"><button class="btn" data-action="add-week">' + icon('plus') + 'Add a week</button>' +
+      (rows.length ? '<span class="spacer"></span><button class="btn" data-action="add-bye">Add a bye</button>' : '') +
+      '</div></div>';
+  }
+
+  function weekModal(x) {
+    var isNew = !x;
+    var used = scheduleFor(state.season).map(function (w) { return int(w.week, 0, 99); });
+    var nextFree = 1;
+    while (used.indexOf(nextFree) >= 0 && nextFree < 25) nextFree++;
+    x = x || { id: '', season: state.season, week: nextFree, opponent: '', home: true, rank: '', rivalry: false, bye: false, note: '' };
+    openModal('<h2>' + (isNew ? 'Add a week' : 'Week ' + int(x.week, 1, 25)) + '</h2>' +
+      '<div class="row">' +
+        '<div class="field"><label for="w-week">Week</label><input type="number" id="w-week" value="' + int(x.week, 1, 25) + '" min="1" max="25"></div>' +
+        '<div class="field"><label for="w-opp">Opponent</label><input type="text" id="w-opp" value="' + esc(x.opponent) + '" placeholder="Kansas State"></div>' +
+        '<div class="field"><label for="w-where">Where</label><select id="w-where"><option value="1"' + (x.home ? ' selected' : '') + '>Home</option><option value="0"' + (x.home ? '' : ' selected') + '>Away</option></select></div>' +
+        '<div class="field"><label for="w-rank">Their rank</label><input type="number" id="w-rank" value="' + esc(rankOf(x.rank)) + '" min="1" max="25" placeholder="Unranked"></div>' +
+      '</div>' +
+      '<label class="check"><input type="checkbox" id="w-riv"' + (x.rivalry ? ' checked' : '') + '> Rivalry game — the panel will treat it like one</label>' +
+      '<label class="check"><input type="checkbox" id="w-bye"' + (x.bye ? ' checked' : '') + '> Bye week</label>' +
+      '<div class="field"><label for="w-note">Note</label><input type="text" id="w-note" value="' + esc(x.note || '') + '" placeholder="Conference opener, homecoming…"></div>' +
+      '<div class="modal-actions">' +
+        (isNew ? '' : '<button class="btn danger" data-action="delete-week" data-id="' + x.id + '">' + icon('trash') + 'Remove</button>') +
+        '<span class="spacer"></span>' +
+        '<button class="btn" data-action="close">Cancel</button>' +
+        '<button class="btn primary" data-action="save-week" data-id="' + (x.id || '') + '">' + (isNew ? 'Add' : 'Save') + '</button>' +
+      '</div>');
+  }
+  function readWeekForm(id) {
+    var x = id ? state.schedule.filter(function (w) { return w.id === id; })[0] : null;
+    if (!x) { x = { id: uid(), season: state.season }; state.schedule.push(x); }
+    x.week = int($('#w-week').value, 1, 25);
+    x.opponent = $('#w-opp').value.trim();
+    x.home = $('#w-where').value === '1';
+    x.rank = rankOf($('#w-rank').value);
+    x.rivalry = $('#w-riv').checked;
+    x.bye = $('#w-bye').checked;
+    x.note = $('#w-note').value.trim();
+    return x;
+  }
+
   function renderShow() {
     var games = state.games.slice().sort(function (a, b) {
       return (b.season - a.season) || (int(b.week, 0, 99) - int(a.week, 0, 99));
@@ -3213,6 +3589,9 @@
     var html = '<div class="view-head"><h1>The show</h1>' +
       '<div class="actions"><button class="btn primary" data-action="add-game">' + icon('plus') + 'Add a game</button></div>' +
       '<p class="sub">Put in what happened and get a debate-show script out — a host, a hot take and a counter, arguing about your players. Edit it, then copy it into whatever makes your audio, or save it as a PDF.</p></div>';
+
+    html += scheduleCard();
+    html += rivalsCard();
 
     if (!games.length) {
       return html + '<div class="card"><div class="empty"><b>No games yet</b>Add one and the script writes itself from the score, the stats and who played well.</div>' +
@@ -3243,11 +3622,16 @@
     return html;
   }
 
-  function gameModal(g) {
+  /* A game can start from a schedule row, which is where the opponent, the
+     venue and their ranking were already typed in once. */
+  function gameModal(g, slot) {
     var isNew = !g;
     g = g || {
-      id: '', season: state.season, week: (state.games.filter(function (x) { return x.season === state.season; }).length + 1),
-      opponent: '', home: true, result: 'W', scoreFor: '', scoreAgainst: '',
+      id: '', season: state.season,
+      week: slot ? int(slot.week, 1, 25) : (state.games.filter(function (x) { return x.season === state.season; }).length + 1),
+      opponent: slot ? slot.opponent : '', home: slot ? !!slot.home : true,
+      rankAgainst: slot ? rankOf(slot.rank) : '',
+      result: 'W', scoreFor: '', scoreAgainst: '',
       yardsFor: '', yardsAgainst: '', toFor: '', toAgainst: '', thirdDown: '', penalties: '',
       performances: [], notes: '', script: ''
     };
@@ -3689,8 +4073,8 @@
     p = p || { name: '', pos: 'QB', year: 'FR', rs: false, redshirtNow: false, ovr: '', dev: 'Normal', exit: '', note: '' };
     openModal('<h2>' + (isNew ? 'Add player' : isDepth(p) ? 'Name this player' : 'Edit player') + '</h2>' +
       '<div class="field"><label for="p-name">Name <span style="font-weight:400;color:var(--ink-muted)">— optional</span></label>' +
-        '<input type="text" id="p-name" value="' + esc(p.name) + '" placeholder="Leave blank to keep him as depth">' +
-        '<div class="help">' + (isNew ? 'No name means he counts at his position and never gets talked about.' : 'Clear the name to put him back in the depth count.') + '</div></div>' +
+        '<input type="text" id="p-name" value="' + esc(p.name) + '" placeholder="Leave blank and he is just counted">' +
+        '<div class="help">' + (isNew ? 'No name means he counts at his position and never gets talked about.' : 'Clear the name to put him back in the room count.') + '</div></div>' +
       '<div class="row">' +
         '<div class="field"><label for="p-pos">Position</label>' + posSelect('p-pos', p.pos) + '</div>' +
         '<div class="field"><label for="p-year">Year</label><select id="p-year">' + options(YEARS, p.year) + '</select></div>' +
@@ -4343,6 +4727,15 @@
       oneOf(r, 'type', ['hs', 'portal'], 'hs'); oneOf(r, 'year', YEARS, 'SO'); oneOf(r, 'dev', DEVS, 'Normal');
       num(r, 'stars', 0, 5); num(r, 'rank', 0, 9999); num(r, 'standing', 0, 8); num(r, 'hours', 0, 99); num(r, 'ovr', 0, 99);
     });
+    b.rivals = objs(b.rivals);
+    b.rivals.forEach(function (x) { if (!safe(x.id)) x.id = uid(); text(x, ['name', 'note']); });
+    b.schedule = objs(b.schedule);
+    b.schedule.forEach(function (x) {
+      if (!safe(x.id)) x.id = uid();
+      text(x, ['opponent', 'note']);
+      num(x, 'season', 1900, 2999); num(x, 'week', 1, 25); num(x, 'rank', 0, 25, true);
+      x.home = !!x.home; x.rivalry = !!x.rivalry; x.bye = !!x.bye;
+    });
     b.games = objs(b.games);
     b.games.forEach(function (g) {
       if (!safe(g.id)) g.id = uid();
@@ -4489,6 +4882,46 @@
         else toast('Add a couple more recruits first.');
         break;
       case 'add-game': gameModal(null); break;
+      case 'add-week': weekModal(null); break;
+      case 'add-rival': rivalModal(null); break;
+      case 'edit-rival':
+        var er = state.rivals.filter(function (x) { return x.id === id; })[0];
+        if (er) rivalModal(er);
+        break;
+      case 'save-rival':
+        var rvName = $('#rv-name').value.trim();
+        if (!rvName) { $('#rv-name').focus(); return; }
+        var rv = state.rivals.filter(function (x) { return x.id === id; })[0];
+        if (!rv) { rv = { id: uid() }; state.rivals.push(rv); }
+        rv.name = rvName; rv.note = $('#rv-note').value.trim();
+        save(); closeModal(); render(); break;
+      case 'delete-rival':
+        state.rivals = state.rivals.filter(function (x) { return x.id !== id; });
+        save(); closeModal(); render(); toast('Removed.'); break;
+      case 'make-rival':
+        state.rivals.push({ id: uid(), name: t.getAttribute('data-name'), note: 'earned it the hard way' });
+        save(); render(); toast('It’s a rivalry now.'); break;
+      case 'add-bye':
+        var byeUsed = scheduleFor(state.season).map(function (w) { return int(w.week, 0, 99); });
+        var byeWeek = 1;
+        while (byeUsed.indexOf(byeWeek) >= 0 && byeWeek < 25) byeWeek++;
+        state.schedule.push({ id: uid(), season: state.season, week: byeWeek, opponent: '', home: true, rank: '', rivalry: false, bye: true, note: '' });
+        save(); render(); break;
+      case 'edit-week':
+        var ew = state.schedule.filter(function (w) { return w.id === id; })[0];
+        if (ew) weekModal(ew);
+        break;
+      case 'save-week':
+        readWeekForm(id);
+        save(); closeModal(); render(); break;
+      case 'delete-week':
+        state.schedule = state.schedule.filter(function (w) { return w.id !== id; });
+        save(); closeModal(); render(); toast('Removed.'); break;
+      case 'log-week':
+        /* the opponent, where it is and their ranking are already typed in */
+        var lw = state.schedule.filter(function (w) { return w.id === id; })[0];
+        if (lw) gameModal(null, lw);
+        break;
       case 'edit-game':
         var eg = state.games.filter(function (x) { return x.id === id; })[0];
         if (eg) gameModal(eg);
@@ -4711,6 +5144,11 @@
     takeSnapshot: takeSnapshot,
     spoken: spoken,
     boxOf: boxOf,
+    seriesFacts: seriesFacts,
+    declaredRival: declaredRival,
+    scheduleFor: scheduleFor,
+    slotFor: slotFor,
+    scheduleCtx: scheduleCtx,
     isDepth: isDepth,
     namedPlayers: namedPlayers,
     gradeLine: gradeLine,

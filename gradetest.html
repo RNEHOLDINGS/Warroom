@@ -124,7 +124,7 @@
     slider.value = '3'; slider.dispatchEvent(new Event('input', { bubbles: true })); slider.dispatchEvent(new Event('change', { bubbles: true }));
     ok(W.state().show.hype === 3 && /Game day/.test(q('#hypeName').textContent), 'moving it saves game day');
     var loud = W.buildScript(Object.assign({}, g, { id: 'g3b', performances: [{ name: 'J.Carty', pos: 'QB', line: '19/24, 260 yds, 4 TD', verdict: 'standout' }] }));
-    ok(/standing up in this studio/.test(loud), 'game day is louder');
+    ok(/standing up in this studio|get this man a trophy|ARE YOU KIDDING ME/.test(loud), 'game day is louder', loud.split('STOCK UP')[1].slice(0, 300));
     slider = q('#hype');
     slider.value = '1'; slider.dispatchEvent(new Event('change', { bubbles: true }));
     ok(W.state().show.hype === 1, 'film room saves');

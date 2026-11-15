@@ -71,7 +71,7 @@
     ok(wrRow.returning === 3, 'they count at their own position', wrRow.returning);
     ok(/FR.*2/.test(q(nameBtn('WR', 'FR')).textContent), 'the number on screen matches', q(nameBtn('WR', 'FR')).textContent);
     ok(!/Unnamed/.test(q('#view').textContent), 'nobody is listed as "Unnamed"');
-    ok(/3 with no name/.test(q('#view').textContent), 'the row says how many have no name');
+    ok(/3 counted, not named/.test(q('#view').textContent), 'the row says how many are counted');
 
     /* --- and back out --- */
     click(minus('WR', 'SO'));
@@ -95,7 +95,7 @@
     click('[data-action="save-player"]');
     ok(depthOf('WR', 'FR') === 2 && !/Breakout Kid/.test(q('#view').textContent), 'clearing the name puts him back in the count', depthOf('WR', 'FR'));
 
-    /* --- Add player with no name is depth too --- */
+    /* --- Add player with no name is counted too --- */
     click('[data-action="add-player"]');
     q('#p-pos').value = 'CB'; q('#p-year').value = 'JR';
     click('[data-action="save-player"]');

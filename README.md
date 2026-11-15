@@ -132,6 +132,18 @@ on third down is a defense that could not get off the field. Outgaining a team
 and losing means points were left in the red zone. The three or four stats
 that mattered most get argued, and the rest stay in the table.
 
+**It does not repeat itself.** Every recurring beat — the cold open, the
+needling, the segment handoffs, the sign-offs — walks one step through its
+list of lines each week, so the same thing never lands two episodes running.
+Each of them has their tells, too, used sparingly: "put some respect on it",
+"that's a sample, not a trend", "somebody has to keep time around here".
+
+**It has something to be hard about.** A list of specific complaints is pulled
+out of the box score — third down, the run game, 70 yards of flags, giving it
+away twice, going for it on fourth and not getting it, a win that took all
+afternoon against a team they should handle — and the argument uses them
+instead of circling the turnover margin every week.
+
 **It talks like people, not a teleprompter.** Every line uses contractions
 ("that's not", "I'm not gonna"), replies are short and quick ("Name the snap."
 "Unbelievable."), and the team is called by its name and mascot, not "they"
@@ -327,6 +339,39 @@ How it works, and why:
 `voicetest.html` checks all of this against a stand-in for Google. The one
 thing it cannot check is Google itself: until it is run with a real key, the
 audio quality and the exact reply format are untested.
+
+## The schedule
+
+Put the season in on the Show screen — week, opponent, home or away, their
+ranking, a note, and byes — and every script after that knows what is coming.
+**Log result** on a week opens the game form with the opponent, the venue and
+their ranking already filled in, so none of it gets typed twice.
+
+What the panel does with it:
+
+- **A look-ahead segment**, after the final take: who is next, where, ranked or
+  not, and what has to change by Saturday — tied to the thing that actually
+  went wrong ("you can't take that run game into Washington and expect a
+  different ending").
+- **Travel**: three games in a row away from home gets said out loud.
+- **Byes**: an open week is two weeks to fix something, and the panel says what.
+- **The calls name the opponent** ("they beat Washington, write it down"), and
+  the ledger grades them against that team the following week.
+- **What is left**: how many games remain and how many of those are ranked.
+
+## Rivalries
+
+Some are declared, some are earned. **Add a rivalry** names a team — the
+trophy game, the conference rival you meet in December every year — and every
+meeting with them is treated as one, whatever the schedule says.
+
+The rest build themselves. The app reads the series out of your own results,
+and when two teams have **met three or more times across at least two seasons,
+with most of those games decided by a score and both sides winning some**, it
+says so on the Show screen under *Becoming one*, with a button to make it
+official. Either way the panel quotes the series ("that's 2-1 between these two
+over three seasons"), knows who has won the last few, and treats the game like
+it counts double.
 
 ## Name the ones worth naming
 
@@ -572,6 +617,9 @@ These suites are all driven through real DOM clicks with hit testing:
 - `casttest.html` — chairs that match their voices, contractions, the team's
   own name, and the season memory: streaks, callbacks, player history,
   averages, and that a later week is never mentioned.
+- `scheduletest.html` — entering a schedule, logging a result from it, the
+  look-ahead segment, road trips and byes, rivalries declared and earned, and
+  that the cold open never repeats two weeks running.
 - `depthtest.html` — counting bodies in and out, naming one and unnaming him,
   the scholarship count, the season rollover, and that only named players
   reach the show and the portal list.

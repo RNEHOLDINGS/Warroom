@@ -98,7 +98,7 @@
     ok(!/UPSET|poll|No\. \d/.test(plain), 'with no rankings typed, nobody mentions rankings');
 
     var chalk = spokenText(W.buildScript({ id: 'c', season: st.season, week: 10, opponent: 'Utah', home: true, result: 'W', scoreFor: 30, scoreAgainst: 20, rankFor: 6, rankAgainst: 18, performances: [], notes: '' }));
-    ok(/No\. 6 Oregon beat No\. 18 Utah/.test(chalk) && !/UPSET/.test(chalk), 'a favourite winning is named with both rankings but not called an upset', chalk.split('\n')[0]);
+    ok(/No\. 6 Oregon\b.{0,40}No\. 18 Utah/.test(chalk) && !/UPSET/.test(chalk), 'a favourite winning is named with both rankings but not called an upset', chalk.split('\n')[0]);
 
     /* --- backups keep them, and nothing else is carried between weeks --- */
     var raw = JSON.parse(localStorage.getItem('warroom.v1'));

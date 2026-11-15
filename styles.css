@@ -697,3 +697,8 @@ table.plain td.num, table.plain th.num { text-align: right; }
   .depth-n { min-width: 26px; padding: 0 1px; gap: 2px; font-size: 11px; }
   .depth-n b { font-size: 12px; }
 }
+
+/* the schedule */
+.sched-row.bye { opacity: .7; }
+.sched-row.bye .who b { font-style: italic; }
+.sched-row .who b { white-space: normal; overflow: visible; text-overflow: clip; }
