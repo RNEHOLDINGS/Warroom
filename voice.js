@@ -155,7 +155,11 @@
               id: id,
               label: (m.displayName || id) + (m.description && /deprecat/i.test(m.description) ? ' — deprecated' : ''),
               speaks: /tts|speech/i.test(id) || /tts|speech/i.test(m.displayName || ''),
-              writes: methods.indexOf('generateContent') >= 0
+              /* These answer generateContent and then refuse a plain written
+                 turn: live models want a socket, the image and video ones
+                 return pictures. Offering them as the episode's writer is
+                 offering a choice that cannot work. */
+              writes: methods.indexOf('generateContent') >= 0 && !/(^|-)(live|imagen|veo)(-|$)|image|vision|embedding|^aqa$/i.test(id)
             });
           });
           page = data.nextPageToken || '';
@@ -341,8 +345,51 @@
     try { msg = (JSON.parse(body).error || {}).message || ''; } catch (e) { msg = String(body || '').slice(0, 200); }
     if (status === 400 && /API key not valid/i.test(msg)) return 'Google rejected the API key. Check it in Settings → The show.';
     if (status === 403) return 'That key is not allowed to use text-to-speech' + (msg ? ' (' + msg + ')' : '') + '. Check the key’s restrictions in Google Cloud.';
-    if (status === 404) return 'Google does not recognise that model. Tap “Check what my key can use” in Settings → The show, and pick from the list it finds.';
+    /* Google's own sentence says which of several different problems this is
+       -- a retired model, a model this tier cannot have, a model that cannot
+       do audio. Rewriting it into one friendly line threw that away and left
+       nothing to act on, so it is kept on the end. */
+    if (status === 404) return 'That model will not answer. Google says: ' + (msg || 'not found') +
+      ' — tap “Test the voice” or “Test the writer” beside the list to find one that does.';
     return 'Google said no (' + status + ')' + (msg ? ': ' + msg : '.');
+  }
+
+  /* Checking a model by running a whole episode is a slow and expensive way
+     to find out it was the wrong one. These send the smallest request the
+     model will take -- a few words -- and report what came back. */
+  function tryModel(kind, model, key, voice, signal) {
+    var body = kind === 'voice'
+      ? {
+          contents: [{ parts: [{ text: 'Testing, one two.' }] }],
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice || 'Algieba' } } }
+          }
+        }
+      : {
+          contents: [{ parts: [{ text: 'Reply with one word: ready' }] }],
+          generationConfig: { maxOutputTokens: 2048 }
+        };
+    return fetch(ENDPOINT + model + ':generateContent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify(body),
+      signal: signal
+    }).then(function (r) {
+      return r.text().then(function (raw) {
+        if (r.status === 429) throw new Error('The key works but Google is rate limiting it right now. Wait a minute and test again.');
+        if (!r.ok) throw new Error(explain(r.status, raw));
+        var parts = ((((JSON.parse(raw).candidates || [])[0] || {}).content || {}).parts) || [];
+        if (kind === 'voice') {
+          var audio = parts.filter(function (p) { return p.inlineData && p.inlineData.data; })[0];
+          if (!audio) throw new Error('That model answered, but with no audio in it. Pick one with TTS in the name.');
+          return Math.round(b64ToBytes(audio.inlineData.data).length / 1024) + 'KB of audio came back';
+        }
+        var text = parts.map(function (p) { return p.text || ''; }).join('').trim();
+        if (!text) throw new Error('That model answered, but with nothing written in it.');
+        return 'it wrote back “' + text.slice(0, 40) + '”';
+      });
+    });
   }
 
   function voiceChunk(opts, chunk, onWait) {
@@ -470,6 +517,7 @@
     MODELS: MODELS,
     WRITE_MODELS: WRITE_MODELS,
     listModels: listModels,
+    tryModel: tryModel,
     writePrompt: writePrompt,
     writeShow: writeShow,
     VOICES: VOICES,

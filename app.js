@@ -255,7 +255,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v28';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v29';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -5029,9 +5029,13 @@
             if (sh.model && !vOpts.some(function (m) { return m.id === sh.model; })) vOpts = vOpts.concat([{ id: sh.model, label: sh.model + ' — saved' }]);
             if (sh.writeModel && !wOpts.some(function (m) { return m.id === sh.writeModel; })) wOpts = wOpts.concat([{ id: sh.writeModel, label: sh.writeModel + ' — saved' }]);
             return '<div class="field"><label for="sh-model">Voice model</label><select id="sh-model">' +
-                options(vOpts, sh.model, function (m) { return m.label; }, function (m) { return m.id; }) + '</select></div>' +
+                options(vOpts, sh.model, function (m) { return m.label; }, function (m) { return m.id; }) + '</select>' +
+                '<div class="help"><button class="btn small" data-action="test-voice">Test the voice</button> ' +
+                  '<span id="voiceTest"></span></div></div>' +
               '<div class="field" style="grid-column:1/-1"><label for="sh-write">Who writes the episode</label>' +
                 '<select id="sh-write">' + options(wOpts, sh.writeModel, function (m) { return m.label; }, function (m) { return m.id; }) + '</select>' +
+                '<div class="help"><button class="btn small" data-action="test-write">Test the writer</button> ' +
+                  '<span id="writeTest"></span></div>' +
                 '<div class="help">The built-in writer is free, works offline and always says the same thing for the same game. Switching this on sends the facts — the grades, the charges, the coach’s quote, the schedule — to Google and gets a fresh episode written round them, which costs a little per show and comes back different every time. Either way you can edit it before voicing.</div></div>' +
               '<div class="field" style="grid-column:1/-1">' +
                 '<button class="btn small" data-action="find-models">' + icon('spin') + 'Check what my key can use</button>' +
@@ -6041,6 +6045,27 @@
         var bar = $('.update-bar');
         if (bar) bar.remove();
         break;
+      case 'test-voice':
+      case 'test-write': {
+        var kind = a === 'test-voice' ? 'voice' : 'write';
+        var V2 = window.WarRoomVoice;
+        var note2 = $(kind === 'voice' ? '#voiceTest' : '#writeTest');
+        var key2 = (($('#sh-key') || {}).value || '').trim() || (V2 && V2.getKey());
+        var pick = (($(kind === 'voice' ? '#sh-model' : '#sh-write') || {}).value || '').trim();
+        if (!note2) break;
+        if (!key2) { note2.textContent = 'Put your API key in the box above first.'; break; }
+        if (!pick) { note2.textContent = kind === 'voice' ? 'Pick a voice model first.' : 'The writer is off, so there is nothing to test.'; break; }
+        if (t) t.disabled = true;
+        note2.textContent = 'Asking ' + pick + '…';
+        V2.tryModel(kind, pick, key2, (($('#sh-v-host') || {}).value || 'Algieba')).then(function (how) {
+          if (t) t.disabled = false;
+          note2.textContent = pick + ' works — ' + how + '.';
+        }).catch(function (err) {
+          if (t) t.disabled = false;
+          note2.textContent = (err && err.message) || 'Could not reach Google.';
+        });
+        break;
+      }
       case 'find-models':
         (function (btn) {
           var V = window.WarRoomVoice;
@@ -6052,10 +6077,23 @@
           V.listModels(key).then(function (list) {
             state.show = Object.assign({}, state.show || {}, { models: list });
             /* a saved choice that no longer exists would only 404 again */
+            /* Picking for somebody means picking the one most likely to
+               work on their key: Flash is on the free tier where Pro often
+               is not, and a model not marked preview is likelier to still be
+               there next month. Reverse alphabetical put Pro first, which is
+               how a key that cannot have Pro ended up pointed at it. */
+            var best = function (arr) {
+              return arr.slice().sort(function (a, b) {
+                var s = function (m) {
+                  return (/flash/i.test(m.id) ? -4 : 0) + (/preview|exp/i.test(m.id) ? 2 : 0) + (/pro/i.test(m.id) ? 1 : 0);
+                };
+                return s(a) - s(b) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+              })[0];
+            };
             var speaks = list.filter(function (m) { return m.speaks; });
             var writes = list.filter(function (m) { return !m.speaks; });
-            if (speaks.length && !speaks.some(function (m) { return m.id === showCfg().model; })) state.show.model = speaks[0].id;
-            if (showCfg().writeModel && writes.length && !writes.some(function (m) { return m.id === showCfg().writeModel; })) state.show.writeModel = writes[0].id;
+            if (speaks.length && !speaks.some(function (m) { return m.id === showCfg().model; })) state.show.model = best(speaks).id;
+            if (showCfg().writeModel && writes.length && !writes.some(function (m) { return m.id === showCfg().writeModel; })) state.show.writeModel = best(writes).id;
             save(); render();
             toast(list.length + ' models found. Pick the ones you want.');
           }).catch(function (err) {

@@ -43,6 +43,12 @@ window.fetch = function (url, init) {
       if (init.signal && init.signal.aborted) return;
       var reply = function (status, obj) { res(new Response(JSON.stringify(obj), { status: status, headers: { 'Content-Type': 'application/json' } })); };
       if (window.__mode === 'badkey') return reply(400, { error: { code: 400, message: 'API key not valid. Please pass a valid API key.' } });
+      if (window.__mode === 'notfound') return reply(404, { error: { code: 404, message: 'models/x is not found for API version v1beta, or is not supported for generateContent.' } });
+      var wantsAudio = ((body.generationConfig || {}).responseModalities || []).indexOf('AUDIO') >= 0;
+      if (wantsAudio) {
+        if (window.__mode === 'noaudio') return reply(200, { candidates: [{ content: { parts: [{ text: 'I cannot do that.' }] } }] });
+        return reply(200, { candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;rate=24000', data: btoa(new Array(3000).join('a')) } }] } }] });
+      }
       if (window.__mode === 'empty') return reply(200, { candidates: [{ content: { parts: [{ text: 'Sorry, I cannot help with that.' }] }, finishReason: 'STOP' }] });
       var script = '```\n--- COLD OPEN ---\n\nWHITCOMB: Welcome in. Oregon lost to Utah, 27 to 13.\n\nMABRY: I’m done making excuses for that offense.\n\nHARLAN: Twenty-one of thirty-eight, three picks. That’s the game.\n\nCOACH: J.Carty has to be better.\n\nRIDENOUR: They’re still chasing a tackle in this class.\n```';
       reply(200, { candidates: [{ content: { parts: [{ text: script }] }, finishReason: 'STOP' }] });
@@ -192,6 +198,36 @@ window.fetch = function (url, init) {
       return sleep(300);
     }).then(function () {
       ok(/rejected the API key/.test(q('#modelNote').textContent), 'a bad key says so here too', q('#modelNote').textContent);
+      window.__mode = 'ok';
+
+      /* --- testing a pick, instead of spending a show to find out --- */
+      click('[data-action="test-voice"]');
+      return sleep(300);
+    }).then(function () {
+      ok(/gemini-9-flash-tts works/.test(q('#voiceTest').textContent), 'one tap says whether the voice model works', q('#voiceTest').textContent);
+      ok(/audio came back/.test(q('#voiceTest').textContent), 'and proves it by the audio, not by a 200', q('#voiceTest').textContent);
+      var last = window.__calls[window.__calls.length - 1];
+      ok(/gemini-9-flash-tts:generateContent/.test(last.url), 'it tests the model that is actually selected', last.url);
+      ok(JSON.stringify(last.body).length < 400, 'with the smallest request it will take, so testing is nearly free', JSON.stringify(last.body).length);
+
+      click('[data-action="test-write"]');
+      return sleep(300);
+    }).then(function () {
+      ok(/gemini-9-flash works/.test(q('#writeTest').textContent) && /wrote back/.test(q('#writeTest').textContent), 'and whether the writer works', q('#writeTest').textContent);
+
+      window.__mode = 'notfound';
+      click('[data-action="test-voice"]');
+      return sleep(300);
+    }).then(function () {
+      var m = q('#voiceTest').textContent;
+      ok(/is not supported for generateContent/.test(m), 'a refusal keeps Google’s own sentence, which is the only thing that says which problem it is', m);
+      ok(!/does not recognise that model/.test(m), 'and no longer sends you hunting for a model you never picked', m);
+
+      window.__mode = 'noaudio';
+      click('[data-action="test-voice"]');
+      return sleep(300);
+    }).then(function () {
+      ok(/no audio in it/.test(q('#voiceTest').textContent), 'a model that answers in words is not a voice model', q('#voiceTest').textContent);
       window.__mode = 'ok';
     }).then(function () {
 
