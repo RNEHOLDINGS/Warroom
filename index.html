@@ -64,7 +64,27 @@
 <script>
   if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('sw.js').catch(function (e) {
+      navigator.serviceWorker.register('sw.js').then(function (reg) {
+        /* An installed copy keeps serving the version it has until the page
+           is loaded again, so somebody can tap a button that was fixed an
+           hour ago and still hit the old bug. Say so, once, rather than
+           reloading underneath them. */
+        var told = false;
+        var ready = function () {
+          if (told) return;
+          told = true;
+          if (window.WarRoom && window.WarRoom.updateReady) window.WarRoom.updateReady();
+        };
+        if (reg.waiting && navigator.serviceWorker.controller) ready();
+        reg.addEventListener('updatefound', function () {
+          var sw = reg.installing;
+          if (!sw) return;
+          sw.addEventListener('statechange', function () {
+            if (sw.state === 'installed' && navigator.serviceWorker.controller) ready();
+          });
+        });
+        setTimeout(function () { reg.update().catch(function () {}); }, 2000);
+      }).catch(function (e) {
         console.warn('Offline support unavailable:', e);
       });
     });

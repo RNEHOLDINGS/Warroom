@@ -255,7 +255,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v27';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v28';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -5064,6 +5064,7 @@
     html += '<div class="card"><div class="card-head"><h2>Your data</h2><span class="hint">Lives only in this browser. Export before you clear anything.</span></div>' +
       '<p class="box-help">' + (lastExport ? 'Last exported ' + esc(snapLabel({ at: lastExport })) + '.' : 'Never exported.') +
         ' Updates never touch your data, but a browser can clear a site it has not seen in a while (Safari does after about a week), and only an exported file survives that.</p>' +
+      '<p class="box-help">Running build <b>' + esc(APP_BUILD) + '</b>. If that is not the newest one, close the app completely and open it again.</p>' +
       '<div class="side-title">Automatic copies</div>' +
       (snaps.length
         ? '<div class="snap-list">' + snaps.map(function (sn, i) {
@@ -6035,6 +6036,11 @@
         state.cap = int($('#s-cap').value, 1, 200);
         state.hours = int($('#s-hours').value, 0, 999);
         save(); render(); toast('Saved.'); break;
+      case 'do-update': location.reload(); break;
+      case 'dismiss-update':
+        var bar = $('.update-bar');
+        if (bar) bar.remove();
+        break;
       case 'find-models':
         (function (btn) {
           var V = window.WarRoomVoice;
@@ -6196,8 +6202,24 @@
   if (syncStorylines()) save();   /* a board restored from storage may be due a season's stories */
   render();
 
+  /* An update has downloaded but this page is still running the old copy.
+     Offer the reload rather than doing it: somebody may be halfway through
+     typing a game in. */
+  var updatePending = false;
+  function updateReady() {
+    if (updatePending) return;
+    updatePending = true;
+    var bar = document.createElement('div');
+    bar.className = 'update-bar';
+    bar.innerHTML = '<span>A newer version of War Room is ready.</span>' +
+      '<button class="btn small primary" data-action="do-update">Reload</button>' +
+      '<button class="btn small" data-action="dismiss-update" aria-label="Not now">Later</button>';
+    document.body.appendChild(bar);
+  }
+
   /* exposed for the self-test page only */
   window.WarRoom = {
+    updateReady: updateReady,
     state: function () { return state; },
     needs: computeNeeds,
     groupOf: groupOf,

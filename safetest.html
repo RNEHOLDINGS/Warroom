@@ -64,7 +64,7 @@ if (CORRUPT) {
     var snaps = W.snapshots();
     ok(snaps.length === 1 && snaps[0].why === 'Before the app updated', 'the first open of a new build copies the data first', JSON.stringify(snaps.map(function (x) { return x.why; })));
     ok(snaps[0] && snaps[0].counts.players === 2 && snaps[0].counts.games === 1, 'the copy knows what it holds');
-    ok(localStorage.getItem('warroom.build') === 'warroom-v27', 'and the build is recorded, so it is not copied again on every open', localStorage.getItem('warroom.build'));
+    ok(localStorage.getItem('warroom.build') === 'warroom-v28', 'and the build is recorded, so it is not copied again on every open', localStorage.getItem('warroom.build'));
 
     /* --- a save that would empty the program --- */
     st.players = []; st.recruits = []; st.games = [];
@@ -108,6 +108,21 @@ if (CORRUPT) {
     var all = W.snapshots();
     ok(all.length === 6 && all[0].why === 'Filler 9', 'at most six copies, the newest first', all.length + ' ' + all[0].why);
     ok(!W.takeSnapshot(JSON.stringify({ players: [], recruits: [], games: [] }), 'Empty'), 'an empty program is not worth a copy');
+
+    /* --- which build is running, and the offer to pick up a newer one -----
+       A phone keeps serving the copy it installed, so somebody can tap a
+       button that was fixed hours ago and still hit the old bug. */
+    W.setView('settings');
+    ok(/Running build/.test(q('#view').textContent) && q('#view').textContent.indexOf('warroom-v28') >= 0,
+      'Settings says which build is running', (q('#view').textContent.match(/Running build[^.]*/) || [''])[0]);
+
+    W.updateReady();
+    ok(q('.update-bar') && /newer version/.test(q('.update-bar').textContent), 'a downloaded update offers itself instead of reloading underneath you');
+    W.updateReady();
+    ok(document.querySelectorAll('.update-bar').length === 1, 'and only says so once', document.querySelectorAll('.update-bar').length);
+    click('.update-bar [data-action="dismiss-update"]');
+    ok(!q('.update-bar'), 'Later puts it away');
+
     finish();
   } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
 })();

@@ -120,14 +120,32 @@
   /* Model names change, get retired and differ between keys, and a guessed
      list produces a 404 that reads like the app is broken. So ask: the API
      will say which models this key can use and what each one is for. */
+  /* Tried in order: a 404 on one path is worth retrying on another before
+     telling somebody their key is broken. */
+  var MODEL_PATHS = [
+    'https://generativelanguage.googleapis.com/v1beta/models',
+    'https://generativelanguage.googleapis.com/v1/models'
+  ];
   function listModels(key, signal) {
-    var all = [], page = '';
+    var all = [], page = '', pathAt = 0;
     var go = function () {
-      return fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200' + (page ? '&pageToken=' + encodeURIComponent(page) : ''), {
+      var base = MODEL_PATHS[pathAt];
+      return fetch(base + '?pageSize=200' + (page ? '&pageToken=' + encodeURIComponent(page) : ''), {
         headers: { 'x-goog-api-key': key }, signal: signal
       }).then(function (r) {
         return r.text().then(function (raw) {
-          if (!r.ok) throw new Error(explain(r.status, raw));
+          if (r.status === 404 && pathAt + 1 < MODEL_PATHS.length) { pathAt++; return go(); }
+          if (!r.ok) {
+            var why = '';
+            try { why = (JSON.parse(raw).error || {}).message || ''; } catch (e) { why = String(raw || '').slice(0, 160); }
+            /* A bad key is a bad key whichever request found it, so keep that
+               wording. Anything else is about the listing, not about a model:
+               saying "Google does not recognise that model" here sends people
+               hunting for a model they never picked. */
+            if (r.status === 400 && /API key not valid/i.test(why)) throw new Error(explain(r.status, raw));
+            throw new Error('Google would not list the models (' + r.status + ')' + (why ? ': ' + why : '.') +
+              (r.status === 403 ? ' If the key is restricted in Google Cloud, it needs the Generative Language API allowed.' : ''));
+          }
           var data = JSON.parse(raw);
           (data.models || []).forEach(function (m) {
             var id = String(m.name || '').replace(/^models\//, '');
