@@ -12,7 +12,7 @@
    miss.
    --------------------------------------------------------------- */
 
-var CACHE = 'warroom-v29';
+var CACHE = 'warroom-v30';
 
 var ASSETS = [
   './',

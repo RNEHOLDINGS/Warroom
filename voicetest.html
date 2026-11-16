@@ -93,13 +93,19 @@
           res(new Response(JSON.stringify(obj), { status: status, headers: { 'Content-Type': 'application/json' } }));
         };
         if (mode === 'badkey') return reply(400, { error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT' } });
+        /* The real refusal, verbatim, from a model that will not take the
+           whole exchange in one part. */
+        var hasMeta = (((body.contents || [])[0] || {}).parts || []).some(function (p) { return p.speechMetadata; });
+        var isMulti = !!(((body.generationConfig || {}).speechConfig || {}).multiSpeakerVoiceConfig);
+        if (mode === 'needsmeta' && isMulti && !hasMeta) return reply(400, { error: { code: 400, message: 'multi speaker generation requests must specify speech_metadata.speaker for each text part in contents', status: 'INVALID_ARGUMENT' } });
+        if (mode === 'oldmodel' && hasMeta) return reply(400, { error: { code: 400, message: 'Invalid JSON payload received. Unknown name "speechMetadata" at \'contents[0].parts[0]\'.', status: 'INVALID_ARGUMENT' } });
         if (mode === 'ratelimit' && n === 1) return reply(429, { error: { code: 429, message: 'Resource exhausted', details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '0s' }] } });
         reply(200, { candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: pcmB64(2400) } }] }, finishReason: 'STOP' }] });
       }, delay);
     });
   };
 
-  var game;
+  var game, chosen;
   Promise.resolve().then(function () {
     /* ---------- the cast moved on from the old defaults ---------- */
     var sh = W.state().show;
@@ -145,12 +151,15 @@
     /* ---------- settings ---------- */
     ok(!!q('#sh-key') && q('#sh-key').type === 'password', 'Settings has a hidden key field');
     q('#sh-key').value = 'TEST-KEY-123';
-    q('#sh-model').value = 'gemini-2.5-flash-preview-tts';
+    var modelSel = q('#sh-model');
+    ok(modelSel.options.length >= 2, 'the voice list offers something to choose between', modelSel.options.length);
+    chosen = modelSel.options[1].value;
+    modelSel.value = chosen;
     q('#sh-v-player').value = 'Algenib';
     click('[data-action="save-show"]');
     ok(localStorage.getItem('warroom.geminiKey') === 'TEST-KEY-123', 'the key is saved in this browser');
     ok(JSON.stringify(W.state()).indexOf('TEST-KEY-123') < 0, 'and is not in the app state, so never in a backup');
-    ok(W.state().show.voices.player === 'Algenib' && W.state().show.model === 'gemini-2.5-flash-preview-tts', 'voice and model choices are saved');
+    ok(W.state().show.voices.player === 'Algenib' && W.state().show.model === chosen, 'voice and model choices are saved', W.state().show.model + ' vs ' + chosen);
 
     /* ---------- voice it ---------- */
     W.setView('show');
@@ -164,16 +173,34 @@
     ok(calls.length === expect, 'one request per part', calls.length + ' vs ' + expect);
 
     var c0 = calls[0];
-    ok(/\/v1beta\/models\/gemini-2\.5-flash-preview-tts:generateContent$/.test(c0.url), 'uses generateContent on the chosen model — the endpoint that works from a browser', c0.url);
+    ok(c0.url === 'https://generativelanguage.googleapis.com/v1beta/models/' + chosen + ':generateContent', 'uses generateContent on the chosen model — the endpoint that works from a browser', c0.url);
     ok(c0.headers['x-goog-api-key'] === 'TEST-KEY-123', 'the key goes in the header, not the URL');
     ok(calls.every(function (c) { return JSON.stringify(c.body.generationConfig.responseModalities) === '["AUDIO"]'; }), 'every request asks for audio');
-    ok(calls.every(function (c) { return !/Opponent:|PRODUCER/.test(c.body.contents[0].parts[0].text); }), 'producer notes never leave the device');
+    var allText = function (c) {
+      return (((c.body.systemInstruction || {}).parts || []).concat(c.body.contents[0].parts))
+        .map(function (p) { return p.text || ''; }).join('\n');
+    };
+    ok(calls.every(function (c) { return !/Opponent:|PRODUCER/.test(allText(c)); }), 'producer notes never leave the device, in any part of the request');
 
     var multi = calls.filter(function (c) { return c.body.generationConfig.speechConfig.multiSpeakerVoiceConfig; });
     var single = calls.filter(function (c) { return c.body.generationConfig.speechConfig.voiceConfig; });
     ok(multi.length + single.length === calls.length, 'each request is either one voice or two');
     ok(multi.every(function (c) { return c.body.generationConfig.speechConfig.multiSpeakerVoiceConfig.speakerVoiceConfigs.length === 2; }), 'two-voice requests configure exactly two');
     ok(single.every(function (c) { return !/^[A-Z]+:/m.test(c.body.contents[0].parts[0].text); }), 'a one-voice request does not have the label read out');
+
+    /* The current models refuse a two-voice request unless every part says
+       who is speaking, which is what "multi speaker generation requests
+       must specify speech_metadata.speaker" means. */
+    ok(multi.every(function (c) { return c.body.contents[0].parts.every(function (p) { return p.speechMetadata && p.speechMetadata.speaker; }); }),
+      'every turn of a two-voice request names its speaker', JSON.stringify((multi[0] || { body: { contents: [{}] } }).body.contents[0].parts || []).slice(0, 160));
+    ok(multi.every(function (c) {
+      var names = c.body.generationConfig.speechConfig.multiSpeakerVoiceConfig.speakerVoiceConfigs.map(function (v) { return v.speaker; });
+      return c.body.contents[0].parts.every(function (p) { return names.indexOf(p.speechMetadata.speaker) >= 0; });
+    }), 'and names one of the two voices it configured, not a third');
+    ok(multi.every(function (c) { return c.body.contents[0].parts.every(function (p) { return !/^[A-Z][A-Z'’.\- ]{1,30}:/.test(p.text); }); }),
+      'the label is no longer glued to the front of the line where it could be read out');
+    ok(multi.every(function (c) { return /AUDIO PROFILE/.test((((c.body.systemInstruction || {}).parts || [])[0] || {}).text || ''); }),
+      'and the direction moves to the system instruction, since every text part has to belong to somebody');
 
     var used = {};
     multi.forEach(function (c) {
@@ -235,6 +262,35 @@
   }).then(function () {
     ok(!!q('#voiceArea audio'), 'a "slow down" from Google is retried, not reported as a failure', q('#voiceArea') && q('#voiceArea').textContent);
     ok(calls[0].body && calls.length === V.chunkTurns(V.parseDialogue(W.state().games[0].script)).length + 1, 'with exactly one extra request', calls.length);
+
+    /* ---------- a model that wants the other shape -------------------
+       Which shape a model takes changes with the release, so the one that
+       was refused is swapped for the other rather than guessed at from the
+       name. Either way the episode gets voiced. */
+    calls = []; mode = 'oldmodel';
+    click('[data-action="close"]');
+    click('[data-action="script"][data-id="vg1"]');
+    click('[data-action="voice-script"]');
+    return waitFor(function () { return q('#voiceArea audio') || q('#voiceArea .banner'); }, 14000);
+  }).then(function () {
+    ok(!!q('#voiceArea audio'), 'a model that refuses the per-turn shape still gets the show voiced', q('#voiceArea') && q('#voiceArea').textContent);
+    var refused = calls.filter(function (c) { return (c.body.contents[0].parts || []).some(function (p) { return p.speechMetadata; }); });
+    var retried = calls.filter(function (c) {
+      return !!((c.body.generationConfig.speechConfig || {}).multiSpeakerVoiceConfig) && !(c.body.contents[0].parts || []).some(function (p) { return p.speechMetadata; });
+    });
+    ok(refused.length >= 1 && retried.length >= 1, 'it tries the current shape first, then the older one', refused.length + ' refused, ' + retried.length + ' retried');
+    ok(retried.every(function (c) { return /AUDIO PROFILE/.test(c.body.contents[0].parts[0].text); }), 'and the older shape still carries the direction it needs');
+    ok(retried.every(function (c) { return !c.body.systemInstruction; }), 'without the field that was refused');
+
+    /* ---------- and the refusal this all started from ---------- */
+    calls = []; mode = 'needsmeta';
+    click('[data-action="close"]');
+    click('[data-action="script"][data-id="vg1"]');
+    click('[data-action="voice-script"]');
+    return waitFor(function () { return q('#voiceArea audio') || q('#voiceArea .banner'); }, 14000);
+  }).then(function () {
+    ok(!!q('#voiceArea audio'), 'a model that demands a speaker on every part is given one', q('#voiceArea') && q('#voiceArea').textContent);
+    ok(!/speech_metadata/.test(q('#voiceArea').textContent), 'and that refusal never reaches the screen', q('#voiceArea').textContent);
 
     /* ---------- a bad key says so plainly ---------- */
     mode = 'badkey'; calls = [];

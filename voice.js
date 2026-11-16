@@ -38,9 +38,12 @@
     { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (slower, better writing)' }
   ];
 
+  /* A starting guess only -- "Check what my key can use" replaces this with
+     what the key actually has, which is the only list that is ever right. */
   var MODELS = [
-    { id: 'gemini-3.1-flash-tts-preview', label: 'Gemini 3.1 Flash TTS (newest)' },
-    { id: 'gemini-2.5-flash-preview-tts', label: 'Gemini 2.5 Flash TTS' },
+    { id: 'gemini-3.8-flash-tts',         label: 'Gemini 3.8 Flash TTS' },
+    { id: 'gemini-3.8-flash-lite-tts',    label: 'Gemini 3.8 Flash Lite TTS (cheapest)' },
+    { id: 'gemini-3.1-flash-tts-preview', label: 'Gemini 3.1 Flash TTS (preview)' },
     { id: 'gemini-2.5-pro-preview-tts',   label: 'Gemini 2.5 Pro TTS (slower, richer)' }
   ];
 
@@ -293,7 +296,14 @@
       '#### TRANSCRIPT\n';
   }
 
-  function buildRequest(chunk, voices, styles, fallbackVoice, show, hype) {
+  /* Two shapes for the same two-speaker request.
+       'parts' is what the current models want: one part per turn, each
+       naming its speaker, with the direction moved to a system
+       instruction because every text part has to belong to somebody.
+       'blob' is the older shape -- the whole exchange in one part with
+       "WHITCOMB:" labels in the text -- kept because a request is not
+       worth losing over a model that has not caught up. */
+  function buildRequest(chunk, voices, styles, fallbackVoice, show, hype, form) {
     var voiceOf = function (s) { return voices[s] || fallbackVoice; };
     /* "3 TD, 1 INT" becomes "3 touchdowns, 1 interception" here as well as
        when the script is written, so a script written before that existed,
@@ -308,19 +318,36 @@
       text = direction(show, 'The speaker is ' + (styles[s] || 'a college football broadcaster') + '.', hype) +
         chunk.turns.map(function (t) { return say(t.text); }).join('\n');
       speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceOf(s) } } };
-    } else {
-      text = direction(show, chunk.speakers.map(function (s) { return 'The speaker labelled ' + s + ' is ' + (styles[s] || 'a broadcaster'); }).join('. ') + '.', hype) +
-        chunk.turns.map(function (t) { return t.speaker + ': ' + say(t.text); }).join('\n');
-      speechConfig = {
-        multiSpeakerVoiceConfig: {
-          speakerVoiceConfigs: chunk.speakers.map(function (s) {
-            return { speaker: s, voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceOf(s) } } };
-          })
-        }
+      return {
+        contents: [{ parts: [{ text: text }] }],
+        generationConfig: { responseModalities: ['AUDIO'], speechConfig: speechConfig }
       };
     }
+
+    var cast = chunk.speakers.map(function (s) { return 'The speaker labelled ' + s + ' is ' + (styles[s] || 'a broadcaster'); }).join('. ') + '.';
+    speechConfig = {
+      multiSpeakerVoiceConfig: {
+        speakerVoiceConfigs: chunk.speakers.map(function (s) {
+          return { speaker: s, voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceOf(s) } } };
+        })
+      }
+    };
+
+    if (form === 'blob') {
+      return {
+        contents: [{ parts: [{ text: direction(show, cast, hype) + chunk.turns.map(function (t) { return t.speaker + ': ' + say(t.text); }).join('\n') }] }],
+        generationConfig: { responseModalities: ['AUDIO'], speechConfig: speechConfig }
+      };
+    }
+
     return {
-      contents: [{ parts: [{ text: text }] }],
+      systemInstruction: { parts: [{ text: direction(show, cast, hype) }] },
+      contents: [{
+        role: 'user',
+        parts: chunk.turns.map(function (t) {
+          return { text: say(t.text), speechMetadata: { speaker: t.speaker } };
+        })
+      }],
       generationConfig: { responseModalities: ['AUDIO'], speechConfig: speechConfig }
     };
   }
@@ -392,8 +419,15 @@
     });
   }
 
+  /* A model that wants the other shape says so in the message rather than
+     in the status, so the message is what has to be read. */
+  function wrongShape(msg) {
+    return /speech[_ ]?metadata|system[_ ]?instruction|unknown name|invalid json payload|not supported for this model/i.test(msg || '');
+  }
+
   function voiceChunk(opts, chunk, onWait) {
-    var body = JSON.stringify(buildRequest(chunk, opts.voices, opts.styles, opts.fallbackVoice, opts.show, opts.hype));
+    var form = 'parts', dropped = false;
+    var body = JSON.stringify(buildRequest(chunk, opts.voices, opts.styles, opts.fallbackVoice, opts.show, opts.hype, form));
     var attempt = 0;
     var go = function () {
       attempt++;
@@ -413,7 +447,24 @@
             if (onWait) onWait(Math.round(wait / 1000), r.status);
             return sleep(wait, opts.signal).then(go);
           }
-          if (!r.ok) throw new Error(explain(r.status, raw));
+          if (!r.ok) {
+            /* Older models reject the per-turn shape, newer ones reject the
+               single block. Which is which changes with every release, so
+               the one that was refused is swapped for the other and tried
+               once more instead of guessing from the model name. */
+            if (r.status === 400 && !dropped && chunk.speakers.length > 1) {
+              var m = '';
+              try { m = (JSON.parse(raw).error || {}).message || ''; } catch (e) { m = raw; }
+              if (wrongShape(m)) {
+                dropped = true;
+                form = form === 'parts' ? 'blob' : 'parts';
+                body = JSON.stringify(buildRequest(chunk, opts.voices, opts.styles, opts.fallbackVoice, opts.show, opts.hype, form));
+                attempt = 0;
+                return go();
+              }
+            }
+            throw new Error(explain(r.status, raw));
+          }
           var data = JSON.parse(raw);
           var cand = (data.candidates || [])[0] || {};
           var parts = (cand.content && cand.content.parts) || [];
