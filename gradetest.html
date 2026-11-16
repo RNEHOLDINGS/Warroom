@@ -86,8 +86,10 @@
     ok(!/no help|without help|almost no help|alone/i.test(s), 'nobody says he had no help when his receivers caught touchdowns');
     ok(/a quick word for T\. Reed/.test(said(s)), 'the receiver who did his job gets a word');
 
-    var modest = W.buildScript(Object.assign({}, g, { id: 'g2', performances: [{ name: 'J.Carty', pos: 'QB', line: '9/18, 90 yds', verdict: 'standout' }] }));
-    ok(/pump the brakes/.test(seg(modest, 'STOCK UP')) && /90 passing yards is a normal day in a game this length/.test(seg(modest, 'STOCK UP')), 'a modest line marked "Balled out" gets the brakes pumped', seg(modest, 'STOCK UP'));
+    var modest = W.buildScript(Object.assign({}, g, { id: 'g2', performances: [{ name: 'J.Carty', pos: 'QB', line: '14/22, 150 yds, 1 TD', verdict: 'standout' }] }));
+    ok(/pump the brakes/.test(seg(modest, 'STOCK UP')) && /normal day in a game this length/.test(seg(modest, 'STOCK UP')), 'an ordinary line marked "Balled out" gets the brakes pumped', seg(modest, 'STOCK UP'));
+    var poor = W.buildScript(Object.assign({}, g, { id: 'g2b', performances: [{ name: 'J.Carty', pos: 'QB', line: '9/18, 90 yds', verdict: 'standout' }] }));
+    ok(/generous, on that stat line|not sure it belongs in this segment|read that line twice/.test(seg(poor, 'STOCK UP')), 'and a genuinely poor one marked the same way is disputed outright', seg(poor, 'STOCK UP'));
 
     var big = W.buildScript(Object.assign({}, g, { id: 'g3', performances: [{ name: 'J.Carty', pos: 'QB', line: '19/24, 260 yds, 4 TD', verdict: 'standout' }] }));
     ok(/big-time game|RESPECT|grown man’s stat line|That’s a star/.test(seg(big, 'STOCK UP')) && /A big day by any standard|A monster day by any standard/.test(seg(big, 'STOCK UP')), 'a genuinely big line gets the big reaction', seg(big, 'STOCK UP'));
@@ -100,6 +102,19 @@
 
     var decent = W.buildScript(Object.assign({}, g, { id: 'g6', result: 'L', scoreFor: 20, scoreAgainst: 24, performances: [{ name: 'D.Moss', pos: 'HB', line: '14 car 95 yds, 1 fum', verdict: 'struggled' }] }));
     ok(/Why is he on the hot seat/.test(seg(decent, 'HOT SEAT')) && /It’s a fumble that put him here/.test(seg(decent, 'HOT SEAT')), 'a good line on the hot seat is argued over, and the fumble is named', seg(decent, 'HOT SEAT'));
+
+    /* --- when the verdict and the tape disagree --------------------
+       A line marked "Balled out" that the numbers say was a bad afternoon
+       must not quietly get the standout treatment. */
+    var wrong = W.buildScript(Object.assign({}, g, { id: 'wr', result: 'L', scoreFor: 13, scoreAgainst: 27,
+      performances: [{ name: 'J.Carty', pos: 'QB', line: '21/38, 240 yds, 1 TD, 3 INT', verdict: 'standout' }] }));
+    var wrongStock = seg(wrong, 'STOCK UP');
+    ok(/generous, on that stat line|not sure it belongs in this segment|read that line twice/.test(wrongStock), 'the host flags a standout the numbers do not support', wrongStock);
+    ok(/threw it to the other team more than he threw it to his own/.test(wrongStock), 'and the combination is named', wrongStock);
+    ok(!/RESPECT|big-time game|balled out|most efficient game/i.test(wrongStock), 'nobody praises the performance', wrongStock);
+    ok(/not going to sit here and tell you that was a good game|line is bad|ugly afternoon/.test(wrongStock), 'the ex-player defends the man without defending the game', wrongStock);
+    ok(/Stock up or hot seat|stock up or hot seat/.test(wrongStock), 'and the host asks the obvious question', wrongStock);
+    ok(/five minutes we just spent on J\. Carty/.test(seg(wrong, 'HOT SEAT')), 'the hot seat does not pretend he was never discussed', seg(wrong, 'HOT SEAT'));
 
     /* --- team stats scale with the game too --- */
     var nums = seg(W.buildScript(Object.assign({}, g, { id: 'g7', performances: [], rushFor: 130, passFor: 100 })), 'THE NUMBERS');

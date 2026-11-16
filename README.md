@@ -206,6 +206,35 @@ be earned -- leading the team in something with too little behind it does not
 count, and the bar scales with quarter length. A regular having a bad day gets
 his season record brought up in his defence.
 
+**It understands combinations, not just numbers.** 240 passing yards is a good
+number. 240 passing yards with three interceptions is a man losing a football
+game, and adding the yards up and subtracting the picks afterwards does not
+get you there. Certain combinations cap the grade outright, and each one hands
+the panel the sentence that says why:
+
+- More interceptions than touchdowns — *"he threw it to the other team more
+  than he threw it to his own."* No amount of yardage rescues it.
+- Thirty-plus throws under five yards an attempt — *"a lot of effort for
+  nothing."* Under 45% completions on volume, same.
+- A back at under three a carry on double-digit carries; a fumble on a day he
+  was not making yards anyway.
+- Two or more drops from a receiver — *"those are completions he took off his
+  quarterback."*
+- Double-digit tackles with nothing behind the line — *"he is making them five
+  yards downfield."*
+- A kicker missing twice in a one-score game.
+
+Season totals respect it too: a quarterback leading the team in touchdown
+passes while throwing more interceptions than touchdowns is not "the engine of
+this offense", he is "the quarterback they are living with", and his season
+line leads with the ratio.
+
+**And the panel will argue with your own verdict.** Mark a man "Balled out"
+when the tape says otherwise and the host says so — *"which is generous, on
+that stat line"* — the ex-player defends the man without defending the game,
+and the host asks whether that is a stock up or a hot seat at all. The hot
+seat then refuses to pretend he was never discussed.
+
 **Stat lines are graded, not just hyped.** The panel reads each player's line
 (yards, touchdowns, interceptions, carries, catches, tackles, sacks, field
 goals, in shorthand or words) and sizes the reaction to it:
@@ -398,6 +427,16 @@ pissed, that was piss poor", "back to the drawing board", "tip my cap, they're
 a hell of a football team", "somebody else is gonna play". When he refuses to
 dress it up, the panel says so — *"he didn't dress any of that up, which I
 like"* — and reads what it means for the room.
+
+**They hear criticism as criticism.** A coach going after one of his own —
+*"he has to be better", "he sucked out there", "more interceptions than
+touchdowns"* — is read as a public callout, not a platitude, and checked
+against that player's actual line: the panel agrees when the numbers agree,
+and pushes back when the coach is being harsh on somebody who played well. A
+position battle is read as a job being opened, and criticism plus competition
+in the same answer is read as a quarterback change coming. The non-answer
+reading is now a fallback: it only fires when the quote really says nothing,
+so "next week" in a sentence full of substance no longer gets it dismissed.
 
 **They translate it.** "We have to execute better" is read as a coach saying
 his players did not do it without naming one of them. "We'll evaluate

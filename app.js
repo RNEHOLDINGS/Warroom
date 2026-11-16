@@ -255,7 +255,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v24';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v25';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -435,6 +435,8 @@
     K: 'kicker', PK: 'kicker', P: 'punter', ATH: 'athlete'
   };
   function sayPos(p) { return SAY_POS[String(p || '').toUpperCase()] || p; }
+  function cap1(x) { return x ? String(x).charAt(0).toUpperCase() + String(x).slice(1) : x; }
+  function list2(arr) { return arr.length > 1 ? arr.slice(0, -1).join(', ') + ' and ' + arr[arr.length - 1] : (arr[0] || ''); }
   var STATE_NAMES = {
     AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado', CT: 'Connecticut',
     DE: 'Delaware', FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
@@ -889,6 +891,7 @@
     }
     var ints = num(/(\d+) (?:interceptions?|picks?)\b/);
     if (ints != null) { if (grp === 'QB') st.ints = ints; else st.defInts = ints; }
+    var attn = num(/(\d+) attempts?/); if (attn != null && st.att == null) st.att = attn;
     var car = num(/(\d+) carries/); if (car != null) st.carries = car;
     var cat = num(/(\d+) (?:catches|receptions?)/); if (cat != null) st.catches = cat;
     var tk2 = num(/(\d+) tackles?\b/); if (tk2 != null) st.tackles = tk2;
@@ -949,12 +952,36 @@
     if (st.compPct != null && st.compPct < 52) { neg -= 1; minus.push('completing ' + st.compPct + ' percent of his throws'); }
     if (st.ypc != null && st.ypc < 3.2) { neg -= 1; minus.push('under ' + Math.ceil(st.ypc) + ' yards a carry'); }
 
-    if (!levels.length && !minus.length) return null;
+    /* the combinations that actually hurt a team. Each one caps the grade,
+       because no amount of volume rescues them, and each one hands the panel
+       a sentence that says exactly what is wrong. */
+    var combos = [], cap = 4;
+    var capAt = function (n, phrase) { cap = Math.min(cap, n); if (phrase) combos.push(phrase); };
+    if (grp === 'QB') {
+      if (st.ints >= 1 && st.passTd != null && st.ints > st.passTd) capAt(0, 'he threw it to the other team more than he threw it to his own');
+      else if (st.ints >= 1 && st.passTd != null && st.ints === st.passTd && st.ints >= 2) capAt(1, 'as many interceptions as touchdowns');
+      else if (st.ints >= 2) capAt(1, say(st.ints, 'interception', 'interceptions') + ' is a losing afternoon on its own');
+      if (st.ypa != null && st.ypa < 5 && st.att >= 15 * s) capAt(1, st.att + ' throws for ' + st.ypa + ' a pop, which is a lot of effort for nothing');
+      if (st.compPct != null && st.compPct < 45 && st.att >= 12 * s) capAt(1, 'he completed ' + st.compPct + ' percent, so two of every three went nowhere');
+      if (st.sacked >= 4) combos.push('he was on the floor ' + st.sacked + ' times');
+      if (st.passYds != null && st.passYds >= 250 * s && (st.ints || 0) >= 2) combos.push('the yards are real and they are also empty, because of the giveaways');
+    }
+    if (grp === 'HB') {
+      if (st.ypc != null && st.ypc < 3 && st.carries >= 8 * s) capAt(1, st.carries + ' carries at ' + st.ypc + ' a go is a long afternoon for everybody');
+      if (st.fumbles >= 1 && (st.rushYds || 0) < 80 * s) capAt(1, 'you cannot put it on the ground on a day you are not making yards');
+    }
+    if ((grp === 'WR' || grp === 'TE') && st.drops >= 2) capAt(1, st.drops + ' drops, and those are completions he took off his quarterback');
+    if ((grp === 'LB' || grp === 'S' || grp === 'CB') && st.tackles >= 10 && !st.tfl && !st.sacks) {
+      combos.push('double-digit tackles with nothing behind the line, which usually means he is making them five yards downfield');
+    }
+    if (grp === 'K' && st.fgMissed >= 2) capAt(0, st.fgMissed + ' misses is points left on the field in a game decided by a score');
+
+    if (!levels.length && !minus.length && !combos.length) return null;
     levels.sort(function (a, b) { return b.lv - a.lv; });
     var top = levels[0] ? levels[0].lv : 1;
     var second = levels[1] ? levels[1].lv : top;
     var base = Math.round(top * 0.6 + second * 0.4);
-    var overall = Math.max(0, Math.min(4, Math.round(top * 0.6 + second * 0.4 + neg)));
+    var overall = Math.max(0, Math.min(cap, Math.round(top * 0.6 + second * 0.4 + neg)));
 
     /* the honest description: the stat that carried it, and what held it back */
     var lv = {}; levels.forEach(function (x) { lv[x.k] = x.lv; });
@@ -989,7 +1016,7 @@
       if (st.ff) plus.push(st.ff === 1 ? 'a forced fumble' : st.ff + ' forced fumbles');
       if (lv.tackles >= 2) plus.push(st.tackles + ' tackles');
     }
-    return { st: st, group: grp, overall: overall, base: base, label: LEVEL_WORDS[overall], plus: plus, minus: minus, facts: facts };
+    return { st: st, group: grp, overall: overall, base: base, combos: combos, label: LEVEL_WORDS[overall], plus: plus, minus: minus, facts: facts };
   }
 
   /* Who else is in the stat line. Yards and touchdowns through the air mean
@@ -1377,6 +1404,10 @@
     /* leading the team in something only means something with enough of it
        behind it, and what counts as enough scales with the game length */
     var S = quarterScale(), per = function (v, n) { return (v || 0) >= n * rec.games * S; };
+    /* leading your team in touchdown passes while throwing more
+       interceptions than touchdowns does not make you the engine of
+       anything */
+    if (rec.group === 'QB' && (rec.t.ints || 0) > (rec.t.passTd || 0) && rec.games >= ROLE_MIN_GAMES) return 'the quarterback they are living with';
     if (rec.group === 'QB' && is('passTd') && (rec.t.passTd || 0) >= 2) return 'the engine of this offense';
     if (rec.group === 'HB' && is('rushYds') && per(rec.t.rushYds, 60)) return per(rec.t.carries, 14) ? 'the workhorse' : 'their best runner';
     if ((rec.group === 'WR' || rec.group === 'TE') && is('recYds') && per(rec.t.recYds, 45)) return 'the number one target';
@@ -1393,6 +1424,7 @@
     if (!rec || rec.games < ROLE_MIN_GAMES) return '';
     var t = rec.t, n = rec.games, of = ' in ' + numWord(n) + ' games';
     var many = function (v, one, more) { return v + ' ' + (v === 1 ? one : more); };
+    if (rec.group === 'QB' && (t.ints || 0) > (t.passTd || 0)) return many(t.ints, 'interception', 'interceptions') + of + ' against ' + many(t.passTd || 0, 'touchdown pass', 'touchdown passes') + ', which is the wrong way round';
     if (rec.group === 'QB' && t.passTd) return many(t.passTd, 'touchdown pass', 'touchdown passes') + of + (t.ints ? ' against ' + many(t.ints, 'interception', 'interceptions') : '');
     if (rec.group === 'QB' && t.passYds) return t.passYds + ' passing yards' + of;
     if (rec.group === 'HB' && t.rushYds) return t.rushYds + ' rushing yards' + of + (t.rushTd ? ' and ' + many(t.rushTd, 'score', 'scores') : '');
@@ -1413,37 +1445,40 @@
      Nothing is inferred about a coach who said nothing. No quote, no
      segment. */
   var COACH_SPEAK = [
-    { kind: 'ownit', re: /\b(on me|my fault|my bad|i own (that|it)|put that on me|i have to be better|i gotta be better|i got to be better|i didn’t|i did not|i put (them|him)|coached? (them|him)? ?better|starts with me|that one’s mine|blame me)\b/i,
+    { kind: 'callout', strength: 4, re: /\b(has to|have to|needs? to|gotta|got to) (be better|play better|protect the ball|take care of the (ball|football))|\bhe (was|is) (not good enough|unacceptable|awful|terrible|bad)|\b(sucked|stunk|threw it to them|can’?t throw those|those can’?t happen|put us in a hole|cost us)\b|\bmore (interceptions|picks|turnovers) than\b/i,
+      means: 'That is a coach going after one of his own, by name, at a podium. They do not do that lightly and they do not do it without telling the player first.',
+      react: 'And every guy in that locker room heard it. That is a message with an audience of one.' },
+    { kind: 'ownit', strength: 3, re: /\b(on me|my fault|my bad|i own (that|it)|put that on me|i have to be better|i gotta be better|i got to be better|i didn’t|i did not|i put (them|him)|coached? (them|him)? ?better|starts with me|that one’s mine|blame me)\b/i,
       means: 'He took it himself. Coaches do that for two reasons: because they mean it, or because it stops everybody asking about a nineteen-year-old.',
       react: 'That’s the right answer. Whether he believes it or not, every kid in that room heard their coach take the bullet.' },
-    { kind: 'execute', re: /\b(execut\w+|fundamental\w*|details|assignment\w*|do(ing)? (our|their|your) job|one-?on-?ones?|gotta block|gotta tackle|missed (tackles|blocks|assignments)|catch the ball|hold onto the ball|do what we practice)\b/i,
+    { kind: 'execute', strength: 2, re: /\b(execut\w+|fundamental\w*|details|assignment\w*|do(ing)? (our|their|your) job|one-?on-?ones?|gotta block|gotta tackle|missed (tackles|blocks|assignments)|catch the ball|hold onto the ball|do what we practice)\b/i,
       means: '“Execution” is how a coach says his players did not do it without naming one of them. It is the safest sentence in football.',
       react: 'Every coach I played for said that word. Every single one. It means somebody is getting coached hard on Tuesday.' },
-    { kind: 'protect', re: /\b(he’?s (our|my|the) (guy|quarterback)|believe in (him|that kid)|our quarterback|not changing|ain’?t changing|sticking with|rolling with|riding with|backing him|stand behind|he’?ll be fine|i love that kid)\b/i,
+    { kind: 'protect', strength: 3, re: /\b(he’?s (our|my|the) (guy|quarterback)|believe in (him|that kid)|our quarterback|not changing|ain’?t changing|sticking with|rolling with|riding with|backing him|stand behind|he’?ll be fine|i love that kid)\b/i,
       means: 'That is a public vote of confidence, which is a thing you only have to give when everybody is asking the question.',
       react: 'Good. You say that in front of a camera and that kid runs through a wall for you Saturday.' },
-    { kind: 'credit', re: /\b(credit to|hats off|tip (my|your) (cap|hat)|props to|they’?re? a (good|hell of a|heck of a|damn good) (football )?team|give them credit|well coached|they beat us)\b/i,
+    { kind: 'credit', strength: 1, re: /\b(credit to|hats off|tip (my|your) (cap|hat)|props to|they’?re? a (good|hell of a|heck of a|damn good) (football )?team|give them credit|well coached|they beat us)\b/i,
       means: 'Credit to the opponent is the most popular exit from a hard question. It is also sometimes just true.',
       react: 'Sure, they’re good. That’s not the question he was asked, though, is it.' },
-    { kind: 'tough', re: /\b(out-?toughed|physical\w*|out-?hit|whipped|whupped|ass kicked|tails? (whipped|kicked)|butts? kicked|punched (us )?in the mouth|manhandled|pushed around|wanted it more|out ?worked|effort|compete|didn’?t fight|didn’?t want it|soft|bullied)\b/i,
+    { kind: 'tough', strength: 3, re: /\b(out-?toughed|physical\w*|out-?hit|whipped|whupped|ass kicked|tails? (whipped|kicked)|butts? kicked|punched (us )?in the mouth|manhandled|pushed around|wanted it more|out ?worked|effort|compete|didn’?t fight|didn’?t want it|soft|bullied)\b/i,
       means: 'When a coach questions toughness publicly, that is aimed at the locker room, not at us. He wants them to hear it on Monday.',
       react: 'And they will hear it. That’s a message, and it’s a loud one.' },
-    { kind: 'process', re: /\b(look at the tape|watch (the )?(tape|film)|back to the drawing board|get back to work|one game at a time|next week|move on|on to the next|day at a time|we’?ll see|clean it up|fix it)\b/i,
+    { kind: 'process', strength: 0, re: /\b(look at the tape|watch (the )?(tape|film)|back to the drawing board|get back to work|one game at a time|on to the next|day at a time|take it one)\b/i,
       means: 'That is the non-answer. It is not dishonest, it is just nothing, and it usually means he does not want to say the real thing yet.',
       react: 'That’s a coach who’s already thinking about Tuesday’s practice and wants to get off this stage.' },
-    { kind: 'changes', re: /\b(evaluate|everything (is|’s) on the table|changes?( are)? coming|look at everything|competition|open up the|some(body|one|) ?(else )?(is |’s )?(gonna|going to) play|nothing(’s| is) guaranteed|new guys|different look)\b/i,
-      means: 'Now that is a signal. Coaches do not float the word “evaluate” unless somebody’s job is genuinely in play.',
+    { kind: 'changes', strength: 4, re: /\b(evaluate|everything (is|’s) on the table|changes?( are)? coming|look at everything|competition|position battle|open (up the|competition)|battle for|some(body|one|) ?(else )?(is |’s )?(gonna|going to) play|nothing(’s| is) guaranteed|new guys|different look|see the field)\b/i,
+      means: 'And that is a signal. A coach does not start talking about competition in public unless somebody’s job is genuinely in play.',
       react: 'Somebody in that building just felt their stomach drop. That’s the point of saying it out loud.' },
-    { kind: 'angry', re: /\b(unacceptable|embarrass\w*|not good enough|disappointed|angry|sick (to my stomach|of)|disgust\w*|pissed|piss ?poor|garbage|pathetic|horse ?crap|can’?t happen|has to change|fed up|had enough)\b/i,
+    { kind: 'angry', strength: 3, re: /\b(unacceptable|embarrass\w*|not good enough|disappointed|angry|sick (to my stomach|of)|disgust\w*|pissed|piss ?poor|garbage|pathetic|horse ?crap|can’?t happen|has to change|fed up|had enough)\b/i,
       means: 'That is as close to anger as most of them get at a microphone. He has decided the team needs to hear it publicly.',
       react: 'He’s hot. And honestly? Good. I want to hear that after a game like that.' },
-    { kind: 'proud', re: /\b(proud|fought|never quit|didn’?t quit|kept (battling|fighting|swinging)|hung in|resilien\w*|character|love (our|my) guys|these kids)\b/i,
+    { kind: 'proud', strength: 2, re: /\b(proud|fought|never quit|didn’?t quit|kept (battling|fighting|swinging)|hung in|resilien\w*|character|love (our|my) guys|these kids)\b/i,
       means: 'Pride in the effort is what a coach reaches for when the result will not give him anything.',
       react: 'There’s a version of that I’ll take and a version I won’t, and it depends entirely on whether they actually fought.' },
     { kind: 'young', re: /\b(young|freshm\w+|first-?year|babies|pups|inexperienc\w*|banged up|injur\w+|next man up|short-?handed|thin)\b/i,
       means: 'Youth and injuries are real, and they are also the most available excuse in the sport. Both things are true at once.',
       react: 'You’re young in August. By November you’re just your record.' },
-    { kind: 'blunt', re: /\b(ass|butt|whupped|whipped us|flat out|plain and simple|simple as that|point blank|straight up|no excuse|sugar ?coat|horse ?crap|piss ?poor|garbage)\b/i,
+    { kind: 'blunt', strength: 2, re: /\b(ass|butt|whupped|whipped us|flat out|plain and simple|simple as that|point blank|straight up|no excuse|sugar ?coat|horse ?crap|piss ?poor|garbage)\b/i,
       means: 'And he did not dress any of that up, which I like. You get a sentence that plain maybe twice a season from a man in that job.',
       react: 'THAT is a coach talking. No podium voice, no fifteen words where three will do. His players hear that and nod.' }
   ];
@@ -1499,11 +1534,18 @@
     });
   }
 
-  function readCoach(g, bx, S, cCase, us, them) {
+  function readCoach(g, bx, S, cCase, us, them, perfAll) {
     var raw = String(g.coachQuote || '').trim().replace(/^["“”']+|["“”']+$/g, '');
     if (!raw) return null;
     var won = g.result === 'W', tied = g.result === 'T';
-    var hits = COACH_SPEAK.filter(function (c) { return c.re.test(raw); });
+    var hits = COACH_SPEAK.filter(function (c) { return c.re.test(raw); })
+      .sort(function (a, b) { return (b.strength || 1) - (a.strength || 1); });
+    /* the weak readings -- the non-answer, credit to the opponent -- are
+       what a quote means when it means nothing else. If the man said
+       something real, lead with that instead. */
+    if (hits.some(function (h) { return (h.strength || 1) >= 3; })) {
+      hits = hits.filter(function (h) { return (h.strength || 1) >= 2; });
+    }
     var checks = [];
     var charge = function (k) { return cCase.filter(function (c) { return c.key === k; })[0]; };
     var kindOf = function (k) { return hits.some(function (h) { return h.kind === k; }); };
@@ -1523,6 +1565,25 @@
       checks.push(dec
         ? 'And he is right to. ' + dec.charge.split('. ')[0] + '. That one is his, and he just took it.'
         : 'And the sheet does back him up. ' + cCase[0].charge.split('. ')[0] + '.');
+    }
+    /* a coach going after a player, held against what the player actually
+       did -- the panel should agree with him when the numbers do */
+    if (kindOf('callout')) {
+      var named0 = coachNamed(raw)[0];
+      var line0 = named0 && (perfAll || []).filter(function (p) { return p.name && p.name.toLowerCase() === named0.name.toLowerCase(); })[0];
+      var G0 = line0 ? gradeLine(line0, S) : null;
+      if (G0 && G0.combos.length) {
+        checks.push('And he is right. ' + cap1(G0.combos[0]) + '. There is no reading of that afternoon where the coach is being unfair.');
+      } else if (G0 && G0.overall === 0) {
+        checks.push('And the numbers are with him. ' + (G0.facts.length ? cap1(list2(G0.facts)) + '. ' : '') + 'That is not a coach being harsh, that is a coach describing it.');
+      } else if (G0 && G0.overall >= 2) {
+        checks.push('Which is harsh, actually. ' + (G0.plus.length ? cap1(G0.plus[0]) + '. ' : '') + 'There were worse afternoons out there than his.');
+      } else {
+        checks.push('And when a coach says it publicly, he has already said it privately and it did not take.');
+      }
+    }
+    if (kindOf('callout') && kindOf('changes')) {
+      checks.push('Criticism plus the word competition in the same answer is not a coincidence. That is a job being opened up.');
     }
     if (kindOf('protect') && charge('qb')) {
       checks.push('Except they played two quarterbacks. You cannot say he is the guy on Sunday and have a carousel on Saturday.');
@@ -1988,8 +2049,7 @@
     var LEN = cast.length, quick = LEN === 'quick', full = LEN === 'full';
     var bx0 = boxOf(g);
     var histOf = function (p) { return ctx.history[p.key] || []; };
-    var cap1 = function (x) { return x ? x.charAt(0).toUpperCase() + x.slice(1) : x; };
-    var list2 = function (arr) { return arr.length > 1 ? arr.slice(0, -1).join(', ') + ' and ' + arr[arr.length - 1] : (arr[0] || ''); };
+
     var sp = seasonPlayers(g);
     var segNo = 0;
     var head = function (title) {
@@ -2057,7 +2117,7 @@
         var fill = fresh(lastFill, role, FILLER[role], n);
         var first = (text.split(' ')[0] || '').replace(/[^A-Za-z’']/g, '');
         var keep = /^I$|^I[’']/.test(first) || keepCaps[first.toUpperCase()] ||
-          /^[A-Z]{2,}$/.test(first) || /^[A-Z].*[A-Z]/.test(first);
+          /^[A-Z]{2,}$/.test(first) || /^[A-Z].*[A-Z]/.test(first) || /[.!?]\s*$/.test(fill);
         text = fill + (keep ? text : text.charAt(0).toLowerCase() + text.slice(1));
       }
       /* one in five finishes the way people finish */
@@ -2115,7 +2175,7 @@
     /* what he said is read once, up here, because the rest of the show
        leans on it -- the numbers segment, stock up and the hot seat all
        reach for it later */
-    var coachSaid = readCoach(g, bx0, S, cCase, US, them);
+    var coachSaid = readCoach(g, bx0, S, cCase, US, them, perf);
     /* A unit can fail as a unit: two quarterbacks for 71 yards between them
        is not two bad days, it is a position that did not function. */
     var unitTotal = function (groups, key) {
@@ -2376,12 +2436,36 @@
             ? ['Let’s hand out some credit. Stock up for ' + US + '. Start me with', 'Stock up. First ' + US + ' name on my list is', 'Credit where it’s earned. Stock up, and we start with', 'Stock up. The one ' + US + ' fan who slept well is', 'Let’s do the good news first. Stock up:']
             : ['Even in a loss, somebody on ' + US + ' showed up. Stock up. Start me with', 'Stock up, and yes, ' + US + ' has one. Start me with', 'There’s always somebody. Stock up:', 'Find me a bright spot. Stock up. Start with', 'Stock up, short list this week. Start with'])
           : beat('stock-next', ['Who else?', 'Give me another one.', 'Next name.', 'Keep it going. Who else?', 'One more name.', 'And after him?']);
+        var disputed = G && G.overall === 0;
         say(HOST, opener + ' ' + p.name + (p.pos ? ', ' + p.pos : '') + '. ' + sentence(p.line || 'Big afternoon') + note +
-          (coachOn ? ' And his coach went out of his way to mention him afterwards.' : ''));
+          (coachOn ? ' And his coach went out of his way to mention him afterwards.' : '') +
+          (disputed ? ' ' + beat('disputed-h', [
+            'Although I look at that line and I am not sure it belongs in this segment.',
+            'And I will be honest, I had to read that line twice to work out why he is in stock up.',
+            'Which is generous, on that stat line.'
+          ]) : ''));
 
         var best = G && G.plus.length ? cap1(list2(G.plus.slice(0, 2))) + '.' : '';
         var lvl = G ? G.overall : null;
         var rot = function (arr) { return arr[(turn + i) % arr.length]; };
+        if (disputed) {
+          /* the ex-player defends the man without defending the afternoon */
+          say(PLAYER, beat('disputed-p' + i, [
+            'I’m not going to sit here and tell you that was a good game. It wasn’t. But he stood in there all afternoon and kept throwing.',
+            'The line is bad. I know it’s bad. What I saw was a kid who never hid, and some of them do.',
+            'You want me to bury him and I won’t. That was an ugly afternoon and he’ll be the first to say it.'
+          ]));
+          say(ANALYST, (G.combos.length ? cap1(G.combos[0]) + '. ' : '') + beat('disputed-a' + i, [
+            'Standing in there is the bar now? That is not a stock-up game, that is a man surviving one.',
+            'I can admire the toughness and still tell you the football was poor. Both can be true.',
+            'He is not the only reason they lost. He is comfortably the biggest one.'
+          ]));
+          if (i === 0) {
+            say(HOST, beat('disputed-h2', ['So where does he go? Stock up or hot seat?', 'Is that a stock up or a hot seat, then?']));
+            say(PLAYER, 'Neither. He’s just a quarterback having a hard season, and we’re the ones who have to talk about it every Monday.');
+          }
+          return;
+        }
         say(PLAYER, bounce
           ? hy('Last time a lot of people wanted him benched. He came back and answered. That says something about him.',
                'Last time, everybody wanted him benched. EVERYBODY. And he comes back and does that? That’s a grown man.',
@@ -2407,7 +2491,11 @@
             'Solid, and I mean that as a compliment. ' + cap1(G.plus[0] || 'no mistakes') + ' is the part that mattered.',
             'That’s a good day, not a historic one. ' + cap1(G.plus[0] || 'staying clean') + ' is what swung it.'
           ]) + (G.minus.length ? ' Even with ' + G.minus[0] + '.' : '') + (T.credit ? ' ' + rot(['And ', 'Credit where it’s due, too: ', 'And don’t skip past this, ']) + T.credit : '');
-        else take = 'I’m gonna pump the brakes a little. ' + (G.facts.length ? cap1(list2(G.facts)) + ' is a normal day in a game this length. ' : 'That line is a normal day. ') + (G.minus.length ? 'And there was ' + G.minus[0] + ' in there. ' : '') + 'He did his job. I just wouldn’t put him on a poster for it.';
+        else take = 'I’m gonna pump the brakes a little. ' +
+          (G.combos.length
+            ? cap1(G.combos[0]) + '. You cannot call that a good game no matter what the yards say.'
+            : (G.facts.length ? cap1(list2(G.facts)) + ' is a normal day in a game this length. ' : 'That line is a normal day. ') +
+              (G.minus.length ? 'And there was ' + G.minus[0] + ' in there. ' : '') + 'He did his job. I just wouldn’t put him on a poster for it.');
         say(ANALYST, take.replace(/\s+$/, ''));
         /* who he has been all season, not just today -- the host keeps the
            season file, so the analyst's turn stays a turn */
@@ -2504,7 +2592,8 @@
           return;
         }
         if (dire) {
-          say(ANALYST, beat('dire' + i + p.key, [
+          var why = G.combos.length ? cap1(G.combos[0]) + '. ' : '';
+          say(ANALYST, why + beat('dire' + i + p.key, [
             'I’m not going to dress this one up. ' + (G.facts.length ? cap1(list2(G.facts)) + '. ' : '') + (G.minus.length ? cap1(list2(G.minus)) + '. ' : '') + 'At this level that is not good enough, and everybody in that building knows it.',
             'That is one of the worst afternoons I’ve charted this year. ' + (G.facts.length ? cap1(list2(G.facts)) + '. ' : '') + 'There is no angle that makes it acceptable.',
             (G.facts.length ? cap1(list2(G.facts)) + '. ' : '') + 'You cannot win a football game with that, and they didn’t.'
@@ -2531,7 +2620,7 @@
           return;
         }
         lastHot = { dire: dire, grp: grpOf };
-        say(ANALYST, again
+        say(ANALYST, (G && G.combos.length && !again ? cap1(G.combos[0]) + '. ' : '') + (again
           ? 'Once is a bad day. Twice is a trend, and I’ve got the tape on both of them.'
           : G && G.minus.length
             ? 'I’ll start, because ' + playerF + ' is about to defend him. ' + cap1(list2(G.minus)) + '. ' + (/interception|fumble|drop|missed/.test(G.minus.join(' ')) ? 'Those are plays that hand the other team the ball, or points.' : 'That’s not enough to keep an offense on schedule.')
@@ -2542,7 +2631,7 @@
                 'That one’s pretty simple. It wasn’t his day.',
                 'No need to dress it up. That was a hard afternoon.',
                 tic('analyst') + ' It was a rough one, and the film agrees.'
-              ]));
+              ])));
 
         if (T.excuse) {
           say(PLAYER, 'Hold on. ' + T.excuse);
@@ -2566,7 +2655,10 @@
         }
       });
     } else {
-      say(HOST, 'Nobody on the hot seat this week.');
+      var argued = stars.filter(function (x) { var gg = gradeLine(x.raw, S); return gg && gg.overall === 0; })[0];
+      say(HOST, argued
+        ? 'Nobody was flagged for the hot seat this week, which is its own story after the five minutes we just spent on ' + argued.name + '.'
+        : 'Nobody on the hot seat this week.');
       say(ANALYST, 'Then somebody didn’t watch the whole tape.');
       say(PLAYER, 'Or, and stay with me here, everybody just played fine.');
     }

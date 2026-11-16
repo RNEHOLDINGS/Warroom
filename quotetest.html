@@ -155,6 +155,47 @@
     ok(/did not dress any of that up|didn’t dress any of that up|that plain maybe twice a season/.test(blunt), 'and says so when he refuses to dress it up', blunt);
     ok(/twice as hard in the locker room/.test(blunt), 'and reads what it means for the room', blunt);
 
+    /* --- a coach going after his own quarterback --------------------
+       The real one this failed on: the coach shredded his quarterback and
+       announced a position battle, and the panel called it a non-answer and
+       said the kid balled out. */
+    var shred = 'J.Carty has to be better. He sucked out there, he has more interceptions than touchdowns on the year. Expect a position battle next week.';
+    var shredG = Object.assign({}, base, { id: 'shred', coachQuote: shred, result: 'L', scoreFor: 13, scoreAgainst: 27,
+      performances: [{ name: 'J.Carty', pos: 'QB', line: '21/38, 240 yds, 1 TD, 3 INT', verdict: 'standout' }] });
+    st.games = [shredG];
+    var sShred = W.buildScript(shredG);
+    var clipShred = seg(sShred, 'WHAT THE COACH SAID');
+    var kinds = W.readCoach(shredG, W.boxOf(shredG), 0.6, [], 'Oregon', 'Utah', shredG.performances).hits.map(function (x) { return x.kind; });
+    ok(kinds.indexOf('callout') >= 0, 'a coach shredding his own player is read as exactly that', JSON.stringify(kinds));
+    ok(kinds.indexOf('changes') >= 0, 'and a position battle is read as a job being opened', JSON.stringify(kinds));
+    ok(kinds.indexOf('process') < 0, 'and "next week" alone is no longer a non-answer', JSON.stringify(kinds));
+    ok(!/non-answer/.test(clipShred), 'so the panel never calls it one', clipShred);
+    ok(/going after one of his own/.test(clipShred), 'it is called a public callout', clipShred);
+    ok(/job being opened up|competition in the same answer/.test(clipShred), 'and the two together are read as a quarterback change coming', clipShred);
+    ok(/he is right|numbers are with him|he’s right/i.test(clipShred), 'and the numbers are checked against him', clipShred);
+
+    /* the stat line itself is understood */
+    var G = W.gradeLine({ name: 'J.Carty', pos: 'QB', line: '21/38, 240 yds, 1 TD, 3 INT' }, 0.6);
+    ok(G.overall === 0, '240 yards with 3 picks and 1 touchdown is not a good day', G.overall + ' / ' + G.label);
+    ok(/threw it to the other team more than he threw it to his own/.test(G.combos.join(' | ')), 'and the panel can say why', JSON.stringify(G.combos));
+    ok(!/balled out/.test(sShred), 'nobody says he balled out', (sShred.match(/.{0,60}balled out.{0,30}/) || [''])[0]);
+    ok(/threw it to the other team more than he threw it to his own/.test(sShred), 'the combination is said out loud in the show', (sShred.match(/.{0,40}other team more.{0,40}/) || [''])[0]);
+
+    /* other combinations that look fine until you read them together */
+    ok(W.gradeLine({ pos: 'QB', line: '38 att, 150 yds, 1 TD' }, 0.6).overall <= 1, '38 throws for 150 yards is not a good day');
+    ok(/a pop/.test(W.gradeLine({ pos: 'QB', line: '38 att, 150 yds, 1 TD' }, 0.6).combos.join(' ')), 'and it is explained as yards per throw');
+    ok(W.gradeLine({ pos: 'HB', line: '18 car 42 yds, 1 TD' }, 0.6).overall <= 1, '18 carries for 42 yards is not a good day');
+    ok(W.gradeLine({ pos: 'WR', line: '6 rec 90 yds, 3 drops' }, 0.6).overall <= 1, 'three drops caps a receiver’s day');
+    ok(/completions he took off his quarterback/.test(W.gradeLine({ pos: 'WR', line: '6 rec 90 yds, 3 drops' }, 0.6).combos.join(' ')), 'and says what a drop costs');
+    ok(/five yards downfield/.test(W.gradeLine({ pos: 'MIKE', line: '13 tkl' }, 0.6).combos.join(' ')), 'empty tackles are read as tackles made downfield');
+    ok(W.gradeLine({ pos: 'QB', line: '19/24, 260 yds, 4 TD' }, 0.6).overall >= 3, 'and a genuinely big day still grades as one');
+
+    /* a coach being harsh on somebody who played well */
+    var harshG = Object.assign({}, base, { id: 'harsh', coachQuote: 'B.Hale has to be better. That is not good enough.',
+      performances: [{ name: 'B.Hale', pos: 'QB', line: '18/22, 265 yds, 3 TD', verdict: 'standout' }] });
+    st.games = [harshG];
+    ok(/Which is harsh, actually/.test(seg(W.buildScript(harshG), 'WHAT THE COACH SAID')), 'and a coach being hard on somebody who played well is pushed back on', seg(W.buildScript(harshG), 'WHAT THE COACH SAID'));
+
     /* --- the clip is voiced in his own voice --- */
     var g2 = { id: 'v1', season: st.season, week: 7, opponent: 'Utah', home: true, result: 'W', scoreFor: 31, scoreAgainst: 10,
       coachQuote: 'Credit to our players. We executed today.', notes: '', performances: [] };
