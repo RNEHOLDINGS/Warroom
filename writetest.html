@@ -25,6 +25,16 @@ var REAL_FETCH = window.fetch.bind(window);
 window.__mode = 'ok';
 window.fetch = function (url, init) {
   if (String(url).indexOf('generativelanguage.googleapis.com') < 0) return REAL_FETCH(url, init);
+  if (/\/v1beta\/models\?/.test(String(url))) {
+    window.__calls.push({ url: String(url), headers: init.headers, list: true });
+    return Promise.resolve(new Response(JSON.stringify(window.__mode === 'badkey'
+      ? { error: { code: 400, message: 'API key not valid. Please pass a valid API key.' } }
+      : { models: [
+          { name: 'models/gemini-9-flash', displayName: 'Gemini 9 Flash', supportedGenerationMethods: ['generateContent'] },
+          { name: 'models/gemini-9-flash-tts', displayName: 'Gemini 9 Flash TTS', supportedGenerationMethods: ['generateContent'] },
+          { name: 'models/embedding-001', displayName: 'Embedding', supportedGenerationMethods: ['embedContent'] }
+        ] }), { status: window.__mode === 'badkey' ? 400 : 200, headers: { 'Content-Type': 'application/json' } }));
+  }
   var body = JSON.parse(init.body);
   window.__calls.push({ url: String(url), headers: init.headers, body: body, signal: init.signal });
   return new Promise(function (res, rej) {
@@ -153,7 +163,40 @@ window.fetch = function (url, init) {
       window.__mode = 'ok';
       click('[data-action="close"]');
 
-      /* --- the coach tags --- */
+      /* --- asking the key what it can actually use ------------------
+       Guessed model names 404, and the error reads like the app is broken.
+       The key knows the answer, so ask it. */
+    W.setView('settings');
+    window.__calls = [];
+    click('[data-action="find-models"]');
+    return sleep(400).then(function () {
+      var call = window.__calls[0];
+      ok(call && call.list && /\/v1beta\/models\?/.test(call.url), 'it asks Google for the list', call && call.url);
+      ok(call.headers['x-goog-api-key'] === 'TEST-KEY-123', 'with the key');
+      var found = W.showCfg().models;
+      ok(found.length === 2 && found.every(function (m) { return m.writes; }), 'models that cannot answer a prompt are dropped', JSON.stringify(found.map(function (m) { return m.id; })));
+      ok(found.some(function (m) { return m.id === 'gemini-9-flash-tts' && m.speaks; }), 'and the speaking ones are marked as such', JSON.stringify(found));
+      ok(W.showCfg().model === 'gemini-9-flash-tts', 'a voice model the key does not have is swapped for one it does', W.showCfg().model);
+      ok(W.showCfg().writeModel === 'gemini-9-flash', 'and so is the writer', W.showCfg().writeModel);
+      var voiceOpts = Array.prototype.map.call(document.querySelectorAll('#sh-model option'), function (o) { return o.value; });
+      var writeOpts = Array.prototype.map.call(document.querySelectorAll('#sh-write option'), function (o) { return o.value; });
+      ok(voiceOpts.indexOf('gemini-9-flash-tts') >= 0 && voiceOpts.indexOf('gemini-9-flash') < 0, 'the voice list offers only the speaking ones', JSON.stringify(voiceOpts));
+      ok(writeOpts.indexOf('gemini-9-flash') >= 0 && writeOpts.indexOf('') >= 0, 'the writer list offers the others, plus off', JSON.stringify(writeOpts));
+      ok(/2 models found on your key/.test(q('#modelNote').textContent), 'and it says what it found', q('#modelNote').textContent);
+      ok(JSON.parse(localStorage.getItem('warroom.v1')).show.models.length === 2, 'the list is remembered');
+
+      /* a 404 now points at the fix */
+      window.__mode = 'badkey';
+      window.__calls = [];
+      click('[data-action="find-models"]');
+      return sleep(300);
+    }).then(function () {
+      ok(/rejected the API key/.test(q('#modelNote').textContent), 'a bad key says so here too', q('#modelNote').textContent);
+      window.__mode = 'ok';
+    }).then(function () {
+
+    /* --- the coach tags --- */
+      W.setView('show');
       click('[data-action="edit-game"][data-id="g1"]');
       var tags = document.querySelectorAll('[data-ctag]');
       ok(tags.length >= 6, 'the game form has the coach tags', tags.length);
@@ -167,6 +210,7 @@ window.fetch = function (url, init) {
       ok(read.hits.length === 2 && read.hits.every(function (h) { return ['process', 'changes'].indexOf(h.kind) >= 0; }), 'and the reader obeys the ticks instead of guessing', JSON.stringify(read.hits.map(function (h) { return h.kind; })));
       click('[data-action="close"]');
       finish();
+    });
     });
   }).catch(function (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); });
 })();

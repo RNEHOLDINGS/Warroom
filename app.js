@@ -255,7 +255,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v26';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v27';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -1152,6 +1152,8 @@
       coachVoice: (s.voices && s.voices.coach) || 'Algenib',
       /* empty means the built-in writer, which is the default */
       writeModel: s.writeModel || '',
+      /* what this key actually offered, last time we asked */
+      models: Array.isArray(s.models) ? s.models : [],
       /* 1 film room, 2 studio, 3 game day: how hard the panel sells it and
          how loud and fast the voices go */
       hype: int(s.hype == null ? 2 : s.hype, 1, 3),
@@ -5015,10 +5017,29 @@
           '<div class="field" style="grid-column:1/-1"><label for="sh-key">Gemini API key</label>' +
             '<input type="password" id="sh-key" autocomplete="off" spellcheck="false" value="' + esc(window.WarRoomVoice.getKey()) + '" placeholder="Paste the key from Google AI Studio">' +
             '<div class="help">Create one at aistudio.google.com. It is kept in this browser only and is never put in a backup. In Google Cloud, restrict it to the Generative Language API and to rneholdings.github.io so a leaked copy is useless. Google bills per use — check their pricing.</div></div>' +
-          '<div class="field"><label for="sh-model">Voice model</label><select id="sh-model">' + options(window.WarRoomVoice.MODELS, sh.model, function (m) { return m.label; }, function (m) { return m.id; }) + '</select></div>' +
-          '<div class="field" style="grid-column:1/-1"><label for="sh-write">Who writes the episode</label>' +
-            '<select id="sh-write">' + options(window.WarRoomVoice.WRITE_MODELS, sh.writeModel, function (m) { return m.label; }, function (m) { return m.id; }) + '</select>' +
-            '<div class="help">The built-in writer is free, works offline and always says the same thing for the same game. Switching this on sends the facts — the grades, the charges, the coach’s quote, the schedule — to Google and gets a fresh episode written round them, which costs a little per show and comes back different every time. Either way you can edit it before voicing.</div></div>' +
+          (function () {
+            /* the hard-coded lists are a starting guess; once the key has
+               been asked, offer what it actually said */
+            var found = sh.models || [];
+            var voiceList = found.filter(function (m) { return m.speaks; });
+            var writeList = found.filter(function (m) { return !m.speaks; });
+            var vOpts = voiceList.length ? voiceList : window.WarRoomVoice.MODELS;
+            var wOpts = [{ id: '', label: 'Off — use the built-in writer' }].concat(writeList.length ? writeList : window.WarRoomVoice.WRITE_MODELS.filter(function (m) { return m.id; }));
+            /* keep a saved choice selectable even if it is not in the list */
+            if (sh.model && !vOpts.some(function (m) { return m.id === sh.model; })) vOpts = vOpts.concat([{ id: sh.model, label: sh.model + ' — saved' }]);
+            if (sh.writeModel && !wOpts.some(function (m) { return m.id === sh.writeModel; })) wOpts = wOpts.concat([{ id: sh.writeModel, label: sh.writeModel + ' — saved' }]);
+            return '<div class="field"><label for="sh-model">Voice model</label><select id="sh-model">' +
+                options(vOpts, sh.model, function (m) { return m.label; }, function (m) { return m.id; }) + '</select></div>' +
+              '<div class="field" style="grid-column:1/-1"><label for="sh-write">Who writes the episode</label>' +
+                '<select id="sh-write">' + options(wOpts, sh.writeModel, function (m) { return m.label; }, function (m) { return m.id; }) + '</select>' +
+                '<div class="help">The built-in writer is free, works offline and always says the same thing for the same game. Switching this on sends the facts — the grades, the charges, the coach’s quote, the schedule — to Google and gets a fresh episode written round them, which costs a little per show and comes back different every time. Either way you can edit it before voicing.</div></div>' +
+              '<div class="field" style="grid-column:1/-1">' +
+                '<button class="btn small" data-action="find-models">' + icon('spin') + 'Check what my key can use</button>' +
+                '<span id="modelNote" class="help" style="display:inline-block;margin-left:8px">' +
+                  (found.length ? found.length + ' models found on your key. Both lists above are what it offered.' : 'Model names change and differ between keys. If one is rejected, tap this and pick from the list it finds.') +
+                '</span></div>';
+          })() +
+
           ['host', 'player', 'analyst', 'insider'].concat(['coach']).map(function (role) {
             var vLabel = role === 'coach' ? 'Your head coach (heard in clips)' : esc(sh[role]);
             var vNow = role === 'coach' ? sh.coachVoice : sh.voices[role];
@@ -5749,6 +5770,11 @@
       num(x, 'season', 1900, 2999); num(x, 'week', 1, 25); num(x, 'rank', 0, 25, true);
       x.home = !!x.home; x.rivalry = !!x.rivalry; x.bye = !!x.bye;
     });
+    if (b.show && 'models' in b.show) {
+      b.show.models = objs(b.show.models).map(function (m) {
+        return { id: String(m.id || ''), label: String(m.label || m.id || ''), speaks: !!m.speaks, writes: !!m.writes };
+      }).filter(function (m) { return /^[A-Za-z0-9._\-]{1,80}$/.test(m.id); });
+    }
     b.games = objs(b.games);
     b.games.forEach(function (g) {
       if (!safe(g.id)) g.id = uid();
@@ -6009,6 +6035,29 @@
         state.cap = int($('#s-cap').value, 1, 200);
         state.hours = int($('#s-hours').value, 0, 999);
         save(); render(); toast('Saved.'); break;
+      case 'find-models':
+        (function (btn) {
+          var V = window.WarRoomVoice;
+          var note = $('#modelNote');
+          var key = (($('#sh-key') || {}).value || '').trim() || (V && V.getKey());
+          if (!key) { if (note) note.textContent = 'Put your API key in the box above first.'; return; }
+          if (btn) btn.disabled = true;
+          if (note) note.textContent = 'Asking Google what this key can use…';
+          V.listModels(key).then(function (list) {
+            state.show = Object.assign({}, state.show || {}, { models: list });
+            /* a saved choice that no longer exists would only 404 again */
+            var speaks = list.filter(function (m) { return m.speaks; });
+            var writes = list.filter(function (m) { return !m.speaks; });
+            if (speaks.length && !speaks.some(function (m) { return m.id === showCfg().model; })) state.show.model = speaks[0].id;
+            if (showCfg().writeModel && writes.length && !writes.some(function (m) { return m.id === showCfg().writeModel; })) state.show.writeModel = writes[0].id;
+            save(); render();
+            toast(list.length + ' models found. Pick the ones you want.');
+          }).catch(function (err) {
+            if (btn) btn.disabled = false;
+            if (note) note.textContent = (err && err.message) || 'Could not reach Google.';
+          });
+        })(t);
+        break;
       case 'save-show':
         state.show = {
           title: $('#sh-title').value.trim() || 'HARD COUNT',
@@ -6026,6 +6075,7 @@
           },
           model: ($('#sh-model') || {}).value || 'gemini-3.1-flash-tts-preview',
           writeModel: ($('#sh-write') || {}).value || '',
+          models: showCfg().models,
           hype: showCfg().hype,
           length: showCfg().length
         };

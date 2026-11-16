@@ -117,6 +117,41 @@
     return chunks;
   }
 
+  /* Model names change, get retired and differ between keys, and a guessed
+     list produces a 404 that reads like the app is broken. So ask: the API
+     will say which models this key can use and what each one is for. */
+  function listModels(key, signal) {
+    var all = [], page = '';
+    var go = function () {
+      return fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200' + (page ? '&pageToken=' + encodeURIComponent(page) : ''), {
+        headers: { 'x-goog-api-key': key }, signal: signal
+      }).then(function (r) {
+        return r.text().then(function (raw) {
+          if (!r.ok) throw new Error(explain(r.status, raw));
+          var data = JSON.parse(raw);
+          (data.models || []).forEach(function (m) {
+            var id = String(m.name || '').replace(/^models\//, '');
+            var methods = m.supportedGenerationMethods || m.supportedActions || [];
+            if (!id) return;
+            all.push({
+              id: id,
+              label: (m.displayName || id) + (m.description && /deprecat/i.test(m.description) ? ' — deprecated' : ''),
+              speaks: /tts|speech/i.test(id) || /tts|speech/i.test(m.displayName || ''),
+              writes: methods.indexOf('generateContent') >= 0
+            });
+          });
+          page = data.nextPageToken || '';
+          return page ? go() : all;
+        });
+      });
+    };
+    return go().then(function (list) {
+      /* newest-looking first, and never offer a model that cannot answer */
+      return list.filter(function (m) { return m.writes; })
+        .sort(function (a, b) { return a.id < b.id ? 1 : a.id > b.id ? -1 : 0; });
+    });
+  }
+
   /* ---------- writing the episode ---------- */
 
   /* The rules matter more than the brief. A model handed football facts
@@ -288,7 +323,7 @@
     try { msg = (JSON.parse(body).error || {}).message || ''; } catch (e) { msg = String(body || '').slice(0, 200); }
     if (status === 400 && /API key not valid/i.test(msg)) return 'Google rejected the API key. Check it in Settings → The show.';
     if (status === 403) return 'That key is not allowed to use text-to-speech' + (msg ? ' (' + msg + ')' : '') + '. Check the key’s restrictions in Google Cloud.';
-    if (status === 404) return 'Google does not recognise that voice model any more. Pick a different one in Settings → The show.';
+    if (status === 404) return 'Google does not recognise that model. Tap “Check what my key can use” in Settings → The show, and pick from the list it finds.';
     return 'Google said no (' + status + ')' + (msg ? ': ' + msg : '.');
   }
 
@@ -416,6 +451,7 @@
   window.WarRoomVoice = {
     MODELS: MODELS,
     WRITE_MODELS: WRITE_MODELS,
+    listModels: listModels,
     writePrompt: writePrompt,
     writeShow: writeShow,
     VOICES: VOICES,

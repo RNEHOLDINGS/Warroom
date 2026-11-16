@@ -332,6 +332,13 @@ the same thing for the same game, and every line of it is covered by tests.
 Its ceiling is that the lines were all written in advance, so after enough
 episodes they rhyme.
 
+**Model names change, so ask the key.** Google retires model names and
+different keys see different lists, which is why a hard-coded name comes back
+as "Google does not recognise that model". **Check what my key can use** in
+Settings asks your key what it actually has, fills both dropdowns — the
+speaking ones for the voices, the rest for writing — and swaps a saved choice
+that no longer exists for one that does.
+
 **Settings → The show → Who writes the episode** switches that to Gemini. The
 app already works out everything the show needs — the grade for each stat line
 and the combination that caps it, the charges against the staff with their
