@@ -359,6 +359,30 @@ How it works, and why:
 thing it cannot check is Google itself: until it is run with a real key, the
 audio quality and the exact reply format are untested.
 
+## What swung it
+
+Everything the show could point at used to be a failure, which is not how
+football works. The game form has a **Moments** section for the other half:
+
+- **The play that won it** — a pick six, a stop on fourth and one, a returned
+  kick. Whatever actually turned it.
+- **Somebody went down** — name him, and the panel works out who picked up the
+  slack from whoever actually played well at that position. If nobody did, it
+  says that instead: *"they didn't really replace him, and you can see the
+  shape of the game change after it."*
+
+Team stats gained a **Defense / ST TDs** row for both sides, because a pick
+six is seven points the offense never had to earn and the panel was reading
+those scoreboards as if it had. Now it says so — *"the offense accounted for 2
+of the touchdowns"* — and in a one-score win it calls the defensive score the
+game.
+
+**THE SWING** segment runs when something genuinely went right: a defensive
+touchdown, the play you typed in, takeaways that were the margin in a close
+win, a kicker who won it, and the next-man-up story. A score the other way
+gets its due too — *"that's worth double, it takes seven off you and gives
+seven to them in one play."* Nothing to celebrate, no segment.
+
 ## What the coach said
 
 Type the press-conference line into the game's **staff** section and the show
@@ -717,6 +741,9 @@ These suites are all driven through real DOM clicks with hit testing:
 - `casttest.html` — chairs that match their voices, contractions, the team's
   own name, and the season memory: streaks, callbacks, player history,
   averages, and that a later week is never mentioned.
+- `swingtest.html` — the positive ledger: defensive and return touchdowns,
+  the play that won it, takeaways and the kicker, the next-man-up story, and
+  that a game with nothing going right gets no segment.
 - `quotetest.html` — the clip segment: the quote played back as typed, the
   coach's own voice, the translation of several kinds of coach-speak, the
   checks against the game, the context pulled out for the rest of the show,

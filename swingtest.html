@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Swing test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+/* Not everything that decides a game is a failure. A pick six, a takeaway
+   that paid, a kicker who won it, and the kid who stepped in when a starter
+   went down all get their own segment. */
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function click(sel) { var el = q(sel); if (!el) { ok(false, 'element ' + sel, 'missing'); return null; } el.click(); return el; }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom, V = window.WarRoomVoice;
+  var said = function (s) { return V.parseDialogue(s).map(function (t) { return t.text; }).join('\n'); };
+  var seg = function (s, name) { return (s.split(name)[1] || '').split(/--- (?:SEGMENT|THE BIG|RUNDOWN)/)[0]; };
+  try {
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    st.school = { name: 'Oregon', mascot: 'Ducks', state: 'OR', color: '#154733' };
+    st.quarterLen = 5;
+    st.games = []; st.schedule = []; st.rivals = [];
+    st.players = [
+      { id: 'qb1', name: 'J.Carty', pos: 'QB', year: 'JR', ovr: 84, exit: '' },
+      { id: 'qb2', name: 'B.Hale', pos: 'QB', year: 'FR', ovr: 70, exit: '' },
+      { id: 'cb1', name: 'R.Dial', pos: 'CB', year: 'SO', ovr: 80, exit: '' }
+    ];
+    st.show = { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true };
+
+    var base = { id: 'b', season: st.season, week: 5, opponent: 'Utah', home: true, result: 'W', scoreFor: 21, scoreAgainst: 17,
+      rushFor: 90, passFor: 130, rushAgainst: 120, passAgainst: 190, toFor: 1, toAgainst: 2,
+      tdFor: 3, tdAgainst: 2, fgFor: 0, fgAgainst: 1, notes: '', performances: [] };
+    var make = function (extra) {
+      var g = Object.assign({}, base, extra, { id: 'g' + Math.random() });
+      st.games = [g];
+      return W.buildScript(g);
+    };
+
+    /* --- nothing to celebrate, no segment --- */
+    ok(!/THE SWING/.test(make({ result: 'L', scoreFor: 7, scoreAgainst: 30, toAgainst: 0, tdFor: 1 })), 'a game with nothing going right gets no swing segment');
+
+    /* --- a pick six --- */
+    var six = make({ defTdFor: 1 });
+    ok(/THE SWING/.test(six), 'a defensive touchdown opens the segment');
+    var sw = seg(six, 'THE SWING');
+    ok(/A defensive touchdown/.test(sw), 'and is named', sw);
+    ok(/that is the game right there|That’s the game right there/i.test(sw), 'in a four-point win it is called the game', sw);
+    ok(/offense accounted for 2 of the touchdowns/.test(sw), 'and the offense only gets credit for what it scored', sw);
+    ok(/DEFENSE won a football game|defense won a football game/i.test(sw), 'the ex-player gives it to the defense', sw);
+    ok(/What swung it/.test(six.split('--- COLD OPEN')[0]), 'the rundown lists it');
+    ok(/Defense \/ ST TDs\s+1/.test(six), 'the table carries it', (six.match(/Defense \/ ST TDs.*/) || [''])[0]);
+
+    /* a defensive score in a blowout is good, not decisive */
+    var blow = seg(make({ defTdFor: 1, scoreFor: 45, scoreAgainst: 10, tdFor: 6 }), 'THE SWING');
+    ok(/cheapest points in football/.test(blow) && !/that is the game right there/i.test(blow), 'in a blowout it is cheap points, not the game', blow);
+
+    /* --- one going the other way --- */
+    var against = seg(make({ result: 'L', scoreFor: 17, scoreAgainst: 24, defTdAgainst: 1, tdFor: 2, tdAgainst: 3 }), 'THE SWING');
+    ok(/came off the defense or special teams|handed over points/.test(against), 'a score against gets said too', against);
+    ok(/worth double/.test(against), 'and the ex-player explains why it hurts twice', against);
+
+    /* --- the play the user types in --- */
+    var big = seg(make({ bigPlay: 'pick six on the first drive of the third quarter' }), 'THE SWING');
+    ok(/pick[- ]six on the first drive of the third quarter/.test(big), 'the play that won it is quoted, in words', big);
+    ok(/THAT is the moment|everybody in that stadium felt/i.test(big), 'and reacted to', big);
+
+    /* --- takeaways and a kicker --- */
+    ok(/won the game on takeaways/.test(seg(make({ toAgainst: 3 }), 'THE SWING')), 'takeaways in a close win are called the margin');
+    ok(/somebody still had to make those kicks/.test(seg(make({ fgFor: 3, tdFor: 1 }), 'THE SWING')), 'a kicker in a close win gets his due');
+
+    /* --- somebody goes down, somebody steps in --- */
+    var nmu = W.nextManUp({ injury: 'Carty went out in the second quarter' },
+      [{ name: 'B. Hale', verdict: 'standout', raw: { name: 'B.Hale', pos: 'QB' } }], 0.6);
+    ok(nmu && nmu.hurt && nmu.hurt.name === 'J.Carty', 'the injured player is found by name', nmu && nmu.hurt && nmu.hurt.name);
+    ok(nmu.stepped && nmu.stepped.name === 'B. Hale', 'and the man who replaced him comes from who played well at that spot', nmu && nmu.stepped && nmu.stepped.name);
+
+    var story = seg(make({ injury: 'Carty went out in the second quarter',
+      performances: [{ name: 'B.Hale', pos: 'QB', line: '11/15, 140 yds, 2 TD', verdict: 'standout' }] }), 'THE SWING');
+    ok(/J\.Carty went down/.test(story), 'the show leads with who went down', story);
+    ok(/B\. Hale/.test(story) && /next man up|didn’t let it|four minutes to get ready/i.test(story), 'and gives the story to the man who stepped in', story);
+    ok(/credit to whoever has been coaching him|second guy is ready|how they practise/i.test(story), 'the analyst credits the programme', story);
+
+    var alone = seg(make({ result: 'L', scoreFor: 10, scoreAgainst: 24, toAgainst: 0, tdFor: 1,
+      injury: 'Dial went down early', performances: [] }), 'THE SWING');
+    ok(/did not really replace him|Losing him mattered|everything getting harder/.test(alone), 'and says so when nobody did', alone);
+
+    /* --- the form --- */
+    W.setView('show');
+    click('[data-action="add-game"]');
+    ok(!!q('#g-big') && !!q('#g-inj') && !!q('#g-dtf'), 'the form has the swing play, the injury and the defensive scores');
+    q('#g-opp').value = 'Utah'; q('#g-sf').value = '24'; q('#g-sa').value = '20';
+    q('#g-dtf').value = '1';
+    q('#g-big').value = 'strip sack in the fourth';
+    q('#g-inj').value = 'Carty went out in the second quarter';
+    click('[data-action="save-game"]');
+    var saved = W.state().games.filter(function (x) { return x.opponent === 'Utah' && x.bigPlay; })[0];
+    ok(saved && saved.defTdFor === 1 && saved.bigPlay === 'strip sack in the fourth' && saved.injury === 'Carty went out in the second quarter', 'and saves all three', JSON.stringify(saved && { d: saved.defTdFor, b: saved.bigPlay, i: saved.injury }));
+    ok(/THE SWING/.test(q('#scriptBox').value) && /strip sack in the fourth/.test(q('#scriptBox').value), 'and the script uses them');
+    ok(/Swing play:  strip sack/.test(q('#scriptBox').value) && /Injury:      Carty/.test(q('#scriptBox').value), 'the producer notes keep them', (q('#scriptBox').value.match(/Swing play:.*/) || [''])[0]);
+    click('[data-action="close"]');
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

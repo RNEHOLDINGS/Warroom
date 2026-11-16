@@ -255,7 +255,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v23';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v24';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -543,7 +543,10 @@
     ['tdFor', 0, 20], ['tdAgainst', 0, 20], ['fgFor', 0, 12], ['fgAgainst', 0, 12],
     ['rzFor', 0, 20], ['rzForAtt', 0, 20], ['rzAgainst', 0, 20], ['rzAgainstAtt', 0, 20],
     /* and how it was called: 44 throws for 71 yards is a play-sheet problem */
-    ['rushAttFor', 0, 90], ['passAttFor', 0, 90]
+    ['rushAttFor', 0, 90], ['passAttFor', 0, 90],
+    /* a pick six is seven points the offense never had to earn, and the
+       panel was reading those scoreboards as if the offense had */
+    ['defTdFor', 0, 6], ['defTdAgainst', 0, 6]
   ];
   function blankInt(v, lo, hi) { return v === '' || v == null || !/\d/.test(String(v)) ? '' : int(v, lo, hi); }
   function pairOf(s) {
@@ -580,6 +583,7 @@
     row('Fourth downs', pair(b.fourthFor, b.fourthForAtt, 'of'), pair(b.fourthAgainst, b.fourthAgainstAtt, 'of'));
     row('Penalties', pair(b.penFor, b.penForYds, 'for'), pair(b.penAgainst, b.penAgainstYds, 'for'));
     row('Touchdowns', cell(b.tdFor), cell(b.tdAgainst));
+    row('Defense / ST TDs', cell(b.defTdFor), cell(b.defTdAgainst));
     row('Field goals', cell(b.fgFor), cell(b.fgAgainst));
     row('Red zone', pair(b.rzFor, b.rzForAtt, 'of'), pair(b.rzAgainst, b.rzAgainstAtt, 'of'));
     row('Run / pass', b.rushAttFor === '' && b.passAttFor === '' ? '—' : cell(b.rushAttFor) + ' / ' + cell(b.passAttFor), '—');
@@ -1550,6 +1554,83 @@
     return { quote: raw, hits: hits, checks: checks, facts: facts, named: coachNamed(raw) };
   }
 
+  /* ---------- what went right ----------
+     Everything the show could point at was a failure: the call that cost
+     them, the quarterback who could not throw, the staff. Football does not
+     work like that. A pick six is seven points nobody on the offense had to
+     earn, a takeaway at the right moment is the whole game, and a kid
+     stepping in for an injured starter is the story of the afternoon.
+
+     So this is the other ledger. Same shape as the charges -- a take, an
+     answer -- except it is about what helped. */
+  function swings(b, g, S, perfAll, us, them) {
+    var out = [];
+    var won = g.result === 'W', tied = g.result === 'T', m = gameMargin(g);
+    var has = function (k) { return b[k] !== ''; };
+    var add = function (key, weight, analyst, player) { out.push({ key: key, weight: weight, analyst: analyst, player: player }); };
+    var pts = function (n) { return n * 7; };
+
+    /* points the offense never had to score */
+    if (has('defTdFor') && b.defTdFor > 0) {
+      var swung = won && pts(b.defTdFor) >= m;
+      add('deftd', swung ? 10 : 8,
+        (b.defTdFor === 1 ? 'A defensive touchdown' : b.defTdFor + ' defensive touchdowns') + '. ' +
+          (swung ? 'That is the game right there. Take those points off the board and ' + us + ' loses this.'
+                 : 'Seven points the offense never had to go and earn, and those are the cheapest points in football.') +
+          (has('tdFor') && b.tdFor !== '' ? ' The offense accounted for ' + Math.max(0, int(b.tdFor, 0, 99) - b.defTdFor) + ' of the touchdowns.' : ''),
+        (swung ? 'And I do not care that the offense was quiet. The DEFENSE won a football game. Put that on a poster.'
+               : 'That is a defense playing with its hair on fire. You love to see it.'));
+    }
+    if (has('defTdAgainst') && b.defTdAgainst > 0 && !won) {
+      add('deftd-against', 7,
+        'And ' + (b.defTdAgainst === 1 ? 'one of their touchdowns' : b.defTdAgainst + ' of their touchdowns') + ' came off the defense or special teams. ' + us + ' did not just lose, they handed over points.',
+        'A score like that is worth double. It takes seven off you and gives seven to them in one play.');
+    }
+    /* a user telling us what actually turned it */
+    if (g.bigPlay) {
+      add('bigplay', 9,
+        'And then the play everybody will remember: ' + spoken(g.bigPlay) + '. Games turn on one snap more often than anybody with a spreadsheet wants to admit.',
+        'THAT is the moment. Everybody in that stadium felt the thing change right there.');
+    }
+    /* takeaways that actually paid */
+    if (won && has('toAgainst') && int(b.toAgainst, 0, 99) >= 2 && m <= 14) {
+      add('takeaways', 6,
+        'And they won the game on takeaways. ' + int(b.toAgainst, 0, 99) + ' of them in a ' + m + '-point win is not a coincidence, that is the margin.',
+        'Somebody has been coaching ball disruption all week, and it showed up when they needed it.');
+    }
+    /* the kicker who was the offense */
+    if (won && has('fgFor') && b.fgFor >= 3 && m <= 10) {
+      add('kicker', 6,
+        'Three field goals in a ' + m + '-point win. People will say they should have scored touchdowns, and they are right, but somebody still had to make those kicks.',
+        'Kickers only get talked about when they miss. Not today. That man won a football game.');
+    }
+    return out.sort(function (a, c) { return c.weight - a.weight; });
+  }
+
+  /* Somebody went down and somebody else picked it up. The name comes from
+     what was typed in; the man who replaced him comes from who actually
+     played well at that position. */
+  function nextManUp(g, voicedList, S) {
+    var raw = String(g.injury || '').trim();
+    if (!raw) return null;
+    var low = raw.toLowerCase();
+    var hurt = namedPlayers().filter(function (p) {
+      var n = String(p.name || '').toLowerCase();
+      var surname = n.replace(/^[a-z]\.\s*/, '').replace(/^\S+\s+/, '');
+      return (n && low.indexOf(n) >= 0) || (surname.length > 3 && low.indexOf(surname) >= 0);
+    })[0] || null;
+    var grp = hurt ? groupOf(hurt.pos) : '';
+    var stepped = null;
+    if (grp) {
+      stepped = voicedList.filter(function (v) {
+        if (hurt && v.raw.name.toLowerCase() === hurt.name.toLowerCase()) return false;
+        if (v.verdict === 'struggled') return false;
+        return groupOf(normalisePos(v.raw.pos || '') || String(v.raw.pos || '').toUpperCase()) === grp;
+      })[0] || null;
+    }
+    return { text: raw, hurt: hurt, stepped: stepped, group: grp };
+  }
+
   /* ---------- the case against the staff ----------
      A panel that only ever grades players is half a show. Most of what makes
      people shout on a Monday is a decision: who played, what got called, what
@@ -1975,7 +2056,8 @@
       if (n % 3 === 0 && !/^(Look|I mean|See|Okay|Right|Alright|So|Hey|Come on|Listen|Nah|Yeah|Honestly|And|But|Hold|Wait|No\b)/.test(text)) {
         var fill = fresh(lastFill, role, FILLER[role], n);
         var first = (text.split(' ')[0] || '').replace(/[^A-Za-z’']/g, '');
-        var keep = /^I$|^I[’']/.test(first) || keepCaps[first.toUpperCase()] || /^[A-Z]{2,}$/.test(first);
+        var keep = /^I$|^I[’']/.test(first) || keepCaps[first.toUpperCase()] ||
+          /^[A-Z]{2,}$/.test(first) || /^[A-Z].*[A-Z]/.test(first);
         text = fill + (keep ? text : text.charAt(0).toLowerCase() + text.slice(1));
       }
       /* one in five finishes the way people finish */
@@ -2093,6 +2175,7 @@
     if (stars.length && !quick) topics.push(stars[0].name + '’s day');
     if (rough.length && !quick) topics.push('The hot seat: ' + rough[0].name);
     if (boxHasAny(bx0)) topics.push('The numbers');
+    if (swings(bx0, g, S, perf, US, them).length || g.injury) topics.push('What swung it');
     if (g.coachQuote) topics.push('What the coach said');
     if (cCase.length && (!quick || cCase[0].weight >= 9)) topics.push('The staff');
     topics.push('What ' + them + ' gave away');
@@ -2593,6 +2676,53 @@
       w('');
     }
 
+    /* ---- the swing ----
+       The counterweight to the staff segment: the plays and the people that
+       went the right way. It runs on the same rule -- only when there is
+       something real to point at. */
+    var swungBy = swings(bx0, g, S, perf, US, them);
+    var nmu = nextManUp(g, voiced, S);
+    if (swungBy.length || nmu) {
+      head('THE SWING');
+      say(HOST, beat('swing-open', [
+        'Let’s talk about what went right, because something did.',
+        'The other side of it now. What swung this game?',
+        'Before we bury anybody, what actually went ' + US + '’s way?',
+        'Something went right out there. ' + analystF + '.'
+      ]));
+      swungBy.slice(0, quick ? 1 : full ? 4 : 2).forEach(function (x, i) {
+        if (i) say(HOST, beat('swing-next' + i, ['What else?', 'And?', 'Keep going.']));
+        say(ANALYST, x.analyst);
+        say(PLAYER, x.player);
+      });
+      if (nmu) {
+        var who = nmu.hurt ? nmu.hurt.name : 'somebody';
+        say(HOST, nmu.hurt
+          ? who + ' went down. ' + sentence(spoken(nmu.text))
+          : sentence(spoken(nmu.text)));
+        if (nmu.stepped) {
+          say(PLAYER, beat('nmu-p', [
+            'And ' + nmu.stepped.name + ' walks in and does that? Next man up is a poster in every facility in America. That is what it actually looks like.',
+            nmu.stepped.name + ' had about four minutes to get ready and then went and played like that. I love that kid already.',
+            'You lose ' + who + ' and the season could go sideways right there. ' + nmu.stepped.name + ' did not let it.'
+          ]));
+          say(ANALYST, beat('nmu-a', [
+            'Credit to whoever has been coaching him in practice, too. Backups do not play like that by accident.',
+            'And that is the quiet thing a good program has: the second guy is ready.',
+            'It also tells you something about how they practise, because he did not look lost out there.'
+          ]));
+        } else {
+          say(ANALYST, beat('nmu-none', [
+            'And they did not really replace him. You can see the shape of the game change after it.',
+            'Losing him mattered. Nobody in that room took it over afterwards.',
+            'That is the kind of thing that does not show up as a stat, it shows up as everything getting harder.'
+          ]));
+          say(PLAYER, 'Next man up is a nice thing to say. It is a lot harder on a Saturday.');
+        }
+      }
+      w('');
+    }
+
     /* ---- the other sideline ----
        Half of every result belongs to the other team: what they handed over
        and whether it got punished. */
@@ -2931,6 +3061,8 @@
     w('Rundown:     ' + topics.join(' · '));
     w('Calls:       ' + analystF + ': ' + calls.analyst.text + '  |  ' + playerF + ': ' + calls.player.text);
     w('Call record: ' + analystF + ' ' + recNow.analyst.w + '-' + recNow.analyst.l + ', ' + playerF + ' ' + recNow.player.w + '-' + recNow.player.l);
+    if (g.bigPlay) w('Swing play:  ' + g.bigPlay);
+    if (g.injury) w('Injury:      ' + g.injury);
     if (g.coachQuote) w('Coach said:  ' + g.coachQuote);
     if (cCase.length) w('Staff case:  ' + cCase.slice(0, 4).map(function (c) { return c.key; }).join(', '));
     if (ser.games >= 2) w('Series:      ' + ser.record + ' vs ' + them + (ser.isRivalry ? ' (rivalry)' : ''));
@@ -4266,6 +4398,7 @@
           boxRow('Red zone', boxPair('g-rzf', bx.rzFor, 'g-rzfa', bx.rzForAtt, 'of', 'Our red zone'),
                              boxPair('g-rza', bx.rzAgainst, 'g-rzaa', bx.rzAgainstAtt, 'of', 'Their red zone')) +
           boxRow('Run / pass plays', boxNum('g-ratt', bx.rushAttFor, 'Our rushing attempts'), boxNum('g-patt', bx.passAttFor, 'Our pass attempts')) +
+          boxRow('Defense / ST TDs', boxNum('g-dtf', bx.defTdFor, 'Our defensive or return touchdowns'), boxNum('g-dta', bx.defTdAgainst, 'Their defensive or return touchdowns')) +
         '</div>' +
         '<div class="box-help">Downs are converted of tried (7 of 14). Penalties are flags for yards (8 for 65). Total yards fills itself in from rushing and passing. Leave anything blank you do not have.</div>' +
         '<div class="field"><label for="g-notes">Anything else worth a mention</label><input type="text" id="g-notes" value="' + esc(g.notes) + '" placeholder="Injury, weather, a wild finish…"></div>' +
@@ -4273,6 +4406,11 @@
 
       /* The staff. None of this is in a box score, and all of it is what
          people actually argue about on a Monday. */
+      '<details class="more"' + (g.bigPlay || g.injury ? ' open' : '') + '><summary>Moments — what swung it</summary>' +
+        '<div class="field"><label for="g-big">The play that won it</label><input type="text" id="g-big" value="' + esc(g.bigPlay || '') + '" placeholder="Pick six on the first drive of the third quarter"><div class="help">A pick six, a stop on fourth and one, a returned kick — whatever actually turned the game.</div></div>' +
+        '<div class="field"><label for="g-inj">Somebody went down</label><input type="text" id="g-inj" value="' + esc(g.injury || '') + '" placeholder="Carty went out in the second quarter"><div class="help">Name him and the panel works out who picked up the slack from who actually played well.</div></div>' +
+      '</details>' +
+
       '<details class="more"' + (g.qbChange || g.blownLead || g.clockBlame || g.flat || g.badCall || g.coachQuote ? ' open' : '') + '><summary>The staff — what the sideline got wrong</summary>' +
         '<label class="check"><input type="checkbox" id="g-qbc"' + (g.qbChange ? ' checked' : '') + '> Changed quarterbacks</label>' +
         '<label class="check"><input type="checkbox" id="g-lead"' + (g.blownLead ? ' checked' : '') + '> Had the lead and lost it</label>' +
@@ -4325,6 +4463,7 @@
     g.rankFor = rankOf($('#g-rk').value);
     g.rankAgainst = rankOf($('#g-rka').value);
     var ids = {
+      defTdFor: 'g-dtf', defTdAgainst: 'g-dta',
       tdFor: 'g-tdf', tdAgainst: 'g-tda', fgFor: 'g-fgf', fgAgainst: 'g-fga',
       rzFor: 'g-rzf', rzForAtt: 'g-rzfa', rzAgainst: 'g-rza', rzAgainstAtt: 'g-rzaa',
       rushAttFor: 'g-ratt', passAttFor: 'g-patt',
@@ -4353,6 +4492,8 @@
     g.flat = $('#g-flat').checked;
     g.badCall = $('#g-call').value.trim();
     g.coachQuote = $('#g-quote').value.trim();
+    g.bigPlay = $('#g-big').value.trim();
+    g.injury = $('#g-inj').value.trim();
 
     var rows = {};
     $$('[data-perf]').forEach(function (el) {
@@ -5353,7 +5494,7 @@
     b.games = objs(b.games);
     b.games.forEach(function (g) {
       if (!safe(g.id)) g.id = uid();
-      text(g, ['opponent', 'thirdDown', 'penalties', 'notes', 'script', 'scriptAuto', 'badCall', 'coachQuote']);
+      text(g, ['opponent', 'thirdDown', 'penalties', 'notes', 'script', 'scriptAuto', 'badCall', 'coachQuote', 'bigPlay', 'injury']);
       ['qbChange', 'blownLead', 'clockBlame', 'flat'].forEach(function (k) { if (k in g) g[k] = !!g[k]; });
       oneOf(g, 'result', ['W', 'L', 'T'], 'W');
       num(g, 'season', 1900, 2999); num(g, 'week', 1, 25); num(g, 'scoreFor', 0, 999); num(g, 'scoreAgainst', 0, 999);
@@ -5761,6 +5902,8 @@
     spoken: spoken,
     boxOf: boxOf,
     coachCase: coachCase,
+    swings: swings,
+    nextManUp: nextManUp,
     readCoach: readCoach,
     coachFacts: coachFacts,
     coachNamed: coachNamed,
