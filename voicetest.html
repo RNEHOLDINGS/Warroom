@@ -98,6 +98,8 @@
         var hasMeta = (((body.contents || [])[0] || {}).parts || []).some(function (p) { return p.speechMetadata; });
         var isMulti = !!(((body.generationConfig || {}).speechConfig || {}).multiSpeakerVoiceConfig);
         if (mode === 'needsmeta' && isMulti && !hasMeta) return reply(400, { error: { code: 400, message: 'multi speaker generation requests must specify speech_metadata.speaker for each text part in contents', status: 'INVALID_ARGUMENT' } });
+        var hasSys = !!body.systemInstruction;
+        if (mode === 'nosys' && hasSys) return reply(400, { error: { code: 400, message: 'Developer instruction is not enabled in this model.', status: 'INVALID_ARGUMENT' } });
         if (mode === 'oldmodel' && hasMeta) return reply(400, { error: { code: 400, message: 'Invalid JSON payload received. Unknown name "speechMetadata" at \'contents[0].parts[0]\'.', status: 'INVALID_ARGUMENT' } });
         if (mode === 'ratelimit' && n === 1) return reply(429, { error: { code: 429, message: 'Resource exhausted', details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '0s' }] } });
         reply(200, { candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: pcmB64(2400) } }] }, finishReason: 'STOP' }] });
@@ -262,6 +264,28 @@
   }).then(function () {
     ok(!!q('#voiceArea audio'), 'a "slow down" from Google is retried, not reported as a failure', q('#voiceArea') && q('#voiceArea').textContent);
     ok(calls[0].body && calls.length === V.chunkTurns(V.parseDialogue(W.state().games[0].script)).length + 1, 'with exactly one extra request', calls.length);
+
+    /* ---------- a model that takes the turns but not the direction ----
+       "Developer instruction is not enabled in this model" is Google's own
+       name for a system instruction. The turns were fine; only the place
+       the direction was put was refused. */
+    calls = []; mode = 'nosys';
+    click('[data-action="close"]');
+    click('[data-action="script"][data-id="vg1"]');
+    click('[data-action="voice-script"]');
+    return waitFor(function () { return q('#voiceArea audio') || q('#voiceArea .banner'); }, 14000);
+  }).then(function () {
+    ok(!!q('#voiceArea audio'), 'a model that refuses a system instruction still gets the show voiced', q('#voiceArea') && q('#voiceArea').textContent);
+    var multi2 = calls.filter(function (c) { return (c.body.generationConfig.speechConfig || {}).multiSpeakerVoiceConfig; });
+    var after = multi2.filter(function (c) { return !c.body.systemInstruction; });
+    ok(after.length >= 1, 'it drops the system instruction rather than the whole request', multi2.length + ' two-voice requests, ' + after.length + ' without one');
+    ok(after.every(function (c) { return c.body.contents[0].parts.every(function (p) { return p.speechMetadata && p.speechMetadata.speaker; }); }),
+      'and keeps naming the speaker, which that model was happy with');
+    ok(after.every(function (c) { return c.body.contents[0].parts.every(function (p) { return p.speechMetadata.style && p.speechMetadata.style.length > 10; }); }),
+      'putting how it should sound on each turn instead, so it is not read flat', JSON.stringify((after[0].body.contents[0].parts[0] || {}).speechMetadata));
+    ok(after.every(function (c) { return !/AUDIO PROFILE/.test(JSON.stringify(c.body)); }), 'and the refused block is gone, not merely moved');
+    var refusedOnce = multi2.filter(function (c) { return !!c.body.systemInstruction; });
+    ok(refusedOnce.length === 1, 'the refusal costs one request for the whole episode, not one per part', refusedOnce.length + ' of ' + multi2.length);
 
     /* ---------- a model that wants the other shape -------------------
        Which shape a model takes changes with the release, so the one that

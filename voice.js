@@ -296,13 +296,29 @@
       '#### TRANSCRIPT\n';
   }
 
-  /* Two shapes for the same two-speaker request.
-       'parts' is what the current models want: one part per turn, each
-       naming its speaker, with the direction moved to a system
-       instruction because every text part has to belong to somebody.
-       'blob' is the older shape -- the whole exchange in one part with
-       "WHITCOMB:" labels in the text -- kept because a request is not
-       worth losing over a model that has not caught up. */
+  /* Three shapes for the same two-speaker request, best first. Which one
+     a model takes changes with the release, and a model will take one
+     field and refuse another, so they are tried in order rather than
+     guessed at from the name.
+
+       'parts+sys'  one part per turn, each naming its speaker, with the
+                    audio direction in a system instruction. Best: the
+                    direction is what makes them sound like people.
+       'parts'      the same, but with the direction reduced to a short
+                    style on each turn, for models that take a speaker
+                    but no system instruction.
+       'blob'       the older shape -- the whole exchange in one part with
+                    "WHITCOMB:" labels in the text, direction in front.
+
+     A shorter style on every turn is worth more than a better direction
+     that gets the request refused. */
+  var FORMS = ['parts+sys', 'parts', 'blob'];
+  /* An episode is a dozen or more requests. Finding out which shape the
+     model takes should cost one refusal, not one per part, so what worked
+     is remembered against the model for the rest of the session. */
+  var formFor = {};
+  /* The energy slider, in the few words that fit a per-turn style. */
+  var ENERGY_STYLE = ['', 'relaxed and measured, talking it through', 'quick and needling, right on the end of the last line', 'fired up, loud, big reactions'];
   function buildRequest(chunk, voices, styles, fallbackVoice, show, hype, form) {
     var voiceOf = function (s) { return voices[s] || fallbackVoice; };
     /* "3 TD, 1 INT" becomes "3 touchdowns, 1 interception" here as well as
@@ -340,16 +356,24 @@
       };
     }
 
-    return {
-      systemInstruction: { parts: [{ text: direction(show, cast, hype) }] },
+    var energy = ENERGY_STYLE[hype] || ENERGY_STYLE[2];
+    var req = {
       contents: [{
         role: 'user',
         parts: chunk.turns.map(function (t) {
-          return { text: say(t.text), speechMetadata: { speaker: t.speaker } };
+          var meta = { speaker: t.speaker };
+          /* With no system instruction there is nowhere else to say how it
+             should sound, so each turn carries its own short direction. */
+          if (form === 'parts') {
+            meta.style = [styles[t.speaker] || 'a college football broadcaster', energy].filter(Boolean).join('; ');
+          }
+          return { text: say(t.text), speechMetadata: meta };
         })
       }],
       generationConfig: { responseModalities: ['AUDIO'], speechConfig: speechConfig }
     };
+    if (form === 'parts+sys') req.systemInstruction = { parts: [{ text: direction(show, cast, hype) }] };
+    return req;
   }
 
   function sleep(ms, signal) {
@@ -421,12 +445,17 @@
 
   /* A model that wants the other shape says so in the message rather than
      in the status, so the message is what has to be read. */
+  /* Google names the refused field in the message and not in the status,
+     so the message is what has to be read. "Developer instruction" is its
+     own name for a system instruction, which is why a request carrying one
+     could be refused by a model that was perfectly happy with the rest. */
   function wrongShape(msg) {
-    return /speech[_ ]?metadata|system[_ ]?instruction|unknown name|invalid json payload|not supported for this model/i.test(msg || '');
+    return /speech[_ ]?metadata|system[_ ]?instruction|developer instruction|unknown name|unknown field|invalid json payload|not supported (in|for) this model/i.test(msg || '');
   }
 
   function voiceChunk(opts, chunk, onWait) {
-    var form = 'parts', dropped = false;
+    var at = Math.max(0, FORMS.indexOf(formFor[opts.model] || FORMS[0]));
+    var form = FORMS[at], swaps = 0;
     var body = JSON.stringify(buildRequest(chunk, opts.voices, opts.styles, opts.fallbackVoice, opts.show, opts.hype, form));
     var attempt = 0;
     var go = function () {
@@ -452,12 +481,16 @@
                single block. Which is which changes with every release, so
                the one that was refused is swapped for the other and tried
                once more instead of guessing from the model name. */
-            if (r.status === 400 && !dropped && chunk.speakers.length > 1) {
+            /* Round the list rather than off the end of it: the remembered
+               shape may be the last one, and the model it was remembered
+               from may not be the model being used now. */
+            if (r.status === 400 && swaps < FORMS.length - 1 && chunk.speakers.length > 1) {
               var m = '';
               try { m = (JSON.parse(raw).error || {}).message || ''; } catch (e) { m = raw; }
               if (wrongShape(m)) {
-                dropped = true;
-                form = form === 'parts' ? 'blob' : 'parts';
+                swaps++;
+                at = (at + 1) % FORMS.length;
+                form = FORMS[at];
                 body = JSON.stringify(buildRequest(chunk, opts.voices, opts.styles, opts.fallbackVoice, opts.show, opts.hype, form));
                 attempt = 0;
                 return go();
@@ -465,6 +498,7 @@
             }
             throw new Error(explain(r.status, raw));
           }
+          if (chunk.speakers.length > 1) formFor[opts.model] = form;
           var data = JSON.parse(raw);
           var cand = (data.candidates || [])[0] || {};
           var parts = (cand.content && cand.content.parts) || [];

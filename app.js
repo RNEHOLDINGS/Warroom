@@ -255,7 +255,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v30';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v31';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
