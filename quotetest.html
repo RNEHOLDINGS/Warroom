@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Coach quote test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+/* Type what the coach said and the show plays it as a clip in his own voice,
+   works out what he is actually saying, and checks it against the game. */
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function click(sel) { var el = q(sel); if (!el) { ok(false, 'element ' + sel, 'missing'); return null; } el.click(); return el; }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom, V = window.WarRoomVoice;
+  var seg = function (s, name) { return (s.split(name)[1] || '').split(/--- (?:SEGMENT|THE BIG|RUNDOWN)/)[0]; };
+  try {
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    st.school = { name: 'Oregon', mascot: 'Ducks', state: 'OR', color: '#154733' };
+    st.quarterLen = 5;
+    st.games = []; st.schedule = []; st.rivals = [];
+    st.players = [
+      { id: 'qb1', name: 'J.Carty', pos: 'QB', year: 'JR', ovr: 80, exit: '' },
+      { id: 'qb2', name: 'B.Hale', pos: 'QB', year: 'FR', ovr: 68, exit: '' }
+    ];
+    st.show = { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true };
+
+    var base = { id: 'g1', season: st.season, week: 6, opponent: 'Utah', home: false, result: 'L', scoreFor: 10, scoreAgainst: 15,
+      rushFor: 95, rushAgainst: 150, passFor: 71, passAgainst: 180, toFor: 4, toAgainst: 0,
+      tdFor: 1, tdAgainst: 0, fgFor: 1, fgAgainst: 5, rzFor: 1, rzForAtt: 4, rushAttFor: 24, passAttFor: 33,
+      qbChange: true, notes: '', performances: [
+        { name: 'J.Carty', pos: 'QB', line: '8/19, 45 yds, 2 INT', verdict: 'struggled' },
+        { name: 'B.Hale', pos: 'QB', line: '5/14, 26 yds, 2 INT', verdict: 'struggled' }
+      ] };
+    var withQuote = function (quote, extra) {
+      var g = Object.assign({}, base, extra || {}, { id: 'q' + Math.random(), coachQuote: quote });
+      st.games = [g];
+      return W.buildScript(g);
+    };
+
+    /* --- no quote, no segment --- */
+    st.games = [base];
+    ok(!/WHAT THE COACH SAID/.test(W.buildScript(base)), 'with nothing typed in, there is no clip segment');
+
+    /* --- the clip itself --- */
+    var line = 'We have to execute better. That’s on me, I have to put them in better positions.';
+    var s = withQuote(line);
+    ok(/WHAT THE COACH SAID/.test(s), 'a quote gets its own segment');
+    var clip = seg(s, 'WHAT THE COACH SAID');
+    ok(clip.indexOf('COACH: ' + line) >= 0, 'his words are played back exactly as typed', clip.split('\n').slice(0, 6).join(' | '));
+    ok(/COACH — Oregon’s head coach/.test(s), 'and the cast list says who that voice is');
+    ok(/What the coach said/.test(s.split('--- COLD OPEN')[0]), 'the rundown lists it');
+    ok(/Coach said:  We have to execute/.test(s), 'the producer notes keep it', (s.match(/Coach said:.*/) || [''])[0]);
+
+    /* --- he is translated --- */
+    ok(/is how a coach says his players did not do it|safest sentence in football/.test(clip), 'the analyst translates the coach-speak', clip);
+    ok(/took it himself|take the bullet|stops everybody asking/.test(clip), 'and catches that he took the blame too', clip);
+    ok(/MABRY:/.test(clip), 'the ex-player answers from inside a locker room');
+
+    /* --- and checked against the game --- */
+    ok(/33 drop-backs for 71 yards/.test(clip), 'the claim is held up against the actual numbers', clip);
+    ok(/do not know who is playing quarterback|don’t know who’s playing quarterback/.test(clip), 'and against the quarterback carousel', clip);
+
+    /* --- different quotes, different readings --- */
+    var proud = seg(withQuote('I’m proud of our effort. Those kids fought for sixty minutes and never quit.'), 'WHAT THE COACH SAID');
+    ok(/Pride in the effort is what a coach reaches for/.test(proud), 'pride in a loss is read as what it is', proud);
+    ok(/[Pp]roud of what, though/.test(proud) && /end zone/.test(proud), 'and checked against a loss to a team that never scored a touchdown', proud);
+
+    var evaluate = seg(withQuote('We’re going to evaluate everything this week. Everything is on the table.'), 'WHAT THE COACH SAID');
+    ok(/that’s a signal|float the word/i.test(evaluate), '“evaluate” is read as a signal', evaluate);
+    ok(/quarterback competition being opened in public/.test(evaluate), 'and tied to the quarterback situation', evaluate);
+
+    var protect = seg(withQuote('He’s our guy. We’re not changing quarterbacks, I believe in him.'), 'WHAT THE COACH SAID');
+    ok(/public vote of confidence/.test(protect), 'backing a player is read as backing a player', protect);
+    ok(/cannot say he is the guy|can’t say he’s the guy/.test(protect), 'and contradicted by the two quarterbacks who played', protect);
+
+    var nothing = seg(withQuote('We’ll look at the tape and get back to work on Monday.'), 'WHAT THE COACH SAID');
+    ok(/non-answer/.test(nothing), 'a non-answer is called a non-answer', nothing);
+
+    var bland = seg(withQuote('Good evening everybody. Thanks for coming out tonight.'), 'WHAT THE COACH SAID');
+    ok(/saying true things in an order that commits him to nothing|nobody learned anything/.test(bland), 'and so is a quote with nothing in it at all', bland);
+
+    var angry = seg(withQuote('That was unacceptable. Embarrassing. That has to change and it starts with me.'), 'WHAT THE COACH SAID');
+    ok(/as close to anger as most of them get/.test(angry), 'anger is heard as a message to the locker room', angry);
+
+    /* --- the things a box score cannot show --- */
+    var hurt = 'We were without two starters up front and it showed. We changed the plan at half time.';
+    var sInj = withQuote(hurt);
+    var clipInj = seg(sInj, 'WHAT THE COACH SAID');
+    ok(/[Dd]id we learn anything|couldn’t see from the numbers|box score doesn’t say/.test(clipInj), 'the host asks what the numbers could not show', clipInj);
+    ok(/patched together|went out of his way to talk about the line/.test(clipInj), 'and the panel pulls the absences out of the quote', clipInj);
+    ok(/the plan changed|two different games/.test(clipInj), 'and that the game plan changed at half time', clipInj);
+    ok(/can’t grade a football team off a sheet of paper|don’t get from reading a box score/.test(clipInj), 'the ex-player says why that matters', clipInj);
+    var facts = W.coachFacts(hurt).map(function (x) { return x.kind; });
+    ok(facts.indexOf('injury') >= 0 && facts.indexOf('line') >= 0 && facts.indexOf('plan') >= 0, 'the quote is read for context, not just tone', JSON.stringify(facts));
+    ok(W.coachFacts('We just have to execute better.').length === 0, 'and a quote with no context in it yields none');
+
+    /* it comes back when the matching number comes up */
+    var nums = seg(sInj, 'THE NUMBERS');
+    ok(/what the coach just told us|getting at in that clip|bit he was talking about/.test(nums), 'the numbers segment reaches back for it', nums);
+
+    /* --- a player the coach named by name --- */
+    var named = withQuote('J.Carty has to be better and that starts with me putting him in better spots.');
+    ok(W.coachNamed('J.Carty has to be better').length === 1, 'a player named in the quote is recognised off the roster', JSON.stringify(W.coachNamed('J.Carty has to be better').map(function (p) { return p.name; })));
+    ok(/brought his name up unprompted|went out of his way to mention him/.test(named), 'and the panel says so when he comes up', (named.match(/.{0,80}(unprompted|mention him).{0,40}/) || [''])[0]);
+    ok(/Nobody gets mentioned at a podium by accident|chosen before he walked out|asked him to/.test(named), 'and reads something into it', named);
+    ok(W.coachNamed('We played badly').length === 0, 'a quote naming nobody names nobody');
+
+    /* --- the clip is voiced in his own voice --- */
+    var g2 = { id: 'v1', season: st.season, week: 7, opponent: 'Utah', home: true, result: 'W', scoreFor: 31, scoreAgainst: 10,
+      coachQuote: 'Credit to our players. We executed today.', notes: '', performances: [] };
+    st.games = [g2];
+    var turns = V.parseDialogue(W.buildScript(g2));
+    var coachTurns = turns.filter(function (t) { return t.speaker === 'COACH'; });
+    ok(coachTurns.length === 1 && /Credit to our players/.test(coachTurns[0].text), 'the clip is a spoken turn, so it gets voiced', JSON.stringify(coachTurns));
+    ok(W.showCfg().coachVoice === 'Algenib', 'the coach has his own voice out of the box', W.showCfg().coachVoice);
+
+    W.setView('settings');
+    ok(!!q('#sh-v-coach'), 'and his own picker in Settings');
+    q('#sh-v-coach').value = 'Gacrux';
+    click('[data-action="save-show"]');
+    ok(W.showCfg().coachVoice === 'Gacrux', 'which saves', W.showCfg().coachVoice);
+    ok(W.state().show.voices.host === 'Algieba', 'without disturbing the panel’s voices');
+
+    /* --- the form --- */
+    W.setView('show');
+    click('[data-action="edit-game"][data-id="v1"]');
+    ok(q('#g-quote') && q('#g-quote').value === 'Credit to our players. We executed today.', 'the form holds the quote', q('#g-quote') && q('#g-quote').value);
+    q('#g-quote').value = 'We got out-toughed. Simple as that.';
+    click('[data-action="save-game"]');
+    ok(W.state().games[0].coachQuote === 'We got out-toughed. Simple as that.', 'editing it saves');
+    ok(/out-toughed/.test(q('#scriptBox').value) && /aimed at the locker room/.test(q('#scriptBox').value), 'and the show picks it straight up');
+    click('[data-action="close"]');
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

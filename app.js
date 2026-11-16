@@ -255,7 +255,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v22';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v23';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -1116,6 +1116,9 @@
       voices: voices,
       genders: genders,
       model: s.model || 'gemini-3.1-flash-tts-preview',
+      /* the head coach is only ever heard in a clip, so he is a voice and
+         nothing else -- no chair, no name, no personality to configure */
+      coachVoice: (s.voices && s.voices.coach) || 'Algenib',
       /* 1 film room, 2 studio, 3 game day: how hard the panel sells it and
          how loud and fast the voices go */
       hype: int(s.hype == null ? 2 : s.hype, 1, 3),
@@ -1394,6 +1397,147 @@
     if (t.defInts) return many(t.defInts, 'interception', 'interceptions') + of;
     if (t.tackles) return t.tackles + ' tackles' + of;
     return '';
+  }
+
+  /* ---------- what the coach said ----------
+     A press-conference answer is its own language, and the job of a panel is
+     to translate it and then check it against the tape. So each pattern here
+     knows three things: what he said, what it usually means, and -- the part
+     that makes it worth airing -- whether the numbers from this game back
+     him up or make him look silly.
+
+     Nothing is inferred about a coach who said nothing. No quote, no
+     segment. */
+  var COACH_SPEAK = [
+    { kind: 'ownit', re: /\b(on me|my fault|i have to be better|i didn’t|i did not|i put (them|him)|coached? (them|him)? ?better|starts with me)\b/i,
+      means: 'He took it himself. Coaches do that for two reasons: because they mean it, or because it stops everybody asking about a nineteen-year-old.',
+      react: 'That’s the right answer. Whether he believes it or not, every kid in that room heard their coach take the bullet.' },
+    { kind: 'execute', re: /\b(execut\w+|fundamental\w*|details|assignment\w*|do our job|one-?on-?ones?)\b/i,
+      means: '“Execution” is how a coach says his players did not do it without naming one of them. It is the safest sentence in football.',
+      react: 'Every coach I played for said that word. Every single one. It means somebody is getting coached hard on Tuesday.' },
+    { kind: 'protect', re: /\b(he’s our guy|he is our guy|believe in him|our quarterback|not changing|sticking with|backing him|stand behind)\b/i,
+      means: 'That is a public vote of confidence, which is a thing you only have to give when everybody is asking the question.',
+      react: 'Good. You say that in front of a camera and that kid runs through a wall for you Saturday.' },
+    { kind: 'credit', re: /\b(credit to|hats off|they’?re? a good (football )?team|give them credit|well coached)\b/i,
+      means: 'Credit to the opponent is the most popular exit from a hard question. It is also sometimes just true.',
+      react: 'Sure, they’re good. That’s not the question he was asked, though, is it.' },
+    { kind: 'tough', re: /\b(out-?toughed|physical\w*|out-?hit|wanted it more|effort|compete|didn’?t fight|soft)\b/i,
+      means: 'When a coach questions toughness publicly, that is aimed at the locker room, not at us. He wants them to hear it on Monday.',
+      react: 'And they will hear it. That’s a message, and it’s a loud one.' },
+    { kind: 'process', re: /\b(look at the tape|watch the film|get back to work|one game at a time|next week|move on|day at a time)\b/i,
+      means: 'That is the non-answer. It is not dishonest, it is just nothing, and it usually means he does not want to say the real thing yet.',
+      react: 'That’s a coach who’s already thinking about Tuesday’s practice and wants to get off this stage.' },
+    { kind: 'changes', re: /\b(evaluate|everything is on the table|changes|look at everything|competition|open up the)\b/i,
+      means: 'Now that is a signal. Coaches do not float the word “evaluate” unless somebody’s job is genuinely in play.',
+      react: 'Somebody in that building just felt their stomach drop. That’s the point of saying it out loud.' },
+    { kind: 'angry', re: /\b(unacceptable|embarrass\w*|not good enough|disappointed|angry|sick|disgusted|has to change)\b/i,
+      means: 'That is as close to anger as most of them get at a microphone. He has decided the team needs to hear it publicly.',
+      react: 'He’s hot. And honestly? Good. I want to hear that after a game like that.' },
+    { kind: 'proud', re: /\b(proud|fought|never quit|kept battling|resilien\w*|character)\b/i,
+      means: 'Pride in the effort is what a coach reaches for when the result will not give him anything.',
+      react: 'There’s a version of that I’ll take and a version I won’t, and it depends entirely on whether they actually fought.' },
+    { kind: 'young', re: /\b(young|freshm\w+|inexperienc\w*|banged up|injur\w+|next man up|short-?handed)\b/i,
+      means: 'Youth and injuries are real, and they are also the most available excuse in the sport. Both things are true at once.',
+      react: 'You’re young in August. By November you’re just your record.' }
+  ];
+
+  /* ---------- what the coach knows that the box score does not ----------
+     The panel only ever sees numbers. A coach saying "we were without two
+     starters up front" or "we changed the plan at half time" is handing them
+     the context the stats cannot carry, and once they have it they should
+     use it on the rest of the show -- not just nod at it during the clip.
+
+     Each fact says which part of the game it explains, so the numbers
+     segment can reach for it when that stat comes up. */
+  var COACH_FACTS = [
+    { kind: 'injury', re: /\b(without|missing|out (for|with|of the lineup)|down to our|banged up|injur\w+|hurt|limped|dinged|didn’t dress|unavailable)\b/i,
+      unit: null, lead: 'He told us they were patched together',
+      says: 'That is the kind of thing a box score will never show you, and it changes how you read every number on that sheet.' },
+    { kind: 'line', re: /\b(offensive line|o-?line|up front|protection|pass pro|five up front|interior)\b/i,
+      unit: 'run', lead: 'He went out of his way to talk about the line',
+      says: 'When a coach volunteers the offensive line, he is telling you where the game was lost.' },
+    { kind: 'secondary', re: /\b(secondary|corners?|safet(y|ies)|back end|coverage)\b/i,
+      unit: 'passD', lead: 'He brought up the back end himself',
+      says: 'Coaches do not raise the secondary at a podium unless they have already decided it is a problem.' },
+    { kind: 'plan', re: /\b(changed? (the )?(plan|game ?plan)|at half|halftime|second half|adjust\w*|went to|started (running|throwing))\b/i,
+      unit: null, lead: 'And he said the plan changed',
+      says: 'So the first half and the second half are two different games, and the totals we are looking at are an average of both.' },
+    { kind: 'weather', re: /\b(wind|rain|snow|cold|wet|conditions|slick|field was)\b/i,
+      unit: 'pass', lead: 'He mentioned the conditions',
+      says: 'Weather is the one excuse I will take at face value, and it explains a passing number better than anything else on this sheet.' },
+    { kind: 'crowd', re: /\b(crowd|environment|atmosphere|road|hostile|noise|loud)\b/i,
+      unit: 'offense', lead: 'He talked about the environment',
+      says: 'Crowd noise shows up as pre-snap penalties and a young quarterback hearing footsteps. You will not find it in a stat line.' },
+    { kind: 'young', re: /\b(young|freshm\w+|first (start|game)|sophomores?|inexperienc\w*|learning)\b/i,
+      unit: 'qb', lead: 'And he keeps coming back to how young they are',
+      says: 'Which is real, and it is also the thing every coach says in October about a team that is not ready in September.' },
+    { kind: 'effort', re: /\b(prepare\w*|practice|all week|meeting|film)\b/i,
+      unit: null, lead: 'He pointed at the week, not the Saturday',
+      says: 'That tells you he thinks this was lost on a Tuesday, and that is about as honest as these things get.' }
+  ];
+
+  function coachFacts(quote) {
+    var raw = String(quote || '');
+    if (!raw.trim()) return [];
+    return COACH_FACTS.filter(function (c) { return c.re.test(raw); });
+  }
+  /* any of your own named players he mentioned by name */
+  function coachNamed(quote) {
+    var raw = String(quote || '').toLowerCase();
+    if (!raw) return [];
+    return namedPlayers().filter(function (p) {
+      var n = String(p.name || '').toLowerCase();
+      var surname = n.replace(/^[a-z]\.\s*/, '').replace(/^\S+\s+/, '');
+      return (n && raw.indexOf(n) >= 0) || (surname.length > 3 && raw.indexOf(surname) >= 0);
+    });
+  }
+
+  function readCoach(g, bx, S, cCase, us, them) {
+    var raw = String(g.coachQuote || '').trim().replace(/^["“”']+|["“”']+$/g, '');
+    if (!raw) return null;
+    var won = g.result === 'W', tied = g.result === 'T';
+    var hits = COACH_SPEAK.filter(function (c) { return c.re.test(raw); });
+    var checks = [];
+    var charge = function (k) { return cCase.filter(function (c) { return c.key === k; })[0]; };
+    var kindOf = function (k) { return hits.some(function (h) { return h.kind === k; }); };
+
+    /* the part that makes it worth airing: hold it up against the game */
+    if (kindOf('execute') && (charge('playcall') || charge('balance'))) {
+      checks.push('He said execution. ' + (bx.passAttFor !== '' && bx.passFor !== ''
+        ? 'The sheet says ' + bx.passAttFor + ' drop-backs for ' + bx.passFor + ' yards. '
+        : '') + 'At some point the calls are part of the execution.');
+    }
+    if (kindOf('execute') && charge('qb')) {
+      checks.push('And it is hard to execute when you do not know who is playing quarterback in the second half.');
+    }
+    if (kindOf('ownit') && cCase.length) {
+      checks.push('And for once the numbers agree with him. ' + cCase[0].charge.split('. ')[0] + '. That is a decision, and he just said as much.');
+    }
+    if (kindOf('protect') && charge('qb')) {
+      checks.push('Except they played two quarterbacks. You cannot say he is the guy on Sunday and have a carousel on Saturday.');
+    }
+    if (kindOf('proud') && !won && !tied) {
+      checks.push('Proud of what, though? ' + (bx.tdAgainst !== '' && int(bx.tdAgainst, 0, 99) === 0
+        ? 'They did not let ' + them + ' into the end zone and still lost. There is something to be proud of in that, and something unforgivable in the rest of it.'
+        : 'That is the sentence you use when the scoreboard will not help you.'));
+    }
+    if (kindOf('credit') && !won && rankOf(g.rankAgainst) === '' && rankOf(g.rankFor)) {
+      checks.push('Credit to an unranked team that just beat a ranked one. He is not wrong, he is just not answering.');
+    }
+    if (kindOf('tough') && bx.rushAgainst !== '' && bx.rushAgainst >= 180 * S) {
+      checks.push('And he has got a point. ' + bx.rushAgainst + ' rushing yards allowed is a toughness number as much as a scheme one.');
+    }
+    if (kindOf('changes') && charge('qb')) {
+      checks.push('Read that one carefully. That is a quarterback competition being opened in public.');
+    }
+    if (kindOf('young') && !won) {
+      checks.push('Young is a reason in September. In ' + (int(g.week, 0, 99) >= 8 ? 'November' : 'October') + ' it starts sounding like a plan that is not working.');
+    }
+    var facts = coachFacts(raw);
+    if (!hits.length && !facts.length) {
+      checks.push('Honestly, there is not much in there. He said words, the words were polite, and nobody learned anything.');
+    }
+    return { quote: raw, hits: hits, checks: checks, facts: facts, named: coachNamed(raw) };
   }
 
   /* ---------- the case against the staff ----------
@@ -1858,6 +2002,11 @@
        fictional -- the names are meant to sound like people you
        half-recognise from a conference network, not to put invented
        opinions in real mouths. */
+    if (g.coachQuote) {
+      w('  COACH — ' + US + '’s head coach, heard once, in a clip from the');
+      w('    post-game press conference. Tired, careful, picking his words.');
+      w('');
+    }
     [['host', HOST], ['player', PLAYER], ['analyst', ANALYST]].concat(cast.useInsider ? [['insider', INSIDER]] : []).forEach(function (r, i) {
       var bio = personaOf(cast, r[0]).bio;
       if (i) w('');
@@ -1871,6 +2020,10 @@
        after the turnover margin; this is a list of real, specific complaints
        pulled from the box score, so the criticism has somewhere to go. */
     var cCase = coachCase(bx0, g, S, perf, US, them);
+    /* what he said is read once, up here, because the rest of the show
+       leans on it -- the numbers segment, stock up and the hot seat all
+       reach for it later */
+    var coachSaid = readCoach(g, bx0, S, cCase, US, them);
     /* A unit can fail as a unit: two quarterbacks for 71 yards between them
        is not two bad days, it is a position that did not function. */
     var unitTotal = function (groups, key) {
@@ -1930,6 +2083,7 @@
     if (stars.length && !quick) topics.push(stars[0].name + '’s day');
     if (rough.length && !quick) topics.push('The hot seat: ' + rough[0].name);
     if (boxHasAny(bx0)) topics.push('The numbers');
+    if (g.coachQuote) topics.push('What the coach said');
     if (cCase.length && (!quick || cCase[0].weight >= 9)) topics.push('The staff');
     topics.push('What ' + them + ' gave away');
     topics.push('Helmet stickers');
@@ -2119,6 +2273,7 @@
         var lastH = h[h.length - 1];
         var bounce = lastH && lastH.verdict === 'struggled';
         var prof = sp.byKey[p.key];
+        var coachOn = coachSaid && coachSaid.named.some(function (x) { return x.name.toLowerCase() === p.raw.name.toLowerCase(); });
         var role = roleOf(prof, sp);
         var season = seasonLine(prof);
         var note = bounce ? ' And remember, he was on the hot seat last time we talked about him.'
@@ -2128,7 +2283,8 @@
             ? ['Let’s hand out some credit. Stock up for ' + US + '. Start me with', 'Stock up. First ' + US + ' name on my list is', 'Credit where it’s earned. Stock up, and we start with', 'Stock up. The one ' + US + ' fan who slept well is', 'Let’s do the good news first. Stock up:']
             : ['Even in a loss, somebody on ' + US + ' showed up. Stock up. Start me with', 'Stock up, and yes, ' + US + ' has one. Start me with', 'There’s always somebody. Stock up:', 'Find me a bright spot. Stock up. Start with', 'Stock up, short list this week. Start with'])
           : beat('stock-next', ['Who else?', 'Give me another one.', 'Next name.', 'Keep it going. Who else?', 'One more name.', 'And after him?']);
-        say(HOST, opener + ' ' + p.name + (p.pos ? ', ' + p.pos : '') + '. ' + sentence(p.line || 'Big afternoon') + note);
+        say(HOST, opener + ' ' + p.name + (p.pos ? ', ' + p.pos : '') + '. ' + sentence(p.line || 'Big afternoon') + note +
+          (coachOn ? ' And his coach went out of his way to mention him afterwards.' : ''));
 
         var best = G && G.plus.length ? cap1(list2(G.plus.slice(0, 2))) + '.' : '';
         var lvl = G ? G.overall : null;
@@ -2212,13 +2368,15 @@
         var inARow = again && last && String(lastH.week) === String(last.week);
         var fell = lastH && lastH.verdict === 'standout';
         var profH = sp.byKey[p.key];
+        var coachOnH = coachSaid && coachSaid.named.some(function (x) { return x.name.toLowerCase() === p.raw.name.toLowerCase(); });
         var roleH = roleOf(profH, sp);
         var seasonH = seasonLine(profH);
         var opener = i === 0
           ? beat('hot-open', ['Okay, enough nice. The hot seat.', 'Now the part ' + playerF + ' hates. The hot seat.', 'Hot seat.', 'Right. Somebody has to sit in it. Hot seat.', 'The uncomfortable chair. Hot seat.', 'Enough flowers. Hot seat.'])
           : beat('hot-next', ['One more.', 'And one more.', 'Next one, and it’s not pretty.', 'One more name for the chair.']);
         say(HOST, opener + ' ' + p.name + (p.pos ? ' at ' + p.pos : '') + '. ' + sentence(p.line || 'It wasn’t his day') +
-          (inARow ? ' And that’s two rough ones in a row.' : again ? ' And he was on the hot seat the last time we talked about him, too.' : fell ? ' And this is a guy we had in stock up last time.' : ''));
+          (inARow ? ' And that’s two rough ones in a row.' : again ? ' And he was on the hot seat the last time we talked about him, too.' : fell ? ' And this is a guy we had in stock up last time.' : '') +
+          (coachOnH ? ' And his coach brought his name up unprompted after the game, which tells you something.' : ''));
 
         /* the production was there and something else put him here */
         if (roleH) say(PLAYER, 'Hang on. This is ' + roleH + '. ' + (seasonH ? cap1(seasonH) + '. ' : '') + 'One bad afternoon doesn’t change that.');
@@ -2365,6 +2523,22 @@
         passAgainst: function () { return bx.passAgainst < 150 * Qs; },
         thirdFor: function () { return bx.thirdForAtt > 0 && bx.thirdFor / bx.thirdForAtt >= 0.34; }
       };
+      /* what the coach told us, filed by the stat it explains, so it can be
+         picked up later in the show rather than forgotten after the clip */
+      var FACT_FOR = { rushFor: 'run', rushAgainst: 'run', passFor: 'pass', passAgainst: 'passD', thirdFor: 'offense', to: 'qb' };
+      var usedFact = {};
+      var factFor = function (key) {
+        if (!coachSaid || !coachSaid.facts.length) return '';
+        var want = FACT_FOR[key];
+        var hit = coachSaid.facts.filter(function (x) { return x.unit && x.unit === want && !usedFact[x.kind]; })[0];
+        if (!hit) return '';
+        usedFact[hit.kind] = 1;
+        return ' ' + beat('fact-' + key, [
+          'And remember what the coach just told us there.',
+          'Which is exactly what he was getting at in that clip.',
+          'That is the bit he was talking about, and now it has a number on it.'
+        ]);
+      };
       var UNIT = {
         rushFor: [['HB'], ['HB']], passFor: [['QB', 'WR', 'TE'], ['QB', 'WR', 'TE']], thirdFor: [['QB'], ['QB']],
         rushAgainst: [['LB', 'DT', 'EDGE'], ['LB', 'DT', 'EDGE']], passAgainst: [['CB', 'S'], ['CB', 'S']],
@@ -2392,7 +2566,7 @@
         /* Nothing typed for turnovers means no battle to call. Saying "even
            in turnovers" there was a fact the script made up. */
         var lead = i === 0 && !hasTO && points.length < 3 ? 'Nobody gave me turnovers, so I am not going to pretend I know who won that battle. ' : '';
-        say(ANALYST, lead + p.analyst);
+        say(ANALYST, lead + p.analyst + factFor(p.key));
         /* The reply answers what was actually said: arguing with "the rate"
            when nobody quoted one reads like two scripts spliced together. */
         var opener = i === 0 ? pick(['', 'Hold on. ', 'Okay, but ']) : '';
@@ -2519,6 +2693,80 @@
       ? rec + ' after ' + gp + ' games. That’s not a sample anymore, that’s a résumé. ' + (won ? 'And the résumé is starting to hold up.' : 'And the résumé has some holes in it.')
       : (won ? 'Good process, good result. Next week tells us which one it was.' : 'One data point. Ask me after the next two and I’ll give you a real answer.'));
     if (g.notes) say(HOST, 'One more thing before we go. ' + sentence(spoken(g.notes)));
+
+    /* ---- the clip ----
+       Rolling tape on the coach and then arguing with it is most of what
+       these shows do, and it was the one thing the panel could not react to
+       because nobody had told it what he said. The quote is read in his own
+       voice, the analyst translates it, the ex-player answers from inside a
+       locker room, and then it gets held against the game itself. */
+    if (coachSaid) {
+      head('WHAT THE COACH SAID');
+      say(HOST, beat('clip-in', [
+        'Let’s hear from the man himself. Here’s ' + US + '’s head coach afterwards.',
+        'Before we go further, this is what the head coach said after the game.',
+        'Roll it. ' + US + '’s coach, about twenty minutes after the final whistle.',
+        'Here he is. Post-game, ' + US + '’s head coach.'
+      ]));
+      L.push('COACH: ' + coachSaid.quote);
+      L.push('');
+      say(HOST, beat('clip-ask', [
+        analystF + '. Translate that for me.',
+        'Okay. ' + analystF + ', what did he actually say there?',
+        'What’s he telling us, ' + analystF + '?',
+        analystF + ', you speak this language. Go.'
+      ]));
+      if (coachSaid.hits.length) {
+        say(ANALYST, coachSaid.hits.slice(0, 2).map(function (x) { return x.means; }).join(' '));
+        say(PLAYER, beat('clip-react', [coachSaid.hits[0].react, coachSaid.hits[coachSaid.hits.length - 1].react]));
+      } else if (coachSaid.facts.length) {
+        /* no tone to read, but he still handed over something real */
+        say(ANALYST, beat('clip-plain', [
+          'Tonally? Nothing. He is not making a point, he is describing the afternoon.',
+          'That is not coach-speak, that is just a man telling you what happened. Which is rarer than you would think.',
+          'No angle in that at all. He is giving you facts and letting you do the rest.'
+        ]));
+        say(PLAYER, beat('clip-plain-p', [
+          'And I’ll take that over a man dodging for ten minutes.',
+          'Straight answer. Good. Now let’s go and look at what he gave us.',
+          'That’s a coach who knows exactly what happened to his football team.'
+        ]));
+      } else {
+        say(ANALYST, 'Not a great deal. That is a man saying true things in an order that commits him to nothing.');
+        say(PLAYER, 'That’s the job. You’ve got twelve minutes to say nothing and get to the bus.');
+      }
+      if (coachSaid.facts.length) {
+        say(HOST, beat('clip-learn', [
+          'Did we learn anything in there? Anything the stats don’t tell us?',
+          'Anything in that we couldn’t see from the numbers?',
+          'What did we actually find out there that the box score doesn’t say?'
+        ]));
+        say(ANALYST, coachSaid.facts.slice(0, quick ? 1 : 3).map(function (x) { return x.lead + '. ' + x.says; }).join(' '));
+        say(PLAYER, beat('clip-learn-p', [
+          'And that matters. You can’t grade a football team off a sheet of paper without knowing that.',
+          'See, that’s the stuff. That’s what you don’t get from reading a box score on your phone.',
+          'Thank you. Now go back and look at those numbers again with that in your head.'
+        ]));
+      }
+      if (coachSaid.named.length) {
+        say(HOST, 'He named ' + list2(coachSaid.named.slice(0, 2).map(function (p) { return p.name; })) + ' specifically.');
+        say(ANALYST, beat('clip-named', [
+          'Coaches pick those names on purpose. Nobody gets mentioned at a podium by accident.',
+          'That name was chosen before he walked out there. They always are.',
+          'When a coach says a name out loud, somebody in that building asked him to.'
+        ]));
+      }
+      if (coachSaid.checks.length) {
+        say(HOST, beat('clip-check', ['Do you buy it?', 'And does it hold up?', 'Fine. Does the game agree with him?', 'Right, but is he right?']));
+        say(ANALYST, coachSaid.checks.slice(0, quick ? 1 : 2).join(' '));
+        say(PLAYER, beat('clip-last', [
+          'I’ll say this for him: he stood there and answered. Plenty don’t.',
+          'He knows exactly what the problem is. He’s just not going to say it into a microphone.',
+          'Whatever he said out there, the version in the team meeting tomorrow is a lot shorter.'
+        ]));
+      }
+      w('');
+    }
 
     /* ---- the staff ----
        The segment the show was missing. It only runs when the numbers
@@ -2663,6 +2911,7 @@
     w('Rundown:     ' + topics.join(' · '));
     w('Calls:       ' + analystF + ': ' + calls.analyst.text + '  |  ' + playerF + ': ' + calls.player.text);
     w('Call record: ' + analystF + ' ' + recNow.analyst.w + '-' + recNow.analyst.l + ', ' + playerF + ' ' + recNow.player.w + '-' + recNow.player.l);
+    if (g.coachQuote) w('Coach said:  ' + g.coachQuote);
     if (cCase.length) w('Staff case:  ' + cCase.slice(0, 4).map(function (c) { return c.key; }).join(', '));
     if (ser.games >= 2) w('Series:      ' + ser.record + ' vs ' + them + (ser.isRivalry ? ' (rivalry)' : ''));
     if (sch.next) w('Next up:     Wk ' + int(sch.next.week, 0, 99) + ' ' + (sch.next.home ? 'vs ' : 'at ') + (sch.next.opponent || '?') + (rankOf(sch.next.rank) ? ' (No. ' + rankOf(sch.next.rank) + ')' : '') + (sch.next.rivalry ? ' — rivalry' : ''));
@@ -4004,12 +4253,15 @@
 
       /* The staff. None of this is in a box score, and all of it is what
          people actually argue about on a Monday. */
-      '<details class="more"' + (g.qbChange || g.blownLead || g.clockBlame || g.flat || g.badCall ? ' open' : '') + '><summary>The staff — what the sideline got wrong</summary>' +
+      '<details class="more"' + (g.qbChange || g.blownLead || g.clockBlame || g.flat || g.badCall || g.coachQuote ? ' open' : '') + '><summary>The staff — what the sideline got wrong</summary>' +
         '<label class="check"><input type="checkbox" id="g-qbc"' + (g.qbChange ? ' checked' : '') + '> Changed quarterbacks</label>' +
         '<label class="check"><input type="checkbox" id="g-lead"' + (g.blownLead ? ' checked' : '') + '> Had the lead and lost it</label>' +
         '<label class="check"><input type="checkbox" id="g-clock"' + (g.clockBlame ? ' checked' : '') + '> Clock management hurt them</label>' +
         '<label class="check"><input type="checkbox" id="g-flat"' + (g.flat ? ' checked' : '') + '> Came out flat</label>' +
         '<div class="field"><label for="g-call">The call that cost them</label><input type="text" id="g-call" value="' + esc(g.badCall || '') + '" placeholder="Threw it on 3rd and 1 from the 8"><div class="help">The panel will bring it up, argue about it, and say what should happen next.</div></div>' +
+        '<div class="field"><label for="g-quote">What the coach said afterwards</label>' +
+          '<textarea id="g-quote" rows="2" placeholder="We have to execute better. That’s on me, I have to put them in better positions.">' + esc(g.coachQuote || '') + '</textarea>' +
+          '<div class="help">Type the press-conference line. The show plays it as a clip in his own voice, works out what he is actually saying, and holds it up against the numbers.</div></div>' +
       '</details>' +
 
       '<div class="modal-actions">' +
@@ -4080,6 +4332,7 @@
     g.clockBlame = $('#g-clock').checked;
     g.flat = $('#g-flat').checked;
     g.badCall = $('#g-call').value.trim();
+    g.coachQuote = $('#g-quote').value.trim();
 
     var rows = {};
     $$('[data-perf]').forEach(function (el) {
@@ -4220,6 +4473,8 @@
     var voices = {}, styles = {};
     var role = function (name, voice, style) { var L = speakerLabel(name); voices[L] = voice; styles[L] = style; };
     ['host', 'player', 'analyst', 'insider'].forEach(function (r) { role(c[r], c.voices[r], personaOf(c, r).style); });
+    voices.COACH = c.coachVoice;
+    styles.COACH = 'a head coach at a post-game press conference, tired, measured, picking his words carefully';
 
     var ctrl = new AbortController();
     voiceJob = { ctrl: ctrl, id: id };
@@ -4345,9 +4600,11 @@
             '<input type="password" id="sh-key" autocomplete="off" spellcheck="false" value="' + esc(window.WarRoomVoice.getKey()) + '" placeholder="Paste the key from Google AI Studio">' +
             '<div class="help">Create one at aistudio.google.com. It is kept in this browser only and is never put in a backup. In Google Cloud, restrict it to the Generative Language API and to rneholdings.github.io so a leaked copy is useless. Google bills per use — check their pricing.</div></div>' +
           '<div class="field"><label for="sh-model">Voice model</label><select id="sh-model">' + options(window.WarRoomVoice.MODELS, sh.model, function (m) { return m.label; }, function (m) { return m.id; }) + '</select></div>' +
-          ['host', 'player', 'analyst', 'insider'].map(function (role) {
-            return '<div class="field"><label for="sh-v-' + role + '">' + esc(sh[role]) + '</label><select id="sh-v-' + role + '">' +
-              options(window.WarRoomVoice.VOICES, sh.voices[role], function (v) { return v.label; }, function (v) { return v.id; }) + '</select></div>';
+          ['host', 'player', 'analyst', 'insider'].concat(['coach']).map(function (role) {
+            var vLabel = role === 'coach' ? 'Your head coach (heard in clips)' : esc(sh[role]);
+            var vNow = role === 'coach' ? sh.coachVoice : sh.voices[role];
+            return '<div class="field"><label for="sh-v-' + role + '">' + vLabel + '</label><select id="sh-v-' + role + '">' +
+              options(window.WarRoomVoice.VOICES, vNow, function (v) { return v.label; }, function (v) { return v.id; }) + '</select></div>';
           }).join('') +
         '</div>' +
         '<p class="help" style="margin:0 0 8px">Voicing sends the script — names, scores, notes — to Google. Everything else in War Room stays on this device.</p>'
@@ -5076,7 +5333,7 @@
     b.games = objs(b.games);
     b.games.forEach(function (g) {
       if (!safe(g.id)) g.id = uid();
-      text(g, ['opponent', 'thirdDown', 'penalties', 'notes', 'script', 'scriptAuto', 'badCall']);
+      text(g, ['opponent', 'thirdDown', 'penalties', 'notes', 'script', 'scriptAuto', 'badCall', 'coachQuote']);
       ['qbChange', 'blownLead', 'clockBlame', 'flat'].forEach(function (k) { if (k in g) g[k] = !!g[k]; });
       oneOf(g, 'result', ['W', 'L', 'T'], 'W');
       num(g, 'season', 1900, 2999); num(g, 'week', 1, 25); num(g, 'scoreFor', 0, 999); num(g, 'scoreAgainst', 0, 999);
@@ -5336,6 +5593,7 @@
           insider: $('#sh-insider').value.trim() || 'Nate Ridenour',
           useInsider: $('#sh-useins').checked,
           voices: {
+            coach: ($('#sh-v-coach') || {}).value || 'Algenib',
             host: ($('#sh-v-host') || {}).value || 'Algieba',
             player: ($('#sh-v-player') || {}).value || 'Fenrir',
             analyst: ($('#sh-v-analyst') || {}).value || 'Kore',
@@ -5483,6 +5741,9 @@
     spoken: spoken,
     boxOf: boxOf,
     coachCase: coachCase,
+    readCoach: readCoach,
+    coachFacts: coachFacts,
+    coachNamed: coachNamed,
     seriesFacts: seriesFacts,
     declaredRival: declaredRival,
     scheduleFor: scheduleFor,

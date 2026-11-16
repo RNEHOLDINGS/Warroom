@@ -359,6 +359,36 @@ How it works, and why:
 thing it cannot check is Google itself: until it is run with a real key, the
 audio quality and the exact reply format are untested.
 
+## What the coach said
+
+Type the press-conference line into the game's **staff** section and the show
+plays it as a clip, **in the coach's own voice** — he has his own voice picker
+in Settings, under the panel's. Then they do what a panel does with a clip:
+
+**They translate it.** "We have to execute better" is read as a coach saying
+his players did not do it without naming one of them. "We'll evaluate
+everything" is a job being put in play. "I'm proud of the effort" is what you
+reach for when the result gives you nothing. Taking the blame, backing a
+quarterback publicly, crediting the opponent, questioning toughness, the
+non-answer about looking at the tape — each gets heard for what it is.
+
+**They check it against the game.** This is the part that makes it worth
+airing. He said execution, but the sheet says 33 drop-backs for 71 yards —
+"at some point the calls are part of the execution". He said he's sticking
+with his quarterback, but two of them played. He's proud of the effort after
+losing to a team that never reached the end zone — "proud of what, though?"
+
+**And they learn from it.** The panel only ever sees numbers, so anything the
+quote carries that a box score cannot is pulled out and used for the rest of
+the show: missing starters, a game plan that changed at half time, the
+conditions, the crowd, how young the team is, a coach pointing at the practice
+week rather than the Saturday. When the matching stat comes up later, they
+reach back for it — "and remember what the coach just told us there". If he
+names one of your players, that player gets it said back to him in stock up or
+on the hot seat, because nobody gets mentioned at a podium by accident.
+
+No quote, no segment, and a quote with nothing in it is called out as such.
+
 ## Coaching
 
 A panel that only grades players is half a show. Most of what people argue
@@ -677,6 +707,10 @@ These suites are all driven through real DOM clicks with hit testing:
 - `casttest.html` — chairs that match their voices, contractions, the team's
   own name, and the season memory: streaks, callbacks, player history,
   averages, and that a later week is never mentioned.
+- `quotetest.html` — the clip segment: the quote played back as typed, the
+  coach's own voice, the translation of several kinds of coach-speak, the
+  checks against the game, the context pulled out for the rest of the show,
+  and that nothing typed means no segment.
 - `coachtest.html` — the real game this was built for: two quarterbacks for
   71 yards, a freshman at half time, and a loss to five field goals. Checks
   the charges, the argument, the way forward, and that a clean win gets no
