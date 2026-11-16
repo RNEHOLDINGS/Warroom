@@ -189,7 +189,6 @@
       school: { name: '', mascot: '', state: '', color: '#2a78d6' },
       season: 2027,
       cap: 85,
-      hours: 35,
       targets: defaultTargets(),
       players: [],
       recruits: [],
@@ -212,7 +211,6 @@
           s.school = Object.assign(s.school, parsed.school || {});
           s.season = int(parsed.season || s.season, 1900, 2999);
           s.cap = int(parsed.cap || s.cap, 1, 200);
-          s.hours = int(parsed.hours == null ? s.hours : parsed.hours, 0, 999);
           s.targets = Object.assign(s.targets, parsed.targets || {});
           s.players = Array.isArray(parsed.players) ? parsed.players : [];
           s.recruits = Array.isArray(parsed.recruits) ? parsed.recruits : [];
@@ -255,7 +253,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v32';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v33';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -2910,8 +2908,7 @@
         var from = b.state ? ' out of ' + (STATE_NAMES[b.state] || b.state) : '';
         var stand = b.standing ? ' I’m told ' + US + ' is number ' + b.standing + ' on his list, and they know it.' : '';
         say(INSIDER, 'The name to watch is the ' + (b.stars || 3) + '-star ' + sayPos(b.pos) + from + '.' + stand +
-          (b.dealbreaker ? ' With him, everything comes back to ' + b.dealbreaker + '.' : '') +
-          (b.hours ? ' They’re putting ' + b.hours + ' hours a week into him, which tells you where he sits.' : ''));
+          (b.dealbreaker ? ' With him, everything comes back to ' + b.dealbreaker + '.' : ''));
 
         if (board.length > 1) {
           say(INSIDER, 'Behind him there ' + (board.length - 1 === 1 ? 'is one more name' : 'are ' + (board.length - 1) + ' more names') + ' still live on that board, and ' + (committed === 1 ? 'one commitment' : committed + ' commitments') + ' already in the bag.');
@@ -3295,7 +3292,7 @@
         };
       },
       won: function () { return 'He picked you from the back of his own list. Somebody on your staff earned that one.'; },
-      lost: function () { return 'He went where he was always going. The hours are gone either way.'; }
+      lost: function () { return 'He went where he was always going. Everybody on that staff knew it but you.'; }
     },
     {
       id: 'gem', kind: 'situation', phase: 'chase',
@@ -3885,8 +3882,11 @@
   var view = 'home';
   var filters = {
     roster: { group: '', show: 'all' },
-    board: { group: '', status: '' },
-    portal: { group: '', status: '' }
+    /* One screen for both: a transfer and a high-school kid are the same
+       decision about the same spot, and keeping them apart meant checking
+       two places to see whether a hole was filled. 'src' narrows it when
+       you do want one or the other. */
+    board: { group: '', status: '', src: '' }
   };
 
   /* keepScroll: repainting the screen behind an open dialog should not throw
@@ -3899,8 +3899,10 @@
     var html = '';
     if (view === 'home') html = renderHome();
     else if (view === 'roster') html = renderRoster();
-    else if (view === 'board') html = renderRecruits('hs');
-    else if (view === 'portal') html = renderRecruits('portal');
+    else if (view === 'board') html = renderRecruiting();
+    /* The portal had its own screen until the two were merged. The route
+       still works and opens the merged screen narrowed to the portal. */
+    else if (view === 'portal') html = renderRecruiting('portal');
     else if (view === 'class') html = renderClass();
     else if (view === 'show') html = renderShow();
     else if (view === 'settings') html = renderSettings();
@@ -4094,13 +4096,17 @@
 
   function recruitRow(r) {
     var sub = [];
-    if (r.type === 'portal') { sub.push(r.year ? yearLabel({ year: r.year, rs: r.rs }) : ''); if (r.from) sub.push('from ' + esc(r.from)); }
+    /* With both kinds in one list, which kind it is has to be on the row:
+       four stars and 84 OVR are not the same scale, and a transfer arrives
+       ready to play. It goes on the description line rather than in the
+       chips on the right, because a fourth chip there is wide enough on a
+       phone to squeeze the name out of the row entirely. */
+    if (r.type === 'portal') { sub.push('<b>Portal</b>'); sub.push(r.year ? yearLabel({ year: r.year, rs: r.rs }) : ''); if (r.from) sub.push('from ' + esc(r.from)); }
     if (r.state) sub.push(esc(r.state));
     if (r.rank) sub.push('#' + r.rank + ' natl');
     if (r.archetype) sub.push(esc(r.archetype));
     if (r.standing) sub.push('you are #' + r.standing + ' on the list');
     if (r.dealbreaker) sub.push('wants ' + esc(r.dealbreaker));
-    if (r.hours) sub.push(r.hours + ' hrs');
     if (r.note) sub.push(esc(r.note));
     var st = r.status;
     var stCls = st === 'signed' ? 'team' : st === 'committed' ? 'good' : st === 'lost' ? 'crit' : 'outline';
@@ -4177,42 +4183,49 @@
       '<div class="modal-actions"><span class="spacer"></span><button class="btn primary" data-action="close">Done</button></div>');
   }
 
-  function renderRecruits(type) {
-    var f = filters[type === 'hs' ? 'board' : 'portal'];
-    var all = state.recruits.filter(function (r) { return (r.type || 'hs') === type; });
+  function renderRecruiting(forced) {
+    var f = filters.board;
+    var src = forced || f.src || '';
+    var all = state.recruits.filter(function (r) { return !src || (r.type || 'hs') === src; });
     var list = all.slice();
     if (f.group) list = list.filter(function (r) { return groupOf(r.pos) === f.group; });
     if (f.status) list = list.filter(function (r) { return r.status === f.status; });
     list.sort(function (a, b) {
       var order = { signed: 0, committed: 1, board: 2, lost: 3 };
-      /* held spots sink below the people you actually know the names of */
+      /* Held spots sink below the people you actually know the names of.
+         A transfer is rated out of 99 and a recruit out of 5 stars, so the
+         two are put on one scale rather than sorted into separate blocks:
+         the point of one list is seeing them against each other. */
+      var worth = function (r) { return r.type === 'portal' ? (r.ovr || 0) / 20 : (r.stars || 0); };
       return (order[a.status] - order[b.status]) ||
         ((a.name ? 0 : 1) - (b.name ? 0 : 1)) ||
-        byStars(a, b);
+        (worth(b) - worth(a)) || byStars(a, b);
     });
     var n = computeNeeds();
     var committed = all.filter(isIncoming).length;
     var onBoard = all.filter(function (r) { return r.status === 'board'; }).length;
-    var hoursUsed = 0;
-    all.forEach(function (r) { if (r.status === 'board' || r.status === 'committed') hoursUsed += int(r.hours, 0, 999); });
-
-    var html = '<div class="view-head"><h1>' + (type === 'hs' ? 'Recruiting board' : 'Transfer portal') + '</h1>' +
+    var transfers = all.filter(function (r) { return r.type === 'portal'; }).length;
+    /* The tools on offer are the ones that make sense for what is showing:
+       a board screenshot is no use when the portal is up, and the two paste
+       formats are different. Narrowing the source is what asks for them. */
+    var hs = src !== 'portal', pt = src !== 'hs';
+    var html = '<div class="view-head"><h1>' + (src === 'portal' ? 'Transfer portal' : src === 'hs' ? 'Recruiting board' : 'Recruiting') + '</h1>' +
       '<div class="actions">' +
-      (type === 'hs' ? '<button class="btn" data-action="scan-recruits">' + icon('camera') + 'Screenshot</button>' : '') +
-      (type === 'hs' ? '<button class="btn" data-action="paste-recruits" data-type="hs">' + icon('paste') + 'Paste</button>' : '<button class="btn" data-action="paste-recruits" data-type="portal">' + icon('paste') + 'Paste</button>') +
-      '<button class="btn primary" data-action="add-recruit" data-type="' + type + '">' + icon('plus') + (type === 'hs' ? 'Add recruit' : 'Add target') + '</button></div>' +
-      '<p class="sub">' + (type === 'hs'
-        ? 'High-school recruits. ' + committed + ' committed or signed, ' + onBoard + ' still on the board, ' + n.totals.open + ' ' + plural(n.totals.open, 'spot') + ' open.'
-        : 'Players in the portal you are chasing. They count against next season the moment you mark them committed.') + '</p></div>';
-
-    if (type === 'hs' && state.hours > 0 && (hoursUsed > 0 || onBoard > 0)) {
-      var pct = Math.min(100, Math.round(hoursUsed / state.hours * 100));
-      html += '<div class="card" style="padding:12px 16px;margin-bottom:14px"><div class="hours-meter"><span>Hours this week</span><div class="meter"><i class="' + (hoursUsed > state.hours ? 'over' : '') + '" style="width:' + pct + '%"></i></div><b>' + hoursUsed + ' / ' + state.hours + '</b></div></div>';
-    }
+      (src === 'hs' ? '<button class="btn" data-action="scan-recruits">' + icon('camera') + 'Screenshot</button>' : '') +
+      (src === 'hs' ? '<button class="btn" data-action="paste-recruits" data-type="hs">' + icon('paste') + 'Paste</button>' : '') +
+      (src === 'portal' ? '<button class="btn" data-action="paste-recruits" data-type="portal">' + icon('paste') + 'Paste</button>' : '') +
+      (hs ? '<button class="btn' + (pt ? '' : ' primary') + '" data-action="add-recruit" data-type="hs">' + icon('plus') + 'Add recruit</button>' : '') +
+      (pt ? '<button class="btn primary" data-action="add-recruit" data-type="portal">' + icon('plus') + 'Add transfer</button>' : '') +
+      '</div>' +
+      '<p class="sub">' + (src === 'portal'
+        ? 'Players in the portal you are chasing. They count against next season the moment you mark them committed.'
+        : committed + ' committed or signed, ' + onBoard + ' still on the board, ' + n.totals.open + ' ' + plural(n.totals.open, 'spot') + ' open' +
+          (src === 'hs' ? '. High-school recruits only.' : transfers ? ', and ' + transfers + ' of them ' + (transfers === 1 ? 'is a transfer' : 'are transfers') + '.' : '.')) + '</p></div>';
 
     html += '<div class="filters">' +
-      '<select data-filter="' + (type === 'hs' ? 'board' : 'portal') + '.group"><option value="">All positions</option>' + options(GROUPS.concat([ATH_GROUP]), f.group, function (g) { return g.name; }, function (g) { return g.id; }) + '</select>' +
-      '<select data-filter="' + (type === 'hs' ? 'board' : 'portal') + '.status"><option value="">Any status</option>' + options(STATUSES.filter(function (s) { return type === 'hs' || s.id !== 'signed'; }), f.status, function (s) { return s.label; }, function (s) { return s.id; }) + '</select>' +
+      (forced ? '' : '<select data-filter="board.src">' + options([['', 'Everyone'], ['hs', 'High school'], ['portal', 'Portal']], f.src, function (x) { return x[1]; }, function (x) { return x[0]; }) + '</select>') +
+      '<select data-filter="board.group"><option value="">All positions</option>' + options(GROUPS.concat([ATH_GROUP]), f.group, function (g) { return g.name; }, function (g) { return g.id; }) + '</select>' +
+      '<select data-filter="board.status"><option value="">Any status</option>' + options(STATUSES.filter(function (st) { return src !== 'portal' || st.id !== 'signed'; }), f.status, function (st) { return st.label; }, function (st) { return st.id; }) + '</select>' +
     '</div>';
 
     /* Where the holes are, so the board is read against the need. */
@@ -4224,24 +4237,28 @@
     /* One tap holds a spot at a position. The board turns over constantly and
        most of what is on it is "I am chasing somebody here" long before it is
        a name, so that has to cost one tap rather than a form. */
+    /* A held spot belongs to whichever source is showing; with both showing
+       it is a recruit, which is what holding a spot in a class nearly
+       always means. */
+    var slotType = src === 'portal' ? 'portal' : 'hs';
     html += '<div class="card slot-adder"><div class="card-head"><h2>Hold a spot</h2>' +
-      '<span class="hint">One tap adds an unnamed ' + (type === 'hs' ? 'recruit' : 'target') + ' at that position. Name him later, or never.</span></div>' +
+      '<span class="hint">One tap adds an unnamed ' + (slotType === 'hs' ? 'recruit' : 'portal target') + ' at that position. Name him later, or never.</span></div>' +
       '<div class="slot-chips">' +
       GROUPS.map(function (g) {
-        return '<button class="btn small" data-action="add-slot" data-pos="' + g.id + '" data-type="' + type + '" title="' + esc(g.name) + '">' + g.id + '</button>';
+        return '<button class="btn small" data-action="add-slot" data-pos="' + g.id + '" data-type="' + slotType + '" title="' + esc(g.name) + '">' + g.id + '</button>';
       }).join('') +
       '</div></div>';
 
     /* Storylines sit above the board: they are about these same players, and
        below the needs banner, because the count is still the point. */
-    if (type === 'hs') html += renderStorylines();
-    /* The portal screen shows both directions, departures first — they are
-       what changes how many you have to sign. */
-    if (type === 'portal') html += renderOutgoing();
+    if (src !== 'portal') html += renderStorylines();
+    /* Both directions on the one screen, because who is leaving is what
+       decides how many you have to sign. */
+    if (src !== 'hs') html += renderOutgoing();
 
     html += '<div class="card">';
     if (!list.length) {
-      html += '<div class="empty"><b>' + (all.length ? 'Nobody matches that filter' : (type === 'hs' ? 'The board is empty' : 'No portal targets yet')) + '</b>' + (all.length ? '' : (type === 'hs' ? 'Add the recruits you are spending hours on.' : 'The portal opens after the season. Add anyone you plan to chase.')) + '</div>';
+      html += '<div class="empty"><b>' + (all.length ? 'Nobody matches that filter' : (src === 'portal' ? 'No portal targets yet' : 'Nobody on the board yet')) + '</b>' + (all.length ? '' : (src === 'portal' ? 'The portal opens after the season. Add anyone you plan to chase.' : 'Add the recruits and transfers you are chasing.')) + '</div>';
     } else {
       html += '<div class="list">';
       list.forEach(function (r) { html += recruitRow(r); });
@@ -4710,7 +4727,7 @@
         biggestHoles: n.rows.filter(function (r) { return r.need > 0; }).sort(function (a, b) { return b.need - a.need; }).slice(0, 3).map(function (r) { return r.need + ' at ' + r.group.name.toLowerCase(); }),
         topTarget: (function () {
           var b = state.recruits.filter(function (r) { return (r.type || 'hs') === 'hs' && r.status === 'board' && r.name; }).sort(byStars)[0];
-          return b ? { stars: b.stars, position: sayPos(b.pos), from: b.state ? (STATE_NAMES[b.state] || b.state) : '', yourStanding: b.standing || '', hoursAWeek: b.hours || '' } : null;
+          return b ? { stars: b.stars, position: sayPos(b.pos), from: b.state ? (STATE_NAMES[b.state] || b.state) : '', yourStanding: b.standing || '' } : null;
         })(),
         inThePortal: state.players.filter(function (p) { return p.exit === 'portal'; }).map(function (p) { return p.name; }).filter(Boolean)
       } : null
@@ -5000,7 +5017,6 @@
       '<div class="field"><label for="s-color">Team colour</label><input type="color" id="s-color" value="' + esc(/^#[0-9a-f]{6}$/i.test(state.school.color) ? state.school.color : '#2a78d6') + '"></div>' +
       '<div class="field"><label for="s-season">Season</label><input type="number" id="s-season" value="' + state.season + '" min="1900" max="2999"></div>' +
       '<div class="field"><label for="s-cap">Scholarship limit</label><input type="number" id="s-cap" value="' + state.cap + '" min="1" max="200"></div>' +
-      '<div class="field"><label for="s-hours">Recruiting hours per week</label><input type="number" id="s-hours" value="' + state.hours + '" min="0" max="999"></div>' +
     '</div><div class="modal-actions"><button class="btn primary" data-action="save-program">Save program</button></div></div>';
 
     var sh = showCfg();
@@ -5166,13 +5182,13 @@
   function recruitModal(r, type) {
     var isNew = !r;
     type = r ? (r.type || 'hs') : type;
-    r = r || { name: '', pos: 'QB', stars: 3, gem: false, bust: false, rank: '', state: '', standing: 0, hours: 0, archetype: '', dealbreaker: '', ovr: '', year: 'SO', rs: false, from: '', status: 'board', note: '', dev: 'Normal' };
+    r = r || { name: '', pos: 'QB', stars: 3, gem: false, bust: false, rank: '', state: '', standing: 0, archetype: '', dealbreaker: '', ovr: '', year: 'SO', rs: false, from: '', status: 'board', note: '', dev: 'Normal' };
     var portal = type === 'portal';
     /* Position and status are the only two fields the count is built from.
        Everything else is colour, so it folds away: a board that turns over
        every week cannot be worth thirteen fields a head. The details are
        still there for the handful of recruits actually being chased. */
-    var hasDetail = !!(r.state || r.rank || r.standing || r.hours || r.archetype ||
+    var hasDetail = !!(r.state || r.rank || r.standing || r.archetype ||
       r.dealbreaker || r.gem || r.bust || r.note || r.from || r.rs || r.ovr);
 
     openModal('<h2>' + (isNew ? (portal ? 'Add portal target' : 'Add recruit') : (portal ? 'Portal target' : 'Recruit')) + '</h2>' +
@@ -5200,7 +5216,6 @@
             '<div class="field"><label for="r-state">State</label><select id="r-state"><option value="">—</option>' + options(STATES, r.state) + '</select></div>' +
             '<div class="field"><label for="r-rank">National rank</label><input type="number" id="r-rank" value="' + (r.rank || '') + '" min="1" max="9999" placeholder="—"></div>' +
             '<div class="field"><label for="r-standing">Your spot on his list</label><select id="r-standing"><option value="0">Unknown</option>' + options([1, 2, 3, 4, 5, 6, 7, 8], int(r.standing, 0, 8), function (n) { return '#' + n; }) + '</select></div>' +
-            '<div class="field"><label for="r-hours">Hours per week</label><input type="number" id="r-hours" value="' + (r.hours || '') + '" min="0" max="99" placeholder="0"></div>' +
             '</div>') +
         '<div class="row">' +
           '<div class="field"><label for="r-arch">Archetype</label><input type="text" id="r-arch" value="' + esc(r.archetype || '') + '" placeholder="Field General, Speedster…"></div>' +
@@ -5239,7 +5254,6 @@
       r.state = $('#r-state').value;
       r.rank = int($('#r-rank').value, 0, 9999);
       r.standing = int($('#r-standing').value, 0, 8);
-      r.hours = int($('#r-hours').value, 0, 99);
     }
     return r;
   }
@@ -5274,7 +5288,7 @@
     var t = tokens(line);
     var i = findPos(t);
     if (i < 0) return null;
-    var r = { id: uid(), type: type, name: t.slice(0, i).join(' '), pos: normalisePos(t[i]), stars: 3, gem: false, bust: false, rank: 0, state: '', standing: 0, hours: 0, archetype: '', dealbreaker: '', ovr: 0, year: 'SO', rs: false, from: '', status: 'board', note: '', dev: 'Normal' };
+    var r = { id: uid(), type: type, name: t.slice(0, i).join(' '), pos: normalisePos(t[i]), stars: 3, gem: false, bust: false, rank: 0, state: '', standing: 0, archetype: '', dealbreaker: '', ovr: 0, year: 'SO', rs: false, from: '', status: 'board', note: '', dev: 'Normal' };
     t.slice(i + 1).forEach(function (tok) {
       var m, u = tok.toUpperCase();
       if ((m = /^([1-5])(\*|★|S|STAR|STARS)$/.exec(u))) { r.stars = int(m[1]); return; }
@@ -5570,7 +5584,7 @@
         state.recruits.push({
           id: uid(), type: 'hs', name: r.name, pos: r.pos,
           stars: int(r.stars, 1, 5), gem: !!r.gem, bust: !!r.bust,
-          rank: r.rank || 0, state: r.state || '', standing: 0, hours: 0,
+          rank: r.rank || 0, state: r.state || '', standing: 0,
           archetype: '', dealbreaker: '', ovr: 0, year: 'FR', rs: false, from: '',
           status: r.status || 'board', note: '', dev: 'Normal'
         });
@@ -5700,7 +5714,7 @@
         id: uid(), type: 'hs', name: person(), pos: pos,
         stars: i < 2 ? 5 : i < 8 ? 4 : 3, gem: i === 6, bust: i === 9,
         rank: 20 + Math.floor(rnd() * 400), state: pick(['TX', 'TX', 'FL', 'GA', 'CA', 'LA', 'OH']),
-        standing: st === 'board' ? 1 + Math.floor(rnd() * 5) : 1, hours: st === 'board' ? 2 + Math.floor(rnd() * 5) : 0,
+        standing: st === 'board' ? 1 + Math.floor(rnd() * 5) : 1,
         archetype: '', dealbreaker: i === 3 ? 'playing time' : '', ovr: 0, year: 'FR', rs: false, from: '',
         status: st, note: '', dev: 'Normal'
       });
@@ -5708,7 +5722,7 @@
     [['S', 'JR', 84], ['OL', 'SR', 81], ['WR', 'SO', 79]].forEach(function (x, i) {
       recruits.push({
         id: uid(), type: 'portal', name: person(), pos: x[0], stars: 4, gem: false, bust: false,
-        rank: 0, state: '', standing: 0, hours: 0, archetype: '', dealbreaker: '', ovr: x[2], year: x[1], rs: false,
+        rank: 0, state: '', standing: 0, archetype: '', dealbreaker: '', ovr: x[2], year: x[1], rs: false,
         from: pick(['Baylor', 'Houston', 'Utah', 'Cal', 'Memphis']), status: i === 0 ? 'committed' : 'board', note: '', dev: 'Normal'
       });
     });
@@ -5770,7 +5784,7 @@
       if (statuses.indexOf(r.status) < 0) r.status = 'board';
       text(r, ['pos', 'state', 'from', 'archetype', 'dealbreaker', 'note']);
       oneOf(r, 'type', ['hs', 'portal'], 'hs'); oneOf(r, 'year', YEARS, 'SO'); oneOf(r, 'dev', DEVS, 'Normal');
-      num(r, 'stars', 0, 5); num(r, 'rank', 0, 9999); num(r, 'standing', 0, 8); num(r, 'hours', 0, 99); num(r, 'ovr', 0, 99);
+      num(r, 'stars', 0, 5); num(r, 'rank', 0, 9999); num(r, 'standing', 0, 8); num(r, 'ovr', 0, 99);
     });
     b.rivals = objs(b.rivals);
     b.rivals.forEach(function (x) { if (!safe(x.id)) x.id = uid(); text(x, ['name', 'note']); });
@@ -5923,7 +5937,7 @@
         state.recruits.push({
           id: uid(), type: t.getAttribute('data-type') || 'hs', name: '',
           pos: t.getAttribute('data-pos'), stars: 3, gem: false, bust: false,
-          rank: 0, state: '', standing: 0, hours: 0, archetype: '', dealbreaker: '',
+          rank: 0, state: '', standing: 0, archetype: '', dealbreaker: '',
           ovr: 0, year: 'SO', rs: false, from: '', status: 'board', note: '', dev: 'Normal'
         });
         save(); render(); break;
@@ -6044,7 +6058,6 @@
         state.school.color = $('#s-color').value;
         state.season = int($('#s-season').value, 1900, 2999);
         state.cap = int($('#s-cap').value, 1, 200);
-        state.hours = int($('#s-hours').value, 0, 999);
         save(); render(); toast('Saved.'); break;
       case 'do-update': location.reload(); break;
       case 'dismiss-update':
@@ -6197,8 +6210,8 @@
         }
         save();
         /* The screen behind the list is repainted now, since closing the list
-           -- Done, Escape, the backdrop -- does not render, and the Portal
-           screen kept saying nobody had left. The list lives in the dialog, so
+           -- Done, Escape, the backdrop -- does not render, and the list of
+           departures kept saying nobody had left. The list lives in the dialog, so
            the ticks are untouched. */
         render(true);
       }

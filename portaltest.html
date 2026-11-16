@@ -6,7 +6,7 @@
   <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
   <nav class="nav" id="nav">
     <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
-    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="board">Recruiting</button><button class="nav-btn" data-view="portal">Portal</button>
     <button class="nav-btn" data-view="class">Class</button>
   </nav>
   <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
@@ -134,6 +134,94 @@
     ok(q('#view').innerHTML.indexOf('Might go') >= 0, 'roster badges a player who might go');
     click('[data-view="home"]');
     ok(/might transfer/.test(q('#view').textContent), 'the needs screen says what happens if they all go');
+
+    /* --- one screen for both -----------------------------------------
+       A transfer and a high-school kid are the same decision about the
+       same spot, so they belong in one list. Two screens meant checking
+       both to see whether a hole was filled. */
+    click('[data-view="board"]');
+    var scr = function () { return q('#view').textContent; };
+    /* Scoped to the list: the storylines card links to the same recruits,
+       and counting those as rows made the list look like it held people it
+       does not. */
+    var rows = function () { return Array.prototype.slice.call(document.querySelectorAll('.list [data-action="edit-recruit"]')); };
+    var ids = function () { return rows().map(function (b) { return b.getAttribute('data-id'); }); };
+    var kindOf = function (id) {
+      var r = W.state().recruits.filter(function (x) { return x.id === id; })[0];
+      return r ? (r.type || 'hs') : '?';
+    };
+
+    ok(/^Recruiting/m.test(scr()) || scr().indexOf('Recruiting') >= 0, 'the merged screen is called Recruiting', scr().slice(0, 40));
+    var shown = ids().map(kindOf);
+    ok(shown.indexOf('hs') >= 0 && shown.indexOf('portal') >= 0, 'high-school recruits and transfers are in the one list', JSON.stringify(shown));
+    ok(/is a transfer|are transfers/.test(scr()), 'and it says how many of them are transfers', (scr().match(/[^.]*transfer[^.]*/) || [''])[0]);
+    var portalRow = rows().filter(function (b) { return kindOf(b.getAttribute('data-id')) === 'portal'; })[0];
+    ok(/Portal/.test(portalRow.textContent), 'a transfer says so on its own row, because four stars and 84 OVR are not the same scale', portalRow.textContent);
+    /* Saying it is in the row is not the same as the row still being
+       readable: as a fourth chip on the right it took the whole width on a
+       phone and collapsed the name to nothing, which textContent cannot
+       see. The test window is a desktop one, so the phone is what has to
+       be measured -- squeeze the view to a phone's width and look. */
+    var squeeze = document.createElement('style');
+    squeeze.textContent = '#view, #view .card { width: 343px !important; max-width: 343px !important; }';
+    document.head.appendChild(squeeze);
+    var hsRow = rows().filter(function (b) { return kindOf(b.getAttribute('data-id')) === 'hs' && b.querySelector('.who b').textContent.length > 3; })[0];
+    ok(hsRow.getBoundingClientRect().width < 360, 'the phone width really applied, so the next two mean something', hsRow.getBoundingClientRect().width);
+    var pName = portalRow.querySelector('.who b').getBoundingClientRect();
+    ok(pName.width > 30, 'and at a phone’s width his name is still on screen next to the chips', JSON.stringify(pName));
+    ok(portalRow.getBoundingClientRect().height <= hsRow.getBoundingClientRect().height,
+      'without the row that carries an OVR number growing taller than the others',
+      portalRow.getBoundingClientRect().height + ' vs ' + hsRow.getBoundingClientRect().height);
+    squeeze.remove();
+    ok(/Out of the portal/.test(scr()), 'who is leaving is on the same screen as who you are signing');
+    ok(!!q('[data-action="add-recruit"][data-type="hs"]') && !!q('[data-action="add-recruit"][data-type="portal"]'),
+      'both kinds can be added from it');
+
+    /* narrowing to one source */
+    var src = q('[data-filter="board.src"]');
+    ok(!!src, 'there is a source filter');
+    src.value = 'portal';
+    src.dispatchEvent(new Event('change', { bubbles: true }));
+    ok(ids().length && ids().map(kindOf).every(function (k) { return k === 'portal'; }), 'Portal shows only transfers', JSON.stringify(ids().map(kindOf)));
+    ok(!q('[data-action="add-recruit"][data-type="hs"]'), 'and offers the tools that go with it, not the other ones');
+    ok(!!q('[data-action="paste-recruits"][data-type="portal"]'), 'including the paste format that matches');
+    ok(q('.slot-adder').textContent.indexOf('portal target') >= 0, 'a held spot there is a portal target', q('.slot-adder').textContent);
+
+    q('[data-filter="board.src"]').value = 'hs';
+    q('[data-filter="board.src"]').dispatchEvent(new Event('change', { bubbles: true }));
+    ok(ids().length && ids().map(kindOf).every(function (k) { return k === 'hs'; }), 'High school shows only recruits', JSON.stringify(ids().map(kindOf)));
+    ok(!!q('[data-action="scan-recruits"]'), 'and the board screenshot, which is no use on the portal');
+    ok(!/Out of the portal/.test(scr()), 'with the departures out of the way');
+
+    q('[data-filter="board.src"]').value = '';
+    q('[data-filter="board.src"]').dispatchEvent(new Event('change', { bubbles: true }));
+    var before = W.state().recruits.length;
+    click('.slot-adder [data-action="add-slot"][data-pos="QB"]');
+    var added = W.state().recruits[W.state().recruits.length - 1];
+    ok(W.state().recruits.length === before + 1 && (added.type || 'hs') === 'hs',
+      'holding a spot with both showing holds it for a recruit, which is what it nearly always means', added.type);
+    W.state().recruits.pop();
+
+    /* the old route still works, because a screen that moved should not
+       strand a link to it */
+    click('[data-view="portal"]');
+    ok(/Transfer portal/.test(scr()) && ids().map(kindOf).every(function (k) { return k === 'portal'; }),
+      'the old Portal route opens the merged screen narrowed to the portal', scr().slice(0, 40));
+    ok(!q('[data-filter="board.src"]'), 'and does not offer to widen itself, since that is what Recruiting is for');
+
+    /* --- hours are gone ----------------------------------------------
+       They were a number you kept in your head and typed twice. */
+    click('[data-view="board"]');
+    click('[data-action="add-recruit"][data-type="hs"]');
+    ok(!q('#r-hours'), 'a recruit has no hours field');
+    ok(!/[Hh]ours/.test(q('#modal').textContent), 'and nothing in the form mentions them', q('#modal').textContent.slice(0, 120));
+    click('[data-action="close"]');
+    click('[data-view="settings"]');
+    ok(!q('#s-hours'), 'Settings has no hours-per-week');
+    ok(!/[Hh]ours per week|Recruiting hours/.test(scr()), 'and does not ask for them');
+    ok(W.state().hours === undefined, 'nor are they kept', JSON.stringify(W.state().hours));
+    click('[data-view="board"]');
+    ok(!/Hours this week/.test(scr()), 'and the meter is gone from the board');
 
     /* --- rollover --- */
     click('[data-view="class"]');

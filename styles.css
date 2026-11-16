@@ -118,7 +118,7 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 p { margin: 0; }
 
 /* Every figure. */
-.num, td.num, .lead-figure, .tile-value, .ovr, .slot-nums, .stat b, .hours-meter b,
+.num, td.num, .lead-figure, .tile-value, .ovr, .slot-nums, .stat b,
 input[type="number"] {
   font-family: var(--font-num);
   font-weight: 600;
@@ -340,7 +340,11 @@ label { display: block; font-size: var(--t-small); font-weight: 600; color: var(
 
 .list { display: flex; flex-direction: column; }
 .item {
-  display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
+  /* The chips on the right are an auto track, so they take their full
+     width before the name gets any -- which on a phone squeezed a row
+     carrying an OVR number down to no name at all. A floor on the name
+     column makes the chips wrap instead. */
+  display: grid; grid-template-columns: auto minmax(6.5em, 1fr) auto; gap: 12px; align-items: center;
   padding: 10px 6px; border-top: 1px solid var(--border);
   background: none; border-left: 0; border-right: 0; border-bottom: 0;
   color: inherit; font: inherit; text-align: left; cursor: pointer; width: 100%;
@@ -371,8 +375,6 @@ label { display: block; font-size: var(--t-small); font-weight: 600; color: var(
 .filters select { width: auto; padding: 6px 28px 6px 10px; font-size: var(--t-small); }
 .filters .btn { margin-left: auto; }
 
-.hours-meter { display: flex; align-items: center; gap: 10px; font-size: var(--t-small); color: var(--ink-2); }
-.hours-meter b { color: var(--ink); }
 .meter { flex: 1; height: 8px; border-radius: var(--r-pill); background: var(--grid); overflow: hidden; min-width: 80px; }
 .meter i { display: block; height: 100%; background: var(--team); }
 .meter i.over { background: var(--critical); }
