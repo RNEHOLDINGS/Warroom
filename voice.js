@@ -28,6 +28,16 @@
   var KEY_STORE = 'warroom.geminiKey';
   var ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
+  /* Text models, for writing the episode rather than speaking it. The
+     built-in writer stays the default: it is free, works offline and is
+     tested line by line. This is for when you want an episode that was
+     written this week instead of assembled from somebody's phrasebook. */
+  var WRITE_MODELS = [
+    { id: '', label: 'Off — use the built-in writer' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (quick, cheap)' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (slower, better writing)' }
+  ];
+
   var MODELS = [
     { id: 'gemini-3.1-flash-tts-preview', label: 'Gemini 3.1 Flash TTS (newest)' },
     { id: 'gemini-2.5-flash-preview-tts', label: 'Gemini 2.5 Flash TTS' },
@@ -105,6 +115,94 @@
       cur.chars += t.text.length;
     });
     return chunks;
+  }
+
+  /* ---------- writing the episode ---------- */
+
+  /* The rules matter more than the brief. A model handed football facts
+     will reach for the same aphorisms this app spent months removing, so
+     it is told what not to do, in detail, and told that every number has to
+     come from the brief. */
+  function writePrompt(brief) {
+    var labels = brief.cast.map(function (c) { return c.label; });
+    return [
+      'You are writing one episode of a college football debate show. It will be read aloud by text-to-speech, so it is dialogue and nothing else.',
+      '',
+      '# THE PANEL',
+      brief.cast.map(function (c) {
+        return '- ' + c.label + ' (' + c.name + '): ' + c.is + (c.background ? ' ' + c.background : '');
+      }).join('\n'),
+      '',
+      '# FORMAT',
+      '- Every line is `LABEL: what they say`, using exactly these labels: ' + labels.join(', ') + '.',
+      '- Segment headers look like `--- SEGMENT 1: THE QUESTION ---`. Use them to break the show up.',
+      '- No stage directions, no parentheses, no sound effects, no narration. Nobody describes the show they are on.',
+      brief.coach ? '- COACH appears exactly once, and says exactly the quote given below, word for word. He is a clip, not a guest. Nobody interviews him.' : '',
+      '',
+      '# HOW LONG',
+      brief.show.length === 'quick' ? 'About 25 to 35 spoken lines. Cold open, the numbers, what swung it, and the calls.'
+        : brief.show.length === 'full' ? 'About 70 to 90 spoken lines. Take your time with the arguments.'
+        : 'About 45 to 60 spoken lines.',
+      '',
+      '# THE ROOM',
+      'The energy is ' + brief.show.energy + '.',
+      '',
+      '# HOW THEY TALK',
+      '- Contractions, always. Nobody says "I am not going to" or "that is not".',
+      '- Vary the length hard. Some turns are one word. "Yep." "Come on." "No."',
+      '- They interrupt, repeat themselves, trail off, and sometimes say something flat and ordinary. Not every line lands a point.',
+      '- Specifics over wisdom. "Twenty-one of thirty-eight with three picks" beats "he struggled with his decision-making".',
+      '- Use the players\' names, the opponent\'s name and the team\'s name constantly.',
+      '',
+      '# NEVER',
+      '- Never use the construction "that is not X, that is Y" ("that is not scheme, that is want-to"). Not once.',
+      '- Never write an aphorism that would fit any football game. Every line must only make sense for this game.',
+      '- Never invent a statistic, a player, a score, an injury or a quote. If a number is not in the brief, it does not exist.',
+      '- Never say a player "balled out" or had a big day if his grade in the brief says otherwise.',
+      '- Never explain the show itself ("what did we learn that the stats do not tell us").',
+      '- Do not be even-handed for its own sake. If the brief says somebody was poor, say it plainly.',
+      '',
+      '# WHAT HAPPENED',
+      'Everything below is true and complete. Use it. Nothing else is true.',
+      JSON.stringify(brief, null, 1)
+    ].filter(Boolean).join('\n');
+  }
+
+  function writeShow(opts) {
+    var body = JSON.stringify({
+      contents: [{ parts: [{ text: writePrompt(opts.brief) }] }],
+      generationConfig: { temperature: 1, maxOutputTokens: 8192 }
+    });
+    var attempt = 0;
+    var go = function () {
+      attempt++;
+      return fetch(ENDPOINT + opts.model + ':generateContent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': opts.key },
+        body: body,
+        signal: opts.signal
+      }).then(function (r) {
+        return r.text().then(function (raw) {
+          if (r.status === 429 || r.status === 500 || r.status === 503) {
+            if (attempt >= 4) throw new Error(r.status === 429 ? 'Google kept saying slow down. Wait a minute and try again.' : 'Google’s writing service is having trouble. Try again shortly.');
+            var hinted = /"retryDelay":\s*"(\d+)(?:\.\d+)?s"/.exec(raw);
+            var wait = hinted ? (parseInt(hinted[1], 10) + 1) * 1000 : [4000, 10000, 20000][attempt - 1];
+            if (opts.onProgress) opts.onProgress({ waiting: Math.round(wait / 1000) });
+            return sleep(wait, opts.signal).then(go);
+          }
+          if (!r.ok) throw new Error(explain(r.status, raw));
+          var data = JSON.parse(raw);
+          var cand = (data.candidates || [])[0] || {};
+          var text = ((cand.content && cand.content.parts) || []).map(function (p) { return p.text || ''; }).join('').trim();
+          if (!text) throw new Error('Google returned nothing to read' + (cand.finishReason ? ' (' + cand.finishReason + ')' : '') + '.');
+          /* a model that wrapped the script in a code fence is still a script */
+          text = text.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/, '').trim();
+          if (!/^[A-Z][A-Z'’.\- ]{1,30}:\s+\S/m.test(text)) throw new Error('That came back without any dialogue in it. Try again, or use the built-in writer.');
+          return text;
+        });
+      });
+    };
+    return go();
   }
 
   /* ---------- one request ---------- */
@@ -317,6 +415,9 @@
 
   window.WarRoomVoice = {
     MODELS: MODELS,
+    WRITE_MODELS: WRITE_MODELS,
+    writePrompt: writePrompt,
+    writeShow: writeShow,
     VOICES: VOICES,
     getKey: getKey,
     setKey: setKey,

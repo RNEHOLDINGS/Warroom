@@ -255,7 +255,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v25';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v26';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -1150,6 +1150,8 @@
       /* the head coach is only ever heard in a clip, so he is a voice and
          nothing else -- no chair, no name, no personality to configure */
       coachVoice: (s.voices && s.voices.coach) || 'Algenib',
+      /* empty means the built-in writer, which is the default */
+      writeModel: s.writeModel || '',
       /* 1 film room, 2 studio, 3 game day: how hard the panel sells it and
          how loud and fast the voices go */
       hype: int(s.hype == null ? 2 : s.hype, 1, 3),
@@ -1518,6 +1520,22 @@
       says: 'That tells you he thinks this was lost on a Tuesday, and that is about as honest as these things get.' }
   ];
 
+  /* Reading a quote is guesswork, and guesswork is wrong sometimes -- a
+     position battle announced "next week" was once filed as a non-answer.
+     So the guess can be overruled: tick what he was doing and the reader
+     stops guessing about the tone. It still reads the quote for the facts
+     a box score cannot carry. */
+  var COACH_TAGS = [
+    { id: 'ownit', label: 'Took the blame' },
+    { id: 'callout', label: 'Called out a player' },
+    { id: 'changes', label: 'Changes or a position battle' },
+    { id: 'protect', label: 'Backed a player' },
+    { id: 'angry', label: 'Angry' },
+    { id: 'tough', label: 'Questioned toughness' },
+    { id: 'credit', label: 'Credited the opponent' },
+    { id: 'process', label: 'Said nothing much' }
+  ];
+
   function coachFacts(quote) {
     var raw = String(quote || '');
     if (!raw.trim()) return [];
@@ -1538,12 +1556,15 @@
     var raw = String(g.coachQuote || '').trim().replace(/^["“”']+|["“”']+$/g, '');
     if (!raw) return null;
     var won = g.result === 'W', tied = g.result === 'T';
-    var hits = COACH_SPEAK.filter(function (c) { return c.re.test(raw); })
-      .sort(function (a, b) { return (b.strength || 1) - (a.strength || 1); });
+    var picked = Array.isArray(g.coachTags) ? g.coachTags : [];
+    var hits = picked.length
+      ? COACH_SPEAK.filter(function (c) { return picked.indexOf(c.kind) >= 0; })
+      : COACH_SPEAK.filter(function (c) { return c.re.test(raw); });
+    hits = hits.slice().sort(function (a, b) { return (b.strength || 1) - (a.strength || 1); });
     /* the weak readings -- the non-answer, credit to the opponent -- are
        what a quote means when it means nothing else. If the man said
        something real, lead with that instead. */
-    if (hits.some(function (h) { return (h.strength || 1) >= 3; })) {
+    if (!picked.length && hits.some(function (h) { return (h.strength || 1) >= 3; })) {
       hits = hits.filter(function (h) { return (h.strength || 1) >= 2; });
     }
     var checks = [];
@@ -4511,7 +4532,13 @@
         '<div class="field"><label for="g-call">The call that cost them</label><input type="text" id="g-call" value="' + esc(g.badCall || '') + '" placeholder="Threw it on 3rd and 1 from the 8"><div class="help">The panel will bring it up, argue about it, and say what should happen next.</div></div>' +
         '<div class="field"><label for="g-quote">What the coach said afterwards</label>' +
           '<textarea id="g-quote" rows="2" placeholder="We have to execute better. That’s on me, I have to put them in better positions.">' + esc(g.coachQuote || '') + '</textarea>' +
-          '<div class="help">Type the press-conference line. The show plays it as a clip in his own voice, works out what he is actually saying, and holds it up against the numbers.</div></div>' +
+          '<div class="help">Type the press-conference line, however he said it. The show plays it as a clip in his own voice and holds it up against the numbers.</div></div>' +
+        '<div class="field"><label>What he was doing <span style="font-weight:400;color:var(--ink-muted)">— optional</span></label>' +
+          '<div class="tag-row">' + COACH_TAGS.map(function (t) {
+            var on = (g.coachTags || []).indexOf(t.id) >= 0;
+            return '<label class="tag' + (on ? ' on' : '') + '"><input type="checkbox" data-ctag="' + t.id + '"' + (on ? ' checked' : '') + '>' + esc(t.label) + '</label>';
+          }).join('') + '</div>' +
+          '<div class="help">Tick any that apply and the show stops guessing at the tone. Leave them all off and it reads the quote itself.</div></div>' +
       '</details>' +
 
       '<div class="modal-actions">' +
@@ -4584,6 +4611,8 @@
     g.flat = $('#g-flat').checked;
     g.badCall = $('#g-call').value.trim();
     g.coachQuote = $('#g-quote').value.trim();
+    g.coachTags = Array.prototype.filter.call($$('[data-ctag]'), function (el) { return el.checked; })
+      .map(function (el) { return el.getAttribute('data-ctag'); });
     g.bigPlay = $('#g-big').value.trim();
     g.injury = $('#g-inj').value.trim();
 
@@ -4605,6 +4634,87 @@
     return g;
   }
 
+  /* ---------- the brief ----------
+     Everything the built-in writer knows about a game, as facts rather than
+     sentences: the grades, the combinations that cap them, the charges
+     against the staff and their fixes, what swung it, what the coach said
+     and what it means, the series, the schedule, last week's calls. The
+     local writer turns this into dialogue from its own line banks. Handing
+     the same thing to a model instead is the only way to get an episode
+     that was actually written this week rather than assembled from mine.
+
+     It is facts only. No dialogue, no adjectives it did not earn -- if a
+     number is not in here, nobody can say it. */
+  function showBrief(g) {
+    var cast = showCfg();
+    var S = quarterScale();
+    var bx = boxOf(g);
+    var ctx = seasonContext(g);
+    var sch = scheduleCtx(g);
+    var ser = seriesFacts(g.opponent, g);
+    var sp = seasonPlayers(g);
+    var perf = (g.performances || []).filter(function (p) { return p.name; });
+    var cCase = coachCase(bx, g, S, perf, state.school.name || 'the team', g.opponent || 'the opponent');
+    var said = readCoach(g, bx, S, cCase, state.school.name || 'the team', g.opponent || 'the opponent', perf);
+    var sw = swings(bx, g, S, perf, state.school.name || 'the team', g.opponent || 'the opponent');
+    var nmu = nextManUp(g, perf.map(function (p) { return { name: p.name, verdict: p.verdict, raw: p }; }), S);
+    var n = computeNeeds();
+    var rec = callRecord(g);
+    var graded = ctx.last ? gradeCalls(ctx.last, g, state.school.name || 'the team') : null;
+    var calls = callsFor(g, state.school.name || 'the team', sch.next ? sch.next.opponent : '');
+
+    return {
+      show: { title: cast.title, energy: ['', 'film room, calm and measured', 'studio, lively', 'game day, loud'][cast.hype], length: cast.length },
+      cast: ['host', 'player', 'analyst', 'insider'].map(function (r) {
+        return { role: r, label: speakerLabel(cast[r]), name: cast[r], is: personaOf(cast, r).style, background: personaOf(cast, r).bio.join(' ') };
+      }).concat(g.coachQuote ? [{ role: 'coach', label: 'COACH', name: 'the head coach', is: 'the head coach, in a post-game clip only' }] : []),
+      team: { name: state.school.name, mascot: state.school.mascot, record: recordThrough(g), rank: rankOf(g.rankFor) },
+      game: {
+        week: int(g.week, 0, 99), season: g.season, opponent: g.opponent, opponentRank: rankOf(g.rankAgainst),
+        home: !!g.home, result: g.result, scoreFor: int(g.scoreFor, 0, 999), scoreAgainst: int(g.scoreAgainst, 0, 999),
+        margin: gameMargin(g), upset: upsetOf(g), notes: g.notes || '', quarterLength: int(state.quarterLen == null ? 5 : state.quarterLen, 3, 15)
+      },
+      box: bx,
+      boxTable: boxLines(bx),
+      players: perf.map(function (p) {
+        var G = gradeLine(p, S);
+        var key = p.name.trim().toLowerCase();
+        var prof = sp.byKey[key];
+        return {
+          name: p.name, position: sayPos(p.pos), line: p.line, yourVerdict: p.verdict,
+          grade: G ? G.overall : null, gradeMeans: G ? G.label : '',
+          whatHelped: G ? G.plus : [], whatHurt: G ? G.minus : [],
+          combinationsThatCapIt: G ? G.combos : [],
+          verdictDisputed: !!(G && G.overall === 0 && p.verdict === 'standout'),
+          seasonRole: prof ? roleOf(prof, sp) : '', seasonLine: prof ? seasonLine(prof) : '',
+          gamesThisSeason: prof ? prof.games : 0, standoutsThisSeason: prof ? prof.standouts : 0,
+          coachNamedHim: !!(said && said.named.some(function (x) { return x.name.toLowerCase() === key; }))
+        };
+      }),
+      staffCase: cCase.map(function (c) { return { what: c.key, charge: c.charge, theDefence: c.defence, theFix: c.fix }; }),
+      whatSwungIt: sw.map(function (x) { return { what: x.key, point: x.analyst, answer: x.player }; }),
+      injury: nmu ? { said: nmu.text, whoWentDown: nmu.hurt ? nmu.hurt.name : '', whoSteppedIn: nmu.stepped ? nmu.stepped.name : '' } : null,
+      coach: said ? { quote: said.quote, meaning: said.hits.map(function (x) { return x.means; }), heldAgainstTheGame: said.checks, contextOnlyHeCanGive: said.facts.map(function (x) { return x.lead + '. ' + x.says; }) } : null,
+      season: {
+        earlier: ctx.prior.map(function (x) { return 'Week ' + x.week + ' ' + x.result + ' ' + int(x.scoreFor, 0, 999) + '-' + int(x.scoreAgainst, 0, 999) + ' ' + (x.home ? 'vs ' : 'at ') + x.opponent; }),
+        streak: ctx.after, averages: ctx.avg, lastYearVsThem: ctx.lastYear ? ctx.lastYear.result + ' ' + int(ctx.lastYear.scoreFor, 0, 999) + '-' + int(ctx.lastYear.scoreAgainst, 0, 999) : ''
+      },
+      series: ser.games ? { record: ser.record, meetings: ser.games, closeOnes: ser.close, isRivalry: ser.isRivalry, currentRun: ser.run + ' ' + (ser.runBy === 'W' ? 'wins' : 'losses') } : null,
+      schedule: sch.next ? { next: sch.next.opponent, nextIsHome: !!sch.next.home, nextRank: rankOf(sch.next.rank), nextIsRivalry: sch.rivalryNext, roadGamesInARow: sch.roadRun, gamesLeft: sch.left, rankedLeft: sch.rankedLeft, byeNext: !!sch.bye } : null,
+      lastWeeksCalls: graded ? { analyst: graded.analyst, player: graded.player, seasonRecord: rec } : null,
+      callsToMakeThisWeek: { analyst: calls.analyst.text, player: calls.player.text },
+      recruiting: cast.useInsider ? {
+        scholarshipsOpen: n.totals.open,
+        biggestHoles: n.rows.filter(function (r) { return r.need > 0; }).sort(function (a, b) { return b.need - a.need; }).slice(0, 3).map(function (r) { return r.need + ' at ' + r.group.name.toLowerCase(); }),
+        topTarget: (function () {
+          var b = state.recruits.filter(function (r) { return (r.type || 'hs') === 'hs' && r.status === 'board' && r.name; }).sort(byStars)[0];
+          return b ? { stars: b.stars, position: sayPos(b.pos), from: b.state ? (STATE_NAMES[b.state] || b.state) : '', yourStanding: b.standing || '', hoursAWeek: b.hours || '' } : null;
+        })(),
+        inThePortal: state.players.filter(function (p) { return p.exit === 'portal'; }).map(function (p) { return p.name; }).filter(Boolean)
+      } : null
+    };
+  }
+
   /* A script is edited only if it differs from the one generated for it.
      Before this was tracked, a generated script looked exactly like a
      reworded one: every game said "script edited", and changing the score
@@ -4619,6 +4729,7 @@
     if (!g.script) writeScript(g);
     /* reopening or rewriting the script makes a voicing in flight stale */
     cancelVoicing();
+    cancelWriting();
     openModal('<h2>' + esc(gameLabel(g)) + '</h2>' +
       '<p style="color:var(--ink-2);font-size:var(--t-small);margin-bottom:10px">Edit anything. <b>Voice it</b> reads it aloud with the whole cast. <b>Copy</b> gives you the plain text.</p>' +
       '<textarea id="scriptBox" class="script-box" spellcheck="false" data-id="' + g.id + '">' + esc(g.script) + '</textarea>' +
@@ -4626,6 +4737,9 @@
       '<div id="voiceArea" class="voice-area" data-id="' + g.id + '"></div>' +
       '<div class="modal-actions">' +
         '<button class="btn" data-action="rewrite-script" data-id="' + g.id + '">Rewrite from the stats</button>' +
+        (window.WarRoomVoice && showCfg().writeModel
+          ? '<button class="btn" data-action="write-script" data-id="' + g.id + '">' + icon('spin') + 'Write it with Gemini</button>'
+          : '') +
         '<span class="spacer"></span>' +
         '<button class="btn" data-action="close">Close</button>' +
         '<button class="btn" data-action="print-script" data-id="' + g.id + '">Save as PDF</button>' +
@@ -4674,6 +4788,55 @@
     }
     save();
   }
+
+  /* Hands the facts to a model and puts what comes back in the box. The
+     producer notes are re-attached locally afterwards, so the raw numbers
+     are still there to check the episode against -- and so nothing anybody
+     made up can quietly become a fact. */
+  var writeJob = null;
+  function writeWithGemini(id) {
+    var g = saveScriptBox(id);
+    var V = window.WarRoomVoice;
+    var a = voiceArea(id);
+    if (!g || !V || !a || writeJob) return;
+    var c = showCfg();
+    var key = V.getKey();
+    if (!key) {
+      a.innerHTML = '<div class="banner">Writing needs the same Gemini API key as the voices. Add one in Settings → The show.' +
+        '<div style="margin-top:8px"><button class="btn small primary" data-view="settings">Add a key in Settings</button></div></div>';
+      return;
+    }
+    var ctrl = new AbortController();
+    writeJob = { ctrl: ctrl, id: id };
+    a.innerHTML = '<div class="voice-progress"><b>Writing the episode</b><div class="meter"><i style="width:40%"></i></div>' +
+      '<button class="btn small" data-action="write-cancel">Stop</button></div>';
+    V.writeShow({
+      brief: showBrief(g), key: key, model: c.writeModel, signal: ctrl.signal,
+      onProgress: function (p) {
+        var area = voiceArea(id);
+        if (area && p.waiting) area.innerHTML = '<div class="voice-progress"><b>Google asked us to slow down — waiting ' + p.waiting + 's</b><div class="meter"><i style="width:40%"></i></div><button class="btn small" data-action="write-cancel">Stop</button></div>';
+      }
+    }).then(function (text) {
+      var notes = (g.script || '').split('PRODUCER NOTES');
+      var local = buildScript(g).split('============================================================');
+      var tail = local.length > 1 ? '\n\n============================================================' + local.slice(-2).join('============================================================') : '';
+      g.script = g.scriptAuto = text.trim() + tail;
+      save();
+      var box = $('#scriptBox');
+      if (box && box.getAttribute('data-id') === String(id)) box.value = g.script;
+      var area = voiceArea(id);
+      if (area) area.innerHTML = '<p class="help">Written by ' + esc(c.writeModel) + '. Read it before you voice it — everything in it should be in the producer notes at the bottom.</p>';
+      toast('Written. Have a read before voicing.');
+    }).catch(function (err) {
+      var area = voiceArea(id);
+      if (!area) return;
+      if (err && err.name === 'AbortError') { area.innerHTML = '<p class="help">Stopped.</p>'; return; }
+      area.innerHTML = '<div class="banner crit">' + esc((err && err.message) || 'Writing failed.') + '</div>';
+    }).then(function () {
+      if (writeJob && writeJob.ctrl === ctrl) writeJob = null;
+    });
+  }
+  function cancelWriting() { if (writeJob) { writeJob.ctrl.abort(); writeJob = null; } }
 
   /* ---------- Voice it ---------- */
 
@@ -4853,6 +5016,9 @@
             '<input type="password" id="sh-key" autocomplete="off" spellcheck="false" value="' + esc(window.WarRoomVoice.getKey()) + '" placeholder="Paste the key from Google AI Studio">' +
             '<div class="help">Create one at aistudio.google.com. It is kept in this browser only and is never put in a backup. In Google Cloud, restrict it to the Generative Language API and to rneholdings.github.io so a leaked copy is useless. Google bills per use — check their pricing.</div></div>' +
           '<div class="field"><label for="sh-model">Voice model</label><select id="sh-model">' + options(window.WarRoomVoice.MODELS, sh.model, function (m) { return m.label; }, function (m) { return m.id; }) + '</select></div>' +
+          '<div class="field" style="grid-column:1/-1"><label for="sh-write">Who writes the episode</label>' +
+            '<select id="sh-write">' + options(window.WarRoomVoice.WRITE_MODELS, sh.writeModel, function (m) { return m.label; }, function (m) { return m.id; }) + '</select>' +
+            '<div class="help">The built-in writer is free, works offline and always says the same thing for the same game. Switching this on sends the facts — the grades, the charges, the coach’s quote, the schedule — to Google and gets a fresh episode written round them, which costs a little per show and comes back different every time. Either way you can edit it before voicing.</div></div>' +
           ['host', 'player', 'analyst', 'insider'].concat(['coach']).map(function (role) {
             var vLabel = role === 'coach' ? 'Your head coach (heard in clips)' : esc(sh[role]);
             var vNow = role === 'coach' ? sh.coachVoice : sh.voices[role];
@@ -5588,6 +5754,10 @@
       if (!safe(g.id)) g.id = uid();
       text(g, ['opponent', 'thirdDown', 'penalties', 'notes', 'script', 'scriptAuto', 'badCall', 'coachQuote', 'bigPlay', 'injury']);
       ['qbChange', 'blownLead', 'clockBlame', 'flat'].forEach(function (k) { if (k in g) g[k] = !!g[k]; });
+      if ('coachTags' in g) {
+        var okTags = COACH_TAGS.map(function (t) { return t.id; });
+        g.coachTags = (Array.isArray(g.coachTags) ? g.coachTags : []).filter(function (x) { return okTags.indexOf(x) >= 0; });
+      }
       oneOf(g, 'result', ['W', 'L', 'T'], 'W');
       num(g, 'season', 1900, 2999); num(g, 'week', 1, 25); num(g, 'scoreFor', 0, 999); num(g, 'scoreAgainst', 0, 999);
       /* box-score numbers keep a real 0 -- "no turnovers" is not "not typed" */
@@ -5796,6 +5966,7 @@
         }
         break;
       case 'script': scriptModal(id); break;
+      case 'write-script': writeWithGemini(id); break;
       case 'rewrite-script':
         var rg = state.games.filter(function (x) { return x.id === id; })[0];
         if (rg) { writeScript(rg); save(); scriptModal(id); toast('Rewritten from the stats.'); }
@@ -5803,6 +5974,7 @@
       case 'copy-script': copyScript(id); break;
       case 'print-script': printScript(id); break;
       case 'voice-script': voiceIt(id); break;
+      case 'write-cancel': cancelWriting(); break;
       case 'voice-cancel': cancelVoicing(); break;
       case 'scan-roster': scanModal('players'); break;
       case 'scan-recruits': scanModal('recruits'); break;
@@ -5853,6 +6025,7 @@
             insider: ($('#sh-v-insider') || {}).value || 'Sadaltager'
           },
           model: ($('#sh-model') || {}).value || 'gemini-3.1-flash-tts-preview',
+          writeModel: ($('#sh-write') || {}).value || '',
           hype: showCfg().hype,
           length: showCfg().length
         };
@@ -5986,6 +6159,7 @@
        recogniser */
     showScanReview: function (rows) { scanRows = rows; renderScanReview(); },
     buildScript: buildScript,
+    showBrief: showBrief,
     showCfg: showCfg,
     talk: talk,
     seasonContext: seasonContext,

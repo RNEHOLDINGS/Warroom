@@ -325,6 +325,34 @@ Your edits are kept however you close the box. Change the score or the stats
 and a script you have not touched rewrites itself to match; one you have
 edited stays as it is until you ask for a rewrite.
 
+## Who writes it
+
+**The built-in writer is the default.** It is free, works offline, always says
+the same thing for the same game, and every line of it is covered by tests.
+Its ceiling is that the lines were all written in advance, so after enough
+episodes they rhyme.
+
+**Settings → The show → Who writes the episode** switches that to Gemini. The
+app already works out everything the show needs — the grade for each stat line
+and the combination that caps it, the charges against the staff with their
+fixes, what swung it, the coach's quote and what it means, the series, the
+schedule, last week's calls and the running record — and hands that over as
+**facts, with no dialogue in it**. The model writes the episode around them.
+
+The rules it is given are as important as the facts: pinned speaker labels, no
+invented statistics or players or quotes, the coach's line word for word, no
+"that is not X, that is Y", no aphorism that would fit any other game, and no
+calling a man's day big when the grade says it was not.
+
+What comes back goes in the same editable box, with the **producer notes
+re-attached underneath** — so every number in the episode can be checked
+against the facts the app computed, and anything invented stands out. Then
+voice it as usual. An answer with no dialogue in it, or a refusal, is reported
+and your existing script is left alone.
+
+It costs a little per episode on top of the voices and comes back different
+every time, which is the point.
+
 ## Voice it
 
 **Voice it** in the script dialog reads the script aloud with the whole cast,
@@ -419,6 +447,13 @@ plays it as a clip, **in the coach's own voice** — he has his own voice picker
 in Settings, under the panel's. The host introduces it the way a host does
 ("here's what the head coach had to say about it afterwards") and then gets
 out of the way. Then they do what a panel does with a clip:
+
+**Or just tell it outright.** Under the quote there is a row of tags — *took
+the blame, called out a player, changes or a position battle, backed a player,
+angry, questioned toughness, credited the opponent, said nothing much*. Tick
+any that apply and the reader stops guessing at the tone. It still reads the
+quote itself for the things a box score cannot carry. Leave them all off and
+it works it out on its own.
 
 **Type it however he said it.** Coaches do not talk like press releases, so
 the reader handles the real thing: "we got our tails whipped up front", "that
@@ -780,6 +815,10 @@ These suites are all driven through real DOM clicks with hit testing:
 - `casttest.html` — chairs that match their voices, contractions, the team's
   own name, and the season memory: streaks, callbacks, player history,
   averages, and that a later week is never mentioned.
+- `writetest.html` — the brief (facts, no dialogue), the rules in the prompt,
+  the Gemini writer against a stand-in for Google, the producer notes being
+  re-attached, a refusal leaving your script alone, and the coach tags
+  overruling the guesser.
 - `swingtest.html` — the positive ledger: defensive and return touchdowns,
   the play that won it, takeaways and the kicker, the next-man-up story, and
   that a game with nothing going right gets no segment.

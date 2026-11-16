@@ -702,3 +702,13 @@ table.plain td.num, table.plain th.num { text-align: right; }
 .sched-row.bye { opacity: .7; }
 .sched-row.bye .who b { font-style: italic; }
 .sched-row .who b { white-space: normal; overflow: visible; text-overflow: clip; }
+
+/* quick tags on a form field */
+.tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 4px; }
+.tag-row .tag {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 6px 10px; margin: 0; border: 1px solid var(--grid); border-radius: 999px;
+  font-size: var(--t-small); font-weight: 500; color: var(--ink-muted); background: var(--wash);
+}
+.tag-row .tag.on { border-color: var(--team); color: var(--ink); }
+.tag-row .tag input { width: 14px; height: 14px; margin: 0; }

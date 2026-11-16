@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Gemini writer test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script>
+/* a stand-in for Google's writing model */
+window.__calls = [];
+var REAL_FETCH = window.fetch.bind(window);
+window.__mode = 'ok';
+window.fetch = function (url, init) {
+  if (String(url).indexOf('generativelanguage.googleapis.com') < 0) return REAL_FETCH(url, init);
+  var body = JSON.parse(init.body);
+  window.__calls.push({ url: String(url), headers: init.headers, body: body, signal: init.signal });
+  return new Promise(function (res, rej) {
+    if (init.signal) init.signal.addEventListener('abort', function () { var e = new Error('aborted'); e.name = 'AbortError'; rej(e); });
+    setTimeout(function () {
+      if (init.signal && init.signal.aborted) return;
+      var reply = function (status, obj) { res(new Response(JSON.stringify(obj), { status: status, headers: { 'Content-Type': 'application/json' } })); };
+      if (window.__mode === 'badkey') return reply(400, { error: { code: 400, message: 'API key not valid. Please pass a valid API key.' } });
+      if (window.__mode === 'empty') return reply(200, { candidates: [{ content: { parts: [{ text: 'Sorry, I cannot help with that.' }] }, finishReason: 'STOP' }] });
+      var script = '```\n--- COLD OPEN ---\n\nWHITCOMB: Welcome in. Oregon lost to Utah, 27 to 13.\n\nMABRY: I’m done making excuses for that offense.\n\nHARLAN: Twenty-one of thirty-eight, three picks. That’s the game.\n\nCOACH: J.Carty has to be better.\n\nRIDENOUR: They’re still chasing a tackle in this class.\n```';
+      reply(200, { candidates: [{ content: { parts: [{ text: script }] }, finishReason: 'STOP' }] });
+    }, 10);
+  });
+};
+</script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+/* The built-in writer stays the default. Switching the model on hands the
+   facts to Google and puts what comes back in the box -- with the producer
+   notes re-attached, so nothing invented can pass as a fact. */
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function click(sel) { var el = q(sel); if (!el) { ok(false, 'element ' + sel, 'missing'); return null; } el.click(); return el; }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom, V = window.WarRoomVoice;
+  var g;
+  Promise.resolve().then(function () {
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    st.school = { name: 'Oregon', mascot: 'Ducks', state: 'OR', color: '#154733' };
+    st.quarterLen = 5;
+    st.games = []; st.schedule = []; st.rivals = [];
+    st.players = [{ id: 'qb1', name: 'J.Carty', pos: 'QB', year: 'JR', ovr: 82, exit: '' }];
+    st.show = { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true };
+    st.schedule.push({ id: 's1', season: st.season, week: 7, opponent: 'Washington', home: false, rank: 9, rivalry: false, bye: false, note: '' });
+    g = { id: 'g1', season: st.season, week: 6, opponent: 'Utah', home: false, result: 'L', scoreFor: 13, scoreAgainst: 27,
+      rushFor: 85, rushAgainst: 170, passFor: 240, passAgainst: 210, toFor: 3, toAgainst: 0,
+      tdFor: 1, tdAgainst: 3, rushAttFor: 22, passAttFor: 38, qbChange: true,
+      coachQuote: 'J.Carty has to be better. Expect a position battle next week.', coachTags: ['callout', 'changes'],
+      bigPlay: '', injury: '', notes: '',
+      performances: [{ name: 'J.Carty', pos: 'QB', line: '21/38, 240 yds, 1 TD, 3 INT', verdict: 'standout' }] };
+    st.games.push(g);
+
+    /* --- the brief --- */
+    var b = W.showBrief(g);
+    ok(b.game.opponent === 'Utah' && b.game.scoreAgainst === 27 && b.team.name === 'Oregon', 'the brief carries the game', JSON.stringify(b.game.result + ' ' + b.game.scoreFor + '-' + b.game.scoreAgainst));
+    ok(b.players[0].grade === 0 && /other team more than he threw it to his own/.test(b.players[0].combinationsThatCapIt.join(' ')), 'and the grade with the combination that caps it', JSON.stringify(b.players[0].combinationsThatCapIt));
+    ok(b.players[0].verdictDisputed === true, 'and flags a verdict the numbers do not support');
+    ok(b.staffCase.length > 0 && b.staffCase[0].theFix, 'the charges against the staff come with their fixes', b.staffCase[0] && b.staffCase[0].what);
+    ok(b.coach && b.coach.quote === g.coachQuote && b.coach.meaning.length > 0, 'the coach’s quote and what it means', JSON.stringify(b.coach && b.coach.meaning));
+    ok(b.schedule && b.schedule.next === 'Washington' && b.schedule.nextRank === 9, 'who is next week');
+    ok(b.cast.some(function (c) { return c.label === 'COACH'; }), 'and the coach is listed as a voice');
+    ok(JSON.stringify(b).indexOf('Welcome in') < 0, 'the brief is facts, with no dialogue in it');
+
+    /* --- the prompt --- */
+    var p = V.writePrompt(b);
+    ok(/WHITCOMB, MABRY, HARLAN, RIDENOUR, COACH/.test(p), 'the prompt pins the speaker labels', (p.match(/using exactly these labels.*/) || [''])[0]);
+    ok(/Never invent a statistic/.test(p) && /that is not X, that is Y/.test(p), 'and forbids invented facts and the twist construction');
+    ok(/says exactly the quote given below, word for word/.test(p), 'and that the coach is a clip, not a guest');
+    ok(p.indexOf('"scoreAgainst": 27') >= 0 || p.indexOf('"scoreAgainst":27') >= 0, 'and the facts are in there');
+
+    /* --- off by default --- */
+    ok(W.showCfg().writeModel === '', 'the built-in writer is the default');
+    W.setView('show');
+    click('[data-action="script"][data-id="g1"]');
+    ok(!q('[data-action="write-script"]'), 'so there is no Gemini button until you switch it on');
+    click('[data-action="close"]');
+
+    /* --- switch it on --- */
+    W.setView('settings');
+    ok(!!q('#sh-write'), 'Settings has the choice of who writes it');
+    q('#sh-key').value = 'TEST-KEY-123';
+    q('#sh-write').value = 'gemini-2.5-flash';
+    click('[data-action="save-show"]');
+    ok(W.showCfg().writeModel === 'gemini-2.5-flash', 'which saves', W.showCfg().writeModel);
+
+    W.setView('show');
+    click('[data-action="script"][data-id="g1"]');
+    ok(!!q('[data-action="write-script"]'), 'and the button appears');
+    var before = q('#scriptBox').value;
+    ok(/HARD COUNT/.test(before), 'the built-in script is in the box to start with');
+    click('[data-action="write-script"]');
+    return sleep(400).then(function () {
+      var call = window.__calls[0];
+      ok(window.__calls.length === 1, 'one request to write it', window.__calls.length);
+      ok(/gemini-2\.5-flash:generateContent$/.test(call.url), 'to the chosen text model', call.url);
+      ok(call.headers['x-goog-api-key'] === 'TEST-KEY-123', 'with the same key as the voices');
+      ok(!call.body.generationConfig.responseModalities, 'and it asks for text, not audio');
+
+      var now = q('#scriptBox').value;
+      ok(/MABRY: I’m done making excuses/.test(now), 'what came back is in the box', now.slice(0, 120));
+      ok(!/^```/.test(now.trim()), 'a code fence is stripped');
+      ok(/PRODUCER NOTES/.test(now), 'and the producer notes are re-attached');
+      ok(/21\/38, 240 yds, 1 TD, 3 INT/.test(now), 'so the real numbers are still there to check it against', (now.match(/Players:[\s\S]{0,80}/) || [''])[0]);
+      ok(W.state().games[0].script === now, 'it is saved to the game');
+
+      /* it is still a script the rest of the app understands */
+      var turns = V.parseDialogue(now);
+      ok(turns.length >= 5 && turns.every(function (t) { return ['WHITCOMB', 'MABRY', 'HARLAN', 'RIDENOUR', 'COACH'].indexOf(t.speaker) >= 0; }), 'and it voices like any other script', JSON.stringify(turns.map(function (t) { return t.speaker; })));
+      ok(!turns.some(function (t) { return /Players:|Coach said:/.test(t.text); }), 'with the notes left unspoken');
+
+      /* --- a refusal or an empty answer is reported, not saved --- */
+      window.__calls = []; window.__mode = 'empty';
+      var kept = q('#scriptBox').value;
+      click('[data-action="write-script"]');
+      return sleep(400).then(function () {
+        ok(/without any dialogue in it/.test(q('#voiceArea').textContent), 'an answer with no dialogue in it is reported', q('#voiceArea').textContent);
+        ok(q('#scriptBox').value === kept, 'and the script you had is untouched');
+
+        window.__mode = 'badkey';
+        click('[data-action="write-script"]');
+        return sleep(400);
+      });
+    }).then(function () {
+      ok(/rejected the API key/.test(q('#voiceArea').textContent), 'a bad key is reported in plain words', q('#voiceArea').textContent);
+      window.__mode = 'ok';
+      click('[data-action="close"]');
+
+      /* --- the coach tags --- */
+      click('[data-action="edit-game"][data-id="g1"]');
+      var tags = document.querySelectorAll('[data-ctag]');
+      ok(tags.length >= 6, 'the game form has the coach tags', tags.length);
+      ok(q('[data-ctag="callout"]').checked && q('[data-ctag="changes"]').checked, 'and remembers which were ticked');
+      q('[data-ctag="callout"]').checked = false;
+      q('[data-ctag="process"]').checked = true;
+      click('[data-action="save-game"]');
+      var tagged = W.state().games[0].coachTags;
+      ok(tagged.indexOf('process') >= 0 && tagged.indexOf('callout') < 0, 'ticking changes what is stored', JSON.stringify(tagged));
+      var read = W.readCoach(W.state().games[0], W.boxOf(g), 0.6, [], 'Oregon', 'Utah', g.performances);
+      ok(read.hits.length === 2 && read.hits.every(function (h) { return ['process', 'changes'].indexOf(h.kind) >= 0; }), 'and the reader obeys the ticks instead of guessing', JSON.stringify(read.hits.map(function (h) { return h.kind; })));
+      click('[data-action="close"]');
+      finish();
+    });
+  }).catch(function (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); });
+})();
+</script>
+</body></html>
