@@ -132,6 +132,25 @@ on third down is a defense that could not get off the field. Outgaining a team
 and losing means points were left in the red zone. The three or four stats
 that mattered most get argued, and the rest stay in the table.
 
+**Why it used to sound like a machine wrote it, and what changed.** Every
+line arrived finished: the same length, perfectly grammatical, each one
+landing a point, and far too many of them built on the same twist — *that's
+not a stat, that's character*, *that's not scheme, that's want-to*. Real
+people do not talk in epigrams. So:
+
+- Most of the twist constructions are gone, rewritten as something somebody
+  would actually say out loud.
+- A share of the longer turns pick up the things people do: starting with
+  "Look," or "I mean," trailing off into "You know?", repeating a number they
+  cannot believe ("45 passing yards. 45."). Roughly one turn in three, never
+  the same filler twice in a row, and never on a short line — a three-word
+  reaction is already human.
+- Two players having the same bad afternoon get one story, not the same
+  paragraph twice. The second one gets "same story with him, and when it's
+  both of them, that's not the players."
+- Short, flat lines are in the banks now too: "Mm-hm." "Sure." "Of course you
+  do." Not everything has to be a point.
+
 **It does not repeat itself.** Every recurring beat — the cold open, the
 needling, the segment handoffs, the sign-offs — walks one step through its
 list of lines each week, so the same thing never lands two episodes running.

@@ -618,7 +618,7 @@
     if (has('toFor') || has('toAgainst')) {
       var toDiff = int(b.toAgainst, 0, 99) - int(b.toFor, 0, 99);
       if (toDiff < 0) {
-        add('to', 5, T.us + ' lost the turnover battle by ' + -toDiff + (won ? ' and won anyway' : '') + '. Teams that do that lose about seven times in ten. That is not a narrative, that is the base rate. Every giveaway is a possession you never get back, and usually a short field for the other side.',
+        add('to', 5, T.us + ' lost the turnover battle by ' + -toDiff + (won ? ' and won anyway' : '') + '. Teams that do that lose about seven times in ten. That is the base rate, not a story I am telling you. Every one of those is a possession gone, and usually a short field for the other side.',
           pick([
             'See, this is where you and I live in different buildings. Turnovers are not a base rate. They are a man not wrapping up, or a quarterback getting hit as he throws because somebody lost a one-on-one.',
             'Every one of those numbers has a human being attached to it. You said seven in ten. I say somebody was careless with the football. Those are the same sentence.',
@@ -668,7 +668,7 @@
     if (has('rushFor')) {
       var rf = b.rushFor;
       if (rf >= 200 * Q) {
-        add('rushFor', 3, T.us + ' ran for ' + rf + ' yards. That is the stat that controls a game. It eats the clock, it keeps the other offense on the sideline, and it pulls the safeties up so the play-action shots are open.' + vsAvg('rushFor', rf, 'averaging on the ground'),
+        add('rushFor', 3, T.us + ' ran for ' + rf + ' yards. That is how you control a football game. The clock goes away, their offense sits there watching it happen, and the safeties start creeping up so you can go over the top.' + vsAvg('rushFor', rf, 'averaging on the ground'),
           pick(['That is the offensive line, and nobody ever puts them on a graphic. ' + rf + ' yards on the ground means five men up front moved grown men where they did not want to go.',
                 'You run for ' + rf + ', you are telling the other sideline you are tougher than they are. By the fourth quarter, they believed it.']));
       } else if (rf < 90 * Q) {
@@ -683,7 +683,7 @@
       var ra = b.rushAgainst;
       if (ra >= 200 * Q) {
         add('rushAgainst', 3, 'The number I would lose sleep over is ' + ra + ' rushing yards allowed. A team that can run on you does not have to take a single risk, and it can drain the clock whenever it wants.' + vsAvg('rushAgainst', ra, 'giving up on the ground'),
-          'That is not scheme, that is want-to. Getting off blocks, fitting your gap, wrapping up. You get run on for ' + ra + ', that is a toughness question, and they are going to hear about it in the film room.');
+          'Scheme had nothing to do with it. That is want-to. Getting off blocks, fitting your gap, wrapping up. You get run on for ' + ra + ', that is a toughness question, and they are going to hear about it in the film room.');
       } else if (ra < 90 * Q) {
         add('rushAgainst', 2, T.us + ' held ' + T.them + ' to ' + say(ra) + ' yards on the ground. Take the run away and an offense becomes predictable. The defense knew the pass was coming.',
           'The front seven owned the line of scrimmage. That is where football games are won. Everything else is decoration.');
@@ -772,7 +772,7 @@
     if (has('penFor')) {
       var pn = b.penFor, py = b.penForYds;
       if (pn >= 9 * Q || (py !== '' && py >= 80 * Q)) {
-        add('penFor', 2, plural(pn, 'penalty', 'penalties') + (py !== '' ? ' for ' + py + ' yards' : '') + '. ' + (py !== '' && py >= 80 ? 'That is most of a football field handed away. ' : '') + 'Flags kill your own drives and keep theirs alive, and they are the most avoidable mistake in the sport.',
+        add('penFor', 2, plural(pn, 'penalty', 'penalties') + (py !== '' ? ' for ' + py + ' yards' : '') + '. ' + (py !== '' && py >= 80 ? 'That is most of a football field handed away. ' : '') + 'Flags kill your own drives and keep theirs going. And they are the easiest thing in the sport to fix.',
           'That is discipline, and discipline is coaching. I will put that one on the staff.');
       } else if (pn <= 3) {
         add('penFor', 1, 'Only ' + plural(pn, 'penalty', 'penalties') + '. Disciplined. That does not win games on its own, but it stops you losing them.',
@@ -1428,20 +1428,20 @@
           ? 'They played ' + (qbs.length === 2 ? 'two quarterbacks' : qbs.length + ' quarterbacks') + '. ' +
             (qbYds ? 'Between them: ' + qbYds + ' passing yards' + (qbInts ? ' and ' + (qbInts === 1 ? 'an interception' : qbInts + ' interceptions') : '') + '. ' : '') +
             (fresh ? 'And the one who finished the game is a freshman. ' : '') +
-            'That is not a quarterback problem, that is a decision problem.'
+            'The quarterbacks are not really the problem here. The decision is.'
           : 'They changed quarterbacks. When a staff does that mid-game, it is telling you it does not know who its quarterback is.'),
         (fresh
           ? 'You cannot throw a freshman into that on the road in the third quarter and act surprised. That is the staff putting a kid in a burning building.'
           : 'A coach has to try something when it is going like that. I will not kill him for pulling the trigger.'),
         qbs.length >= 2
-          ? 'Pick one. Tell the building who it is on Monday and let him take every rep. The carousel is costing more than either guy is.'
+          ? 'Pick one. Name him on Monday, in front of everybody, and let him take every rep. The carousel is costing them more than either guy is.'
           : 'Name a starter for the rest of the season and stand behind him.');
     }
 
     /* throwing it into the ground forty times */
     if (has('passAttFor') && b.passAttFor >= 30 && has('passFor') && b.passFor < b.passAttFor * 4.5) {
       add('playcall', 8,
-        'They dropped back ' + b.passAttFor + ' times for ' + b.passFor + ' yards. That is ' + (Math.round(b.passFor / b.passAttFor * 10) / 10) + ' yards a throw. At some point the play sheet has to admit what is not working.',
+        'They dropped back ' + b.passAttFor + ' times for ' + b.passFor + ' yards. That is ' + (Math.round(b.passFor / b.passAttFor * 10) / 10) + ' yards a throw. Somebody upstairs has to look at that sheet and start crossing things off.',
         'And what do you want them to do, run it into a stacked box?',
         'Shorten it. Quick game, play action, get the ball out on rhythm, and stop asking a struggling quarterback to win it down the field.');
     }
@@ -1464,7 +1464,7 @@
 
     if (has('rzForAtt') && b.rzForAtt >= 3 && int(b.rzFor, 0, 99) / b.rzForAtt <= 0.5) {
       add('rz-trips', 8,
-        'They got inside the twenty ' + b.rzForAtt + ' times and came away with ' + (int(b.rzFor, 0, 99) === 1 ? 'one touchdown' : int(b.rzFor, 0, 99) + ' touchdowns') + '. The field shrinks down there, the windows close, and this offense has no answer for it.',
+        'They got inside the twenty ' + b.rzForAtt + ' times and came away with ' + (int(b.rzFor, 0, 99) === 1 ? 'one touchdown' : int(b.rzFor, 0, 99) + ' touchdowns') + '. Everything gets tighter inside the twenty and they have no answer down there. They have not all year, and this offense has no answer for it.',
         'That’s execution. You can draw up whatever you like, somebody still has to win a one-on-one at the goal line.',
         'Spend Tuesday on the red zone and nothing else. Fade, pick route, quarterback run — give them three things they can win with inside the ten.');
     }
@@ -1472,7 +1472,7 @@
     /* losing to a team that never reached the end zone */
     if (!won && has('tdAgainst') && int(b.tdAgainst, 0, 99) === 0 && has('fgAgainst') && b.fgAgainst >= 3) {
       add('nokick', 10,
-        them + ' did not score a touchdown. Not one. ' + b.fgAgainst + ' field goals, and that was enough to beat ' + us + '. You can live with a defense that bends. You cannot live with an offense that lets ' + b.fgAgainst + ' field goals be enough.',
+        them + ' did not score a touchdown. Not one. ' + b.fgAgainst + ' field goals, and that was enough to beat ' + us + '. A defense can bend, fine. But that should never be enough to beat anybody, and it was, because the offense let ' + b.fgAgainst + ' field goals be enough.',
         'The defense did its job! ' + b.fgAgainst + ' kicks and no touchdowns, and they still lost? That is not on the defense, and everybody watching knows it.',
         'The defense held them out of the end zone all afternoon. Whoever is calling the offense has to give that group something to defend.');
     } else if (!won && has('tdAgainst') && int(b.tdAgainst, 0, 99) === 0) {
@@ -1563,7 +1563,7 @@
       var missed = b.fourthAgainstAtt - int(b.fourthAgainst, 0, 20);
       out.push({
         weight: 3,
-        analyst: them + ' went for it on fourth down and came up short ' + times(missed) + '. A stop on fourth down is a turnover with better field position.',
+        analyst: them + ' went for it on fourth down and came up short ' + times(missed) + '. A stop on fourth down is about as good as a takeaway, field position and all.',
         player: 'THAT’S the defense I’ve been asking for. Fourth down, everybody in the stadium knows it, and they got off the field.'
       });
     }
@@ -1769,7 +1769,8 @@
     /* Film room: nobody shouts. Capitals were written as emphasis, so they
        come down -- except in names, which are data (USC stays USC). */
     var keepCaps = {};
-    [US, them, school, mascot, cast.title].concat(perf.map(function (p) { return p.name; })).join(' ')
+    [US, them, school, mascot, cast.title, cast.host, cast.player, cast.analyst, cast.insider]
+      .concat(perf.map(function (p) { return p.name; })).join(' ')
       .split(/[^A-Za-z]+/).forEach(function (x) { if (x) keepCaps[x.toUpperCase()] = 1; });
     var tone = function (text) {
       if (H !== 1) return text;
@@ -1777,7 +1778,63 @@
         .replace(/!+/g, '.')
         .replace(/(^|[.?]\s+|“)([a-z])/g, function (m, a, c) { return a + c.toUpperCase(); });
     };
-    var say = function (label, text) { L.push(label + ': ' + tone(talk(text))); L.push(''); };
+    /* Nobody talks in finished sentences. Scripts written as a list of
+       tidy lines read like a press release being performed, which is exactly
+       what made these sound synthetic: every turn arrived polished, the same
+       length, landing a point.
+
+       So a share of the longer turns pick up the things people actually do
+       -- starting with "Look", trailing into "you know?", repeating the
+       number they just said. It is deliberately not every line: filler on
+       everything is its own kind of robot. Short lines are left alone,
+       because a three-word reaction is already human. */
+    var FILLER = {
+      player: ['Look, ', 'I mean, ', 'See, ', 'Okay, so ', 'Hey, ', 'Come on. ', 'Nah, see, ', 'Listen, '],
+      analyst: ['I mean, ', 'Right, so ', 'Honestly, ', 'Look, ', 'Okay, ', 'So, '],
+      host: ['Okay, ', 'Right, ', 'Alright, ', 'So, '],
+      insider: ['Yeah, so ', 'Look, ', 'From what I hear, ', 'Honestly, ']
+    };
+    var TAG = {
+      player: [' You know?', ' Right?', ' I’m telling you.', ' That’s all I’ve got.', ' Simple as that.'],
+      analyst: [' I think.', ' That’s my read.', ' Could be wrong. I’m not.', ' For whatever that’s worth.'],
+      host: [' Anyway.', ' Moving on.'],
+      insider: [' That’s what I’m told.', ' Make of that what you will.']
+    };
+    /* A verbal tic is only human until it is the same tic twice. Each role
+       remembers the last filler and tag it used and steps past it. */
+    var lastFill = {}, lastTag = {};
+    var fresh = function (store, role, list, idx) {
+      var i = idx % list.length;
+      if (store[role] === i) i = (i + 1) % list.length;
+      store[role] = i;
+      return list[i];
+    };
+    var ROLE_OF = {};
+    ROLE_OF[HOST] = 'host'; ROLE_OF[PLAYER] = 'player'; ROLE_OF[ANALYST] = 'analyst'; ROLE_OF[INSIDER] = 'insider';
+    var human = function (label, text) {
+      var role = ROLE_OF[label];
+      if (!role) return text;
+      var words = text.split(' ').length;
+      if (words < 9) return text;                       /* already a reaction */
+      var n = hashStr(text) + int(g.week, 0, 99);
+      /* one turn in three opens the way people open */
+      if (n % 3 === 0 && !/^(Look|I mean|See|Okay|Right|Alright|So|Hey|Come on|Listen|Nah|Yeah|Honestly|And|But|Hold|Wait|No\b)/.test(text)) {
+        var fill = fresh(lastFill, role, FILLER[role], n);
+        var first = (text.split(' ')[0] || '').replace(/[^A-Za-z’']/g, '');
+        var keep = /^I$|^I[’']/.test(first) || keepCaps[first.toUpperCase()] || /^[A-Z]{2,}$/.test(first);
+        text = fill + (keep ? text : text.charAt(0).toLowerCase() + text.slice(1));
+      }
+      /* one in five finishes the way people finish */
+      if (role !== 'host' && n % 6 === 0 && /[.!]$/.test(text) && words < 45) text = text.replace(/[.!]$/, '') + '.' + fresh(lastTag, role, TAG[role], n);
+      /* and now and then somebody says the number twice, because they
+         cannot believe it either */
+      if (n % 7 === 0 && H > 1 && role !== 'host') {
+        text = text.replace(/(^|[^\d])(\d{1,3}) (yards|passing yards|rushing yards|points|tackles|carries)\.(?!\s*\2\b)/,
+          function (m, pre, num, unit) { return pre + num + ' ' + unit + '. ' + num + '.'; });
+      }
+      return text;
+    };
+    var say = function (label, text) { L.push(label + ': ' + tone(talk(human(label, text)))); L.push(''); };
     var rule = function () { w('============================================================'); };
     var streakAfter = ctx.after && ctx.after.n >= 2 ? ctx.after : null;
     var snapped = ctx.before && ctx.before.n >= 2 && ctx.before.result !== g.result ? ctx.before : null;
@@ -1878,6 +1935,12 @@
     topics.push('Helmet stickers');
     if (cast.useInsider && !quick) topics.push('The board');
     topics.push(sch.next ? 'Next up: ' + nextName : 'Calls for next week');
+    /* the printed rundown is a list; the spoken one is a sentence */
+    var spokenTopic = function (t) {
+      t = t.replace(': ', ', ');
+      var first = (t.split(' ')[0] || '').replace(/[^A-Za-z]/g, '');
+      return keepCaps[first.toUpperCase()] ? t : t.charAt(0).toLowerCase() + t.slice(1);
+    };
     w('--- RUNDOWN ---------------------------------------------');
     w('');
     topics.forEach(function (t, i) { w('   ' + (i + 1) + '. ' + t); });
@@ -1897,15 +1960,9 @@
           'You’re on ' + cast.title + '. ' + US_R + ' ' + verb + ' ' + THEM_R + ', ' + said + ', and nobody in this studio agrees about what it meant. ' + ctxLine + ' ' + playerF + '.',
           cast.title + ', and we’re already behind. ' + US_R + ' ' + verb + ' ' + THEM_R + ' ' + said + ' ' + where + '. ' + ctxLine + ' ' + tic('host') + ' ' + playerF + ', sixty seconds.',
           'Here we are. ' + cast.title + '. ' + US_R + ', ' + rec + ', after ' + said + ' ' + where + ' with ' + THEM_R + '. ' + ctxLine + ' ' + analystF + ' has notes. ' + playerF + ' has feelings. Go.'
-        ])).replace(/ {2,}/g, ' '));
+        ])).replace(/ {2,}/g, ' ') +
+      ' Here’s the rundown: ' + list2(topics.slice(0, 3).map(spokenTopic)) + '. ' + (quick ? 'We’ve got three minutes, so nobody gets a speech.' : 'Let’s go.'));
 
-    /* the printed rundown is a list; the spoken one is a sentence */
-    var spokenTopic = function (t) {
-      t = t.replace(': ', ', ');
-      var first = (t.split(' ')[0] || '').replace(/[^A-Za-z]/g, '');
-      return keepCaps[first.toUpperCase()] ? t : t.charAt(0).toLowerCase() + t.slice(1);
-    };
-    say(HOST, 'Here’s the rundown: ' + list2(topics.slice(0, 3).map(spokenTopic)) + '. ' + (quick ? 'We’ve got three minutes, so nobody gets a speech.' : 'Let’s go.'));
     var playerOpen;
     if (up && up.kind === 'win' && up.big && H === 1) playerOpen = 'That’s a signature win. Nobody gave them a chance against a ' + (rT <= 5 ? 'top-five' : 'top-ten') + ' team, and they earned every bit of it.';
     else if (up && up.kind === 'win' && up.big) playerOpen = 'STORM THE FIELD! I don’t care whose field it was, you STORM it. Nobody gave them a chance, ' + hostF + '. NOBODY. ' + (rT <= 5 ? 'That’s a top-five team!' : 'That’s a top-ten team!');
@@ -1980,7 +2037,7 @@
       say(ANALYST, beat('riv-a', [
         'Rivalry games are their own category. Close, ugly, and the better team loses more often than anybody admits.',
         'Agreed, and that’s the one thing that makes me cautious about reading anything into it.',
-        ser.close + ' of ' + ser.games + ' meetings decided by a score. That’s not noise, that’s a rivalry.'
+        ser.close + ' of ' + ser.games + ' meetings decided by a score. Call it whatever you like, it travels like a rivalry.'
       ]));
     }
 
@@ -2027,7 +2084,7 @@
     } else {
       say(PLAYER, beat('lost-push', [
         analystF + ', I watched the same game you did. They were getting pushed around out there.',
-        gripe ? 'You want a number? Here’s one: ' + gripe + '. That’s not scheme, that’s will.' : analystF + ', they got out-toughed. There’s no chart for that.',
+        gripe ? 'You want a number? Here’s one: ' + gripe + '. Forget scheme, that is a will problem.' : analystF + ', they got out-toughed. There’s no chart for that.',
         'I don’t need the sheet to tell me what that was. That was a team getting bullied.'
       ]));
       say(ANALYST, beat('lost-push-a', [
@@ -2094,7 +2151,7 @@
 
         var take, quoted = '“Not a great one.”';
         if (lvl == null) take = pick(['No argument. He earned it.', 'Fair. I’ll give him that one.']);
-        else if (lvl >= 3) take = (bigBefore >= 1 ? 'That’s not a hot streak anymore, that’s his level. ' : beat('stock-agree', ['No argument. ', 'For once, nothing to argue with. ', 'He’s right, and I’ll go further. ', 'Agreed, and the tape backs him up. '])) + cap1(G.label) + ' by any standard: ' + list2(G.plus.slice(0, 2)) + '. ' +
+        else if (lvl >= 3) take = (bigBefore >= 1 ? 'This is just what he is now. It stopped being a streak a while back. ' : beat('stock-agree', ['No argument. ', 'For once, nothing to argue with. ', 'He’s right, and I’ll go further. ', 'Agreed, and the tape backs him up. '])) + cap1(G.label) + ' by any standard: ' + list2(G.plus.slice(0, 2)) + '. ' +
           (T.alone && T.aloneWhy ? 'And ' + T.aloneWhy + '.' : T.credit ? 'And credit where it’s due, ' + T.credit : '');
         else if (lvl === 2) quoted = rot(['“Not a great one.”', '“Solid.”', '“Not a historic one.”']), take = rot([
             'Good game. Not a great one, and that’s fine. What made it work was ' + (G.plus[0] || 'not making mistakes') + '.',
@@ -2143,6 +2200,7 @@
     }
     if (!quick) {
     head('THE HOT SEAT');
+    var lastHot = null;
     if (rough.length) {
       rough.slice(0, perGame).forEach(function (p, i) {
         var G = gradeLine(p.raw, S);
@@ -2176,32 +2234,52 @@
         }
 
         var dire = G && G.overall === 0 && !won;
+        var grpOf = groupOf(normalisePos(p.raw.pos || '') || String(p.raw.pos || '').toUpperCase());
+        /* Two men at the same position having the same afternoon is one
+           story, not two. Saying it twice, in the same words, is what makes
+           a script sound like a machine wrote it. */
+        if (dire && lastHot && lastHot.dire && lastHot.grp === grpOf) {
+          say(ANALYST, beat('dire-two' + i, [
+            'And the other one was no better. ' + (G.facts.length ? cap1(list2(G.facts)) + '.' : '') + ' Same afternoon, different number on the back.',
+            'Same story with ' + p.name + '. ' + (G.facts.length ? cap1(list2(G.facts)) + '.' : '') + ' I am not sure either of them helped the other.',
+            p.name + ' comes in and it is the same film. ' + (G.facts.length ? cap1(list2(G.facts)) + '.' : '')
+          ]));
+          say(PLAYER, beat('dire-two-p' + i, [
+            'Two of them. Two! At some point you look at the room, not the kid.',
+            'When it is both of them, that is not the players.',
+            'Same problem, different arm. That tells you something.'
+          ]));
+          lastHot = { dire: dire, grp: grpOf };
+          return;
+        }
         if (dire) {
-          say(ANALYST, beat('dire', [
+          say(ANALYST, beat('dire' + i + p.key, [
             'I’m not going to dress this one up. ' + (G.facts.length ? cap1(list2(G.facts)) + '. ' : '') + (G.minus.length ? cap1(list2(G.minus)) + '. ' : '') + 'At this level that is not good enough, and everybody in that building knows it.',
             'That is one of the worst afternoons I’ve charted this year. ' + (G.facts.length ? cap1(list2(G.facts)) + '. ' : '') + 'There is no angle that makes it acceptable.',
             (G.facts.length ? cap1(list2(G.facts)) + '. ' : '') + 'You cannot win a football game with that, and they didn’t.'
           ]));
-          if (T.excuse) say(PLAYER, beat('dire-why', [
+          if (T.excuse) say(PLAYER, beat('dire-why' + i, [
             'I’m not defending the numbers. But look at why. ', 'The line is indefensible. The reason isn’t. ', 'Not arguing with the numbers. Arguing with the cause. '
           ]) + T.excuse);
           else if (T.onHim) say(PLAYER, hy(
             'I’ll defend a lot of guys. That one’s on him, and he knows it.',
             'I defend these kids every week. Not this one. That one’s on him, and he knows it.',
             'I defend these kids EVERY week. Not this one! That one’s on HIM, and he knows it.'));
-          else say(PLAYER, beat('dire-p', [
+          else say(PLAYER, beat('dire-p' + i + p.key, [
             'And I’m not defending it. I defend effort. That wasn’t an effort problem, that was a performance problem.',
             'No. Not today. That was not close to good enough and he knows it before we say it.',
             'I’ll back a kid through a bad day. That was past a bad day.'
           ]));
-          say(HOST, beat('dire-h', ['So what happens to him now?', 'Does he keep the job?', 'Monday morning. What does the staff do with him?']));
-          say(ANALYST, beat('dire-fix', [
+          say(HOST, beat('dire-h' + i, ['So what happens to him now?', 'Does he keep the job?', 'Monday morning. What does the staff do with him?', 'Where does he go from here?']));
+          say(ANALYST, beat('dire-fix' + i + p.key, [
             'If there’s somebody behind him, this is the week you find out. If there isn’t, you build the game plan around protecting him.',
             'You don’t bench a man to punish him. You bench him if the other guy gives you a better chance. Otherwise you simplify everything around him.',
             'Shrink his job. Fewer reads, quicker throws, and let the run game carry it until he’s breathing again.'
           ]));
+          lastHot = { dire: dire, grp: grpOf };
           return;
         }
+        lastHot = { dire: dire, grp: grpOf };
         say(ANALYST, again
           ? 'Once is a bad day. Twice is a trend, and I’ve got the tape on both of them.'
           : G && G.minus.length
@@ -2466,15 +2544,16 @@
         'So what’s the fix? Not the complaint. The fix.',
         'Give me the plan. If you’re in that meeting tomorrow morning, what do you say?'
       ]));
-      say(ANALYST, 'Top of the list: ' + charges[0].fix + (charges[1] ? ' After that, ' + charges[1].fix.charAt(0).toLowerCase() + charges[1].fix.slice(1) : ''));
+      var lower1 = function (x) { return x.charAt(0).toLowerCase() + x.slice(1); };
+      say(ANALYST, 'Top of the list: ' + lower1(charges[0].fix) + (charges[1] ? ' After that, ' + lower1(charges[1].fix) : ''));
       say(PLAYER, beat('staff-fix-p', [
         'And it starts in the meeting room, not on the field. Tell them the truth, tell them the plan, and go to work.',
         'Simplify it. Fewer calls, called faster, so those kids can play instead of think.',
         'Own it in front of the team first. They respect that more than anything you put on a whiteboard.'
       ]) + (charges[0].key === 'qb' ? ' And name the quarterback. Today.' : ''));
       if (!quick) say(ANALYST, beat('staff-close', [
-        'None of that is dramatic. All of it is doable by Saturday.',
-        'That’s a week of work, not a crisis.',
+        'None of it is dramatic. It is just work, and they have got a week.',
+        'That’s a week of work. Nobody needs to panic.',
         'Do those two things and this looks very different in a fortnight.'
       ]));
       w('');

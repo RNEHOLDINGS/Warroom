@@ -80,7 +80,7 @@
     ok(/Between them: 71 passing yards/.test(sp), 'the quarterbacks are judged together, not excused separately', (sp.match(/.{0,70}71.{0,60}/) || [''])[0]);
     ok(/two quarterbacks/.test(sp), 'the quarterback change is named');
     ok(/freshman/.test(sp), 'and so is the fact a freshman finished it', (sp.match(/.{0,80}freshman.{0,60}/) || [''])[0]);
-    ok(/decision problem/.test(sp), 'and it is called a decision, not a talent problem');
+    ok(/[Tt]he decision is\.|decision problem/.test(sp), 'and it is called a decision, not a talent problem', (sp.match(/.{0,60}decision.{0,30}/) || [''])[0]);
 
     /* --- harder on the players, where it is deserved --- */
     var hot = seg(s, 'HOT SEAT');
@@ -99,7 +99,7 @@
     ok(/MABRY:/.test(staff) && /HARLAN:/.test(staff), 'and both sides of it get argued', staff.slice(0, 200));
 
     /* --- the way forward --- */
-    ok(/Top of the list:/.test(staff), 'the segment ends with what to actually do');
+    ok(/[Tt]op of the list:/.test(staff), 'the segment ends with what to actually do');
     ok(/Pick one|name a starter|name the quarterback/i.test(staff), 'starting with the quarterback carousel', (staff.match(/Top of the list:.{0,220}/) || [''])[0]);
     ok(/Is this a roster problem or a coaching problem\?/.test(sp), 'and the question of the day is about the staff');
     ok(/Staff case:\s+\w+/.test(s), 'the producer notes list the charges', (s.match(/Staff case:.*/) || [''])[0]);
