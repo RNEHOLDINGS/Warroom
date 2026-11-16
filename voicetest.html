@@ -83,7 +83,7 @@
   window.fetch = function (url, init) {
     if (String(url).indexOf('generativelanguage.googleapis.com') < 0) return REAL_FETCH(url, init);
     var body = JSON.parse(init.body);
-    calls.push({ url: String(url), headers: init.headers, body: body, signal: init.signal });
+    calls.push({ url: String(url), headers: init.headers, body: body, signal: init.signal, at: Date.now() });
     var n = calls.length;
     return new Promise(function (res, rej) {
       if (init.signal) init.signal.addEventListener('abort', function () { var e = new Error('aborted'); e.name = 'AbortError'; rej(e); });
@@ -102,6 +102,8 @@
         if (mode === 'nosys' && hasSys) return reply(400, { error: { code: 400, message: 'Developer instruction is not enabled in this model.', status: 'INVALID_ARGUMENT' } });
         if (mode === 'oldmodel' && hasMeta) return reply(400, { error: { code: 400, message: 'Invalid JSON payload received. Unknown name "speechMetadata" at \'contents[0].parts[0]\'.', status: 'INVALID_ARGUMENT' } });
         if (mode === 'ratelimit' && n === 1) return reply(429, { error: { code: 429, message: 'Resource exhausted', details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '0s' }] } });
+        /* A free key refusing the first several, the way one actually does. */
+        if (mode === 'slowdown' && n <= 3) return reply(429, { error: { code: 429, message: 'Resource exhausted', details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '0s' }] } });
         reply(200, { candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: pcmB64(2400) } }] }, finishReason: 'STOP' }] });
       }, delay);
     });
@@ -257,13 +259,46 @@
     click('[data-action="script"][data-id="vg1"]');
     ok(!q('#voiceArea audio'), 'after an edit the old audio is not passed off as current');
 
-    /* ---------- a rate limit is waited out ---------- */
-    calls = []; mode = 'ratelimit';
+    /* ---------- a rate limit is waited out ----------
+       On a short script, because once Google has asked us to slow down
+       every later request waits too, and what is being checked here is
+       that the refusal is waited out rather than reported. */
+    var SHORT = 'WHITCOMB: Welcome in.\n\nMABRY: I have seen enough.\n\nHARLAN: The numbers say otherwise.';
+    q('#scriptBox').value = SHORT;
+    click('[data-action="close"]');
+    click('[data-action="script"][data-id="vg1"]');
+    calls = []; mode = 'ratelimit'; V.pacing(0);
     click('[data-action="voice-script"]');
-    return waitFor(function () { return q('#voiceArea audio') || q('#voiceArea .banner'); }, 12000);
+    return waitFor(function () { return q('#voiceArea audio') || q('#voiceArea .banner'); }, 30000);
   }).then(function () {
     ok(!!q('#voiceArea audio'), 'a "slow down" from Google is retried, not reported as a failure', q('#voiceArea') && q('#voiceArea').textContent);
     ok(calls[0].body && calls.length === V.chunkTurns(V.parseDialogue(W.state().games[0].script)).length + 1, 'with exactly one extra request', calls.length);
+
+    /* ---------- being told to slow down repeatedly -------------------
+       A free key gets a handful of requests a minute and a show is twenty
+       of them, so this is the normal case rather than an error. It has to
+       finish, and it has to stop asking as fast as it was asking before. */
+    calls = []; mode = 'slowdown'; V.pacing(0);
+    click('[data-action="close"]');
+    click('[data-action="script"][data-id="vg1"]');
+    click('[data-action="voice-script"]');
+    return waitFor(function () { return /slow down/.test(q('#voiceArea').textContent); }, 10000);
+  }).then(function () {
+    ok(/slow down/.test(q('#voiceArea').textContent), 'it says it is waiting rather than looking stuck', q('#voiceArea').textContent);
+    ok(/few requests a minute/.test(q('#voiceArea').textContent), 'and says why, so nobody cancels a show that is working', q('#voiceArea').textContent);
+    return waitFor(function () { return q('#voiceArea audio') || q('#voiceArea .banner'); }, 60000);
+  }).then(function () {
+    ok(!!q('#voiceArea audio'), 'three refusals in a row still ends in a finished show', q('#voiceArea') && q('#voiceArea').textContent);
+    var gaps = [];
+    for (var i = 1; i < calls.length; i++) gaps.push(calls[i].at - calls[i - 1].at);
+    var late = gaps.slice(-3);
+    ok(late.length && late.every(function (g) { return g >= 1500; }), 'after being refused it keeps the wider gap for the rest of the show instead of charging at the limit again', JSON.stringify(gaps));
+    ok(V.pacing() > 1500, 'and the lesson is kept for the next show, not relearned part by part', V.pacing());
+    mode = 'ok';
+    V.pacing(0);
+    q('#scriptBox').value = game.script;
+    click('[data-action="close"]');
+    click('[data-action="script"][data-id="vg1"]');
 
     /* ---------- a model that takes the turns but not the direction ----
        "Developer instruction is not enabled in this model" is Google's own

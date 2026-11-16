@@ -103,7 +103,11 @@
      single request straddles two topics, and at roughly a minute and a half
      of speech, beyond which Google says the voice starts to drift. */
   function chunkTurns(turns, maxChars) {
-    maxChars = maxChars || 2200;
+    /* Every request boundary is both a place the voices reset and one more
+       chance to be told to slow down, so a chunk holds as much as the model
+       will take rather than as little as reads tidily. Two speakers is the
+       model's own limit, not a choice. */
+    maxChars = maxChars || 4000;
     var chunks = [], cur = null;
     turns.forEach(function (t) {
       var inRun = cur && cur.speakers.indexOf(t.speaker) >= 0;
@@ -317,6 +321,35 @@
      model takes should cost one refusal, not one per part, so what worked
      is remembered against the model for the rest of the session. */
   var formFor = {};
+
+  /* ---------- keeping under the rate limit ----------
+     An episode is twenty-odd requests and a free key is allowed a handful
+     a minute, so firing them back to back earns a "slow down" on nearly
+     every one. Being told to slow down is not a failure, it is a speed
+     limit. Nothing is slowed down until Google actually asks -- a key with
+     a generous limit should not be held back on the chance it has a mean
+     one -- but the first refusal widens the gap for every request after
+     it, so one refusal teaches the whole episode instead of each part
+     learning it again. A show that needs no waiting earns half of it back. */
+  var minGap = 0, lastSend = 0;
+  function pace(signal) {
+    var wait = Math.max(0, lastSend + minGap - Date.now());
+    lastSend = Date.now() + wait;
+    return wait ? sleep(wait, signal) : Promise.resolve();
+  }
+  /* A key that was throttled last week is not throttled for ever, so a
+     show that needed no waiting at all earns back half the gap. Also how
+     the tests put the pacing back where they found it. */
+  function pacing(set) {
+    if (set != null) { minGap = Math.max(0, set); lastSend = 0; }
+    return minGap;
+  }
+  function slowDown(hintedMs) {
+    /* Google's own retryDelay when it gives one, otherwise half again as
+       long as the gap that was just refused. */
+    minGap = Math.min(30000, Math.max(minGap * 1.5, hintedMs || 0, 2500));
+    return minGap;
+  }
   /* The energy slider, in the few words that fit a per-turn style. */
   var ENERGY_STYLE = ['', 'relaxed and measured, talking it through', 'quick and needling, right on the end of the last line', 'fired up, loud, big reactions'];
   function buildRequest(chunk, voices, styles, fallbackVoice, show, hype, form) {
@@ -460,19 +493,33 @@
     var attempt = 0;
     var go = function () {
       attempt++;
-      return fetch(ENDPOINT + opts.model + ':generateContent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': opts.key },
-        body: body,
-        signal: opts.signal
+      return pace(opts.signal).then(function () {
+        return fetch(ENDPOINT + opts.model + ':generateContent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': opts.key },
+          body: body,
+          signal: opts.signal
+        });
       }).then(function (r) {
         return r.text().then(function (raw) {
           /* Rate limits and Google having a moment are worth waiting out;
              everything else is a real answer and should be shown. */
           if (r.status === 429 || r.status === 500 || r.status === 503) {
-            if (attempt >= 5) throw new Error(r.status === 429 ? 'Google kept saying slow down. Wait a minute and try again.' : 'Google’s voice service is having trouble. Try again shortly.');
+            /* A rate limit gets a lot more patience than a fault does.
+               Waiting four minutes beats losing twenty parts of a finished
+               episode, and nobody has to start again from the top. */
+            var cap = r.status === 429 ? 12 : 5;
+            if (attempt >= cap) throw new Error(r.status === 429 ? 'Google is still saying slow down after several minutes of waiting. Your key may be on a very low limit — try again later, or shorten the script.' : 'Google’s voice service is having trouble. Try again shortly.');
             var hinted = /"retryDelay":\s*"(\d+)(?:\.\d+)?s"/.exec(raw);
-            var wait = hinted ? (parseInt(hinted[1], 10) + 1) * 1000 : [4000, 10000, 20000, 40000][attempt - 1];
+            var hintedMs = hinted ? (parseInt(hinted[1], 10) + 1) * 1000 : 0;
+            var wait;
+            if (r.status === 429) {
+              /* Widen the gap for every request from here on, not just this
+                 one, then wait out the refusal itself. */
+              wait = Math.max(hintedMs, slowDown(hintedMs));
+            } else {
+              wait = hintedMs || [4000, 10000, 20000, 40000][Math.min(attempt, 4) - 1];
+            }
             if (onWait) onWait(Math.round(wait / 1000), r.status);
             return sleep(wait, opts.signal).then(go);
           }
@@ -589,7 +636,9 @@
         return step(i + 1);
       });
     };
+    var gapBefore = minGap;
     return step(0).then(function () {
+      if (minGap === gapBefore && minGap > 0) minGap = Math.floor(minGap / 2);
       if (opts.onProgress) opts.onProgress({ done: chunks.length, total: chunks.length });
       var wav = toWav(pieces);
       wav.requests = chunks.length;
@@ -602,6 +651,7 @@
     MODELS: MODELS,
     WRITE_MODELS: WRITE_MODELS,
     listModels: listModels,
+    pacing: pacing,
     tryModel: tryModel,
     writePrompt: writePrompt,
     writeShow: writeShow,

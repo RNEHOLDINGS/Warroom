@@ -255,7 +255,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v31';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v32';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -4903,6 +4903,12 @@
       area.innerHTML = '<div class="voice-progress">' +
         '<b>' + (p.waiting ? 'Google asked us to slow down — waiting ' + p.waiting + 's' : p.done >= p.total ? 'Stitching it together' : 'Voicing part ' + (p.done + 1) + ' of ' + p.total) + '</b>' +
         '<div class="meter"><i style="width:' + pct + '%"></i></div>' +
+        /* A free key is allowed a few requests a minute and a show is
+           twenty-odd, so the wait is the normal case and worth saying out
+           loud. People cancel a thing that looks stuck. */
+        (p.waiting && p.status === 429
+          ? '<div class="help">A free key only gets a few requests a minute. The rest of the show will go at that pace — leave it running.</div>'
+          : p.total > 8 && p.done < p.total ? '<div class="help">' + p.total + ' parts to voice. Leave it running; it waits whenever Google asks it to.</div>' : '') +
         '<button class="btn small" data-action="voice-cancel">Stop</button>' +
       '</div>';
     };
