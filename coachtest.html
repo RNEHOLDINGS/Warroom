@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Coaching test</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="team-stripe"></div>
+<header class="topbar">
+  <button class="brand" data-view="home"><span class="brand-mark"></span><span class="brand-text"><span class="brand-school" id="brandSchool"></span><span class="brand-season" id="brandSeason"></span></span></button>
+  <nav class="nav" id="nav">
+    <button class="nav-btn" data-view="home">Needs</button><button class="nav-btn" data-view="roster">Roster</button>
+    <button class="nav-btn" data-view="board">Board</button><button class="nav-btn" data-view="portal">Portal</button>
+    <button class="nav-btn" data-view="class">Class</button><button class="nav-btn" data-view="show">Show</button>
+  </nav>
+  <button class="icon-toggle" data-view="settings" id="settingsBtn"></button>
+  <button class="icon-toggle" id="themeToggle"></button>
+</header>
+<main id="view" class="view"></main>
+<div id="modal" class="modal-backdrop" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<pre id="printArea" class="print-only"></pre>
+<pre id="out">RUNNING</pre>
+<script>localStorage.clear();</script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
+<script>
+/* The real game this was built for: two quarterbacks for 71 yards and four
+   interceptions, a freshman thrown in at half time, and a loss to a team
+   that kicked five field goals and never reached the end zone. The panel has
+   to go after all of it -- the players, the decisions, and what to do next. */
+(function () {
+  var out = [], fails = 0;
+  function render() { document.getElementById('out').textContent = out.join('\n'); }
+  function ok(c, n, d) { out.push((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  -- ' + (d || ''))); if (!c) fails++; render(); }
+  function q(s) { return document.querySelector(s); }
+  function click(sel) { var el = q(sel); if (!el) { ok(false, 'element ' + sel, 'missing'); return null; } el.click(); return el; }
+  function finish() {
+    out.push(fails ? 'RESULT FAIL ' + fails : 'RESULT PASS'); render();
+    try { localStorage.setItem('warroom.testresult', out.join(String.fromCharCode(10))); } catch (e) {}
+    window.__done = true;
+    if (location.search.indexOf('close') >= 0) setTimeout(function () { window.close(); }, 300);
+  }
+  var W = window.WarRoom, V = window.WarRoomVoice;
+  var said = function (s) { return V.parseDialogue(s).map(function (t) { return t.text; }).join('\n'); };
+  var seg = function (s, name) { return (s.split(name)[1] || '').split(/--- (?:SEGMENT|THE BIG|RUNDOWN)/)[0]; };
+  try {
+    click('[data-action="load-sample"]');
+    var st = W.state();
+    st.school = { name: 'Oregon', mascot: 'Ducks', state: 'OR', color: '#154733' };
+    st.quarterLen = 5;
+    st.games = []; st.schedule = []; st.rivals = [];
+    st.players = [
+      { id: 'qb1', name: 'J.Carty', pos: 'QB', year: 'JR', ovr: 80, dev: 'Normal', exit: '' },
+      { id: 'qb2', name: 'B.Hale', pos: 'QB', year: 'FR', ovr: 68, dev: 'Impact', exit: '' }
+    ];
+    st.show = { title: 'HARD COUNT', host: 'Dale Whitcomb', player: 'Terrance Mabry', analyst: 'Kelsey Harlan', insider: 'Nate Ridenour', useInsider: true };
+
+    var g = { id: 'ug', season: st.season, week: 6, opponent: 'Utah', home: false, result: 'L', scoreFor: 10, scoreAgainst: 15,
+      rushFor: 95, rushAgainst: 150, passFor: 71, passAgainst: 180,
+      toFor: 4, toAgainst: 0, thirdFor: 2, thirdForAtt: 14,
+      tdFor: 1, tdAgainst: 0, fgFor: 1, fgAgainst: 5,
+      rzFor: 1, rzForAtt: 4, rushAttFor: 24, passAttFor: 33,
+      qbChange: true, badCall: 'threw it on 3rd and 1 from the 8', blownLead: false, clockBlame: false, flat: false,
+      notes: '', performances: [
+        { name: 'J.Carty', pos: 'QB', line: '8/19, 45 yds, 2 INT', verdict: 'struggled' },
+        { name: 'B.Hale', pos: 'QB', line: '5/14, 26 yds, 2 INT', verdict: 'struggled' }
+      ] };
+    st.games.push(g);
+    var s = W.buildScript(g);
+    var sp = said(s);
+
+    /* --- the numbers are there to be said --- */
+    ok(/Touchdowns\s+1\s+0/.test(s) && /Field goals\s+1\s+5/.test(s), 'the table shows how the points were scored', (s.match(/Touchdowns.*\n.*/) || [''])[0]);
+    ok(/Red zone\s+1 of 4/.test(s), 'and the red-zone trips');
+    ok(/Run \/ pass\s+24 \/ 33/.test(s), 'and how it was called');
+
+    /* --- losing to five field goals --- */
+    ok(/did not score a touchdown|didn’t score a touchdown/.test(sp), 'the panel leads on the opponent never reaching the end zone', (sp.match(/.{0,60}touchdown.{0,60}/) || [''])[0]);
+    ok(/5 field goals/.test(sp), 'and names the five kicks');
+    ok(/That is not on the defense|not on the defense/.test(sp), 'and puts it where it belongs');
+
+    /* --- the quarterbacks, as a unit --- */
+    ok(/Between them: 71 passing yards/.test(sp), 'the quarterbacks are judged together, not excused separately', (sp.match(/.{0,70}71.{0,60}/) || [''])[0]);
+    ok(/two quarterbacks/.test(sp), 'the quarterback change is named');
+    ok(/freshman/.test(sp), 'and so is the fact a freshman finished it', (sp.match(/.{0,80}freshman.{0,60}/) || [''])[0]);
+    ok(/decision problem/.test(sp), 'and it is called a decision, not a talent problem');
+
+    /* --- harder on the players, where it is deserved --- */
+    var hot = seg(s, 'HOT SEAT');
+    ok(/not good enough|worst afternoon|win a football game with that/.test(hot), 'a genuinely terrible line gets said plainly', hot);
+    ok(/I’m not defending it|Not today|past a bad day|That one’s on him|Arguing with the cause/.test(hot), 'and the ex-player does not wave it away', hot);
+
+    /* --- the staff segment --- */
+    ok(/THE STAFF/.test(s), 'there is a segment about the staff');
+    var staff = seg(s, 'THE STAFF');
+    ok(/dropped back 33 times for 71 yards|2\.2 yards a throw/.test(staff), 'the play sheet is attacked with its own numbers', staff);
+    ok(/3rd and 1 from the 8|third and 1 from the 8/.test(staff), 'the call that cost them comes up', staff);
+    st.show.length = 'full';
+    var longStaff = seg(W.buildScript(g), 'THE STAFF');
+    st.show.length = 'standard';
+    ok(/inside the twenty 4 times and came away with one touchdown/.test(longStaff), 'and a full show gets to the red-zone trips as well', longStaff);
+    ok(/MABRY:/.test(staff) && /HARLAN:/.test(staff), 'and both sides of it get argued', staff.slice(0, 200));
+
+    /* --- the way forward --- */
+    ok(/Top of the list:/.test(staff), 'the segment ends with what to actually do');
+    ok(/Pick one|name a starter|name the quarterback/i.test(staff), 'starting with the quarterback carousel', (staff.match(/Top of the list:.{0,220}/) || [''])[0]);
+    ok(/Is this a roster problem or a coaching problem\?/.test(sp), 'and the question of the day is about the staff');
+    ok(/Staff case:\s+\w+/.test(s), 'the producer notes list the charges', (s.match(/Staff case:.*/) || [''])[0]);
+
+    /* --- no case, no segment --- */
+    var clean = W.buildScript({ id: 'cl', season: st.season, week: 7, opponent: 'Idaho', home: true, result: 'W', scoreFor: 38, scoreAgainst: 10,
+      rushFor: 210, passFor: 240, tdFor: 5, fgFor: 1, tdAgainst: 1, fgAgainst: 1, rushAttFor: 34, passAttFor: 22,
+      rzFor: 5, rzForAtt: 6, penFor: 3, notes: '', performances: [] });
+    ok(!/THE STAFF/.test(clean), 'a clean win gets no coaching segment', (clean.match(/--- SEGMENT \d+: [A-Z’ ]+/g) || []).join(' | '));
+
+    /* --- the form carries it --- */
+    W.setView('show');
+    click('[data-action="edit-game"][data-id="ug"]');
+    ok(q('#g-tdf').value === '1' && q('#g-fga').value === '5' && q('#g-patt').value === '33', 'the form shows the new numbers', q('#g-tdf').value + '/' + q('#g-fga').value + '/' + q('#g-patt').value);
+    ok(q('#g-qbc').checked && q('#g-call').value === 'threw it on 3rd and 1 from the 8', 'and the staff section');
+    q('#g-flat').checked = true;
+    click('[data-action="save-game"]');
+    ok(W.state().games[0].flat === true, 'ticking one saves it');
+    st.show.length = 'full';
+    var flatScript = said(W.buildScript(W.state().games[0]));
+    st.show.length = 'standard';
+    ok(/came out flat/.test(flatScript), 'and the panel uses it', (flatScript.match(/.{0,60}flat.{0,60}/) || [''])[0]);
+    click('[data-action="close"]');
+    finish();
+  } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
+})();
+</script>
+</body></html>

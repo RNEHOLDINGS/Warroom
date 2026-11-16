@@ -340,6 +340,47 @@ How it works, and why:
 thing it cannot check is Google itself: until it is run with a real key, the
 audio quality and the exact reply format are untested.
 
+## Coaching
+
+A panel that only grades players is half a show. Most of what people argue
+about on a Monday is a decision, so the game form has two more things in it:
+
+- **How the points were scored** — touchdowns, field goals and red-zone trips
+  for both sides, plus how many times you ran it and threw it. Losing to five
+  field goals is a completely different game from losing to five touchdowns,
+  and the panel could not tell the difference until it could see this.
+- **The staff** — four ticks (changed quarterbacks, had the lead and lost it,
+  clock management, came out flat) and one line for *the call that cost them*.
+
+From that it builds a case, and only runs **THE STAFF** segment when the
+numbers support one:
+
+- Two quarterbacks for 71 yards between them is not a quarterback problem, it
+  is a decision problem — and if the one who finished is a freshman, it says
+  so, because it knows his class off your roster.
+- 33 drop-backs for 71 yards is a play sheet that will not admit what is not
+  working. Abandoning a run game that was averaging five a carry is the same
+  charge from the other end.
+- Four trips inside the twenty for one touchdown, or three field goals and no
+  touchdowns, is a finishing problem, which is a coaching problem.
+- **Losing to a team that never reached the end zone** gets its own charge,
+  and it is the loudest one in the deck.
+- Flags, the clock, a blown lead, a flat start and the call you typed in all
+  land, and anything you ticked yourself outranks anything the app inferred.
+
+Each charge is argued both ways — the analyst brings it, the ex-player pushes
+back — and the segment ends with **what to actually do about it**, because
+"fire somebody" is not analysis: pick a quarterback and tell the building,
+shorten the passing game, spend Tuesday on the red zone, script the last four
+minutes.
+
+**And it is harder on bad performances.** A line that grades at nothing in a
+loss no longer gets a sympathetic shrug: "you cannot win a football game with
+that, and they didn't." The ex-player only defends him when the numbers give
+him something to defend with — the sacks, the drops, a dead run game — and
+otherwise agrees it is on him. Then the host asks what happens to him now, and
+gets a real answer.
+
 ## The schedule
 
 Put the season in on the Show screen — week, opponent, home or away, their
@@ -617,6 +658,10 @@ These suites are all driven through real DOM clicks with hit testing:
 - `casttest.html` — chairs that match their voices, contractions, the team's
   own name, and the season memory: streaks, callbacks, player history,
   averages, and that a later week is never mentioned.
+- `coachtest.html` — the real game this was built for: two quarterbacks for
+  71 yards, a freshman at half time, and a loss to five field goals. Checks
+  the charges, the argument, the way forward, and that a clean win gets no
+  coaching segment.
 - `scheduletest.html` — entering a schedule, logging a result from it, the
   look-ahead segment, road trips and byes, rivalries declared and earned, and
   that the cold open never repeats two weeks running.

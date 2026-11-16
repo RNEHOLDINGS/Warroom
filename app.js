@@ -255,7 +255,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v21';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v22';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -536,7 +536,14 @@
     ['yardsFor', -200, 1500], ['yardsAgainst', -200, 1500], ['toFor', 0, 20], ['toAgainst', 0, 20],
     ['thirdFor', 0, 40], ['thirdForAtt', 0, 40], ['thirdAgainst', 0, 40], ['thirdAgainstAtt', 0, 40],
     ['fourthFor', 0, 20], ['fourthForAtt', 0, 20], ['fourthAgainst', 0, 20], ['fourthAgainstAtt', 0, 20],
-    ['penFor', 0, 40], ['penForYds', 0, 400], ['penAgainst', 0, 40], ['penAgainstYds', 0, 400]
+    ['penFor', 0, 40], ['penForYds', 0, 400], ['penAgainst', 0, 40], ['penAgainstYds', 0, 400],
+    /* how the points actually arrived. Losing to five field goals is a
+       different game from losing to five touchdowns, and the panel could not
+       tell the difference until it could see this. */
+    ['tdFor', 0, 20], ['tdAgainst', 0, 20], ['fgFor', 0, 12], ['fgAgainst', 0, 12],
+    ['rzFor', 0, 20], ['rzForAtt', 0, 20], ['rzAgainst', 0, 20], ['rzAgainstAtt', 0, 20],
+    /* and how it was called: 44 throws for 71 yards is a play-sheet problem */
+    ['rushAttFor', 0, 90], ['passAttFor', 0, 90]
   ];
   function blankInt(v, lo, hi) { return v === '' || v == null || !/\d/.test(String(v)) ? '' : int(v, lo, hi); }
   function pairOf(s) {
@@ -572,6 +579,10 @@
     row('Third downs', pair(b.thirdFor, b.thirdForAtt, 'of'), pair(b.thirdAgainst, b.thirdAgainstAtt, 'of'));
     row('Fourth downs', pair(b.fourthFor, b.fourthForAtt, 'of'), pair(b.fourthAgainst, b.fourthAgainstAtt, 'of'));
     row('Penalties', pair(b.penFor, b.penForYds, 'for'), pair(b.penAgainst, b.penAgainstYds, 'for'));
+    row('Touchdowns', cell(b.tdFor), cell(b.tdAgainst));
+    row('Field goals', cell(b.fgFor), cell(b.fgAgainst));
+    row('Red zone', pair(b.rzFor, b.rzForAtt, 'of'), pair(b.rzAgainst, b.rzAgainstAtt, 'of'));
+    row('Run / pass', b.rushAttFor === '' && b.passAttFor === '' ? '—' : cell(b.rushAttFor) + ' / ' + cell(b.passAttFor), '—');
     if (rows.length) rows.unshift('   ' + '                  ' + 'US           THEM');
     return rows;
   }
@@ -1385,6 +1396,135 @@
     return '';
   }
 
+  /* ---------- the case against the staff ----------
+     A panel that only ever grades players is half a show. Most of what makes
+     people shout on a Monday is a decision: who played, what got called, what
+     the clock did. Every item here comes from the box score or from the
+     performances already typed in, so nobody is accusing a coach of anything
+     the numbers do not show.
+
+     Each one carries a `fix` -- what to actually do about it -- because
+     "fire somebody" is not analysis. */
+  function coachCase(b, g, S, perfAll, us, them) {
+    var out = [];
+    var won = g.result === 'W', tied = g.result === 'T', m = gameMargin(g);
+    var has = function (k) { return b[k] !== ''; };
+    var add = function (key, weight, charge, defence, fix) { out.push({ key: key, weight: weight, charge: charge, defence: defence, fix: fix }); };
+    var said = perfAll.map(function (p) { return { p: p, st: statsOf(p.line, p.pos), grp: groupOf(normalisePos(p.pos || '') || String(p.pos || '').toUpperCase()) }; });
+    var qbs = said.filter(function (x) { return x.grp === 'QB'; });
+    var yearOf = function (name) {
+      var hit = state.players.filter(function (pl) { return pl.name && pl.name.toLowerCase() === String(name || '').toLowerCase(); })[0];
+      return hit ? hit.year : '';
+    };
+
+    /* the quarterback carousel */
+    if (qbs.length >= 2 || g.qbChange) {
+      var qbYds = qbs.reduce(function (a, x) { return a + (x.st.passYds || 0); }, 0);
+      var qbInts = qbs.reduce(function (a, x) { return a + (x.st.ints || 0); }, 0);
+      var fresh = qbs.filter(function (x) { return /^FR/.test(yearOf(x.p.name)); })[0];
+      var names = qbs.map(function (x) { return x.p.name; });
+      add('qb', 9,
+        (qbs.length >= 2
+          ? 'They played ' + (qbs.length === 2 ? 'two quarterbacks' : qbs.length + ' quarterbacks') + '. ' +
+            (qbYds ? 'Between them: ' + qbYds + ' passing yards' + (qbInts ? ' and ' + (qbInts === 1 ? 'an interception' : qbInts + ' interceptions') : '') + '. ' : '') +
+            (fresh ? 'And the one who finished the game is a freshman. ' : '') +
+            'That is not a quarterback problem, that is a decision problem.'
+          : 'They changed quarterbacks. When a staff does that mid-game, it is telling you it does not know who its quarterback is.'),
+        (fresh
+          ? 'You cannot throw a freshman into that on the road in the third quarter and act surprised. That is the staff putting a kid in a burning building.'
+          : 'A coach has to try something when it is going like that. I will not kill him for pulling the trigger.'),
+        qbs.length >= 2
+          ? 'Pick one. Tell the building who it is on Monday and let him take every rep. The carousel is costing more than either guy is.'
+          : 'Name a starter for the rest of the season and stand behind him.');
+    }
+
+    /* throwing it into the ground forty times */
+    if (has('passAttFor') && b.passAttFor >= 30 && has('passFor') && b.passFor < b.passAttFor * 4.5) {
+      add('playcall', 8,
+        'They dropped back ' + b.passAttFor + ' times for ' + b.passFor + ' yards. That is ' + (Math.round(b.passFor / b.passAttFor * 10) / 10) + ' yards a throw. At some point the play sheet has to admit what is not working.',
+        'And what do you want them to do, run it into a stacked box?',
+        'Shorten it. Quick game, play action, get the ball out on rhythm, and stop asking a struggling quarterback to win it down the field.');
+    }
+    if (has('rushAttFor') && has('passAttFor') && b.rushAttFor >= 10 && b.passAttFor >= b.rushAttFor * 2 && has('rushFor') && has('passFor') &&
+        b.rushFor / Math.max(1, b.rushAttFor) >= 4.2 && b.passFor / Math.max(1, b.passAttFor) < 6) {
+      add('balance', 7,
+        'They ran it ' + b.rushAttFor + ' times at ' + (Math.round(b.rushFor / b.rushAttFor * 10) / 10) + ' a carry and threw it ' + b.passAttFor + ' times at ' + (Math.round(b.passFor / b.passAttFor * 10) / 10) + '. They abandoned the thing that was working.',
+        'THANK you. I have been shouting that since the second quarter.',
+        'Hand it off until somebody stops it. Thirty carries, and let the pass game live off that.');
+    }
+
+    /* kicking instead of scoring */
+    if (has('fgFor') && b.fgFor >= 3 && has('tdFor') && b.tdFor <= 1) {
+      add('redzone', 8,
+        b.fgFor + ' field goals and ' + (b.tdFor ? 'one touchdown' : 'no touchdowns') + '. Driving the ball is not the problem. Finishing is, and finishing is coaching.' +
+          (has('rzForAtt') && b.rzForAtt ? ' ' + int(b.rzFor, 0, 99) + ' of ' + b.rzForAtt + ' in the red zone says it plainly.' : ''),
+        'Points are points. I will take three over nothing every time.',
+        'Build a red-zone package and practise it on Tuesdays. The field gets small down there and their offense clearly has not been told.');
+    }
+
+    if (has('rzForAtt') && b.rzForAtt >= 3 && int(b.rzFor, 0, 99) / b.rzForAtt <= 0.5) {
+      add('rz-trips', 8,
+        'They got inside the twenty ' + b.rzForAtt + ' times and came away with ' + (int(b.rzFor, 0, 99) === 1 ? 'one touchdown' : int(b.rzFor, 0, 99) + ' touchdowns') + '. The field shrinks down there, the windows close, and this offense has no answer for it.',
+        'That’s execution. You can draw up whatever you like, somebody still has to win a one-on-one at the goal line.',
+        'Spend Tuesday on the red zone and nothing else. Fade, pick route, quarterback run — give them three things they can win with inside the ten.');
+    }
+
+    /* losing to a team that never reached the end zone */
+    if (!won && has('tdAgainst') && int(b.tdAgainst, 0, 99) === 0 && has('fgAgainst') && b.fgAgainst >= 3) {
+      add('nokick', 10,
+        them + ' did not score a touchdown. Not one. ' + b.fgAgainst + ' field goals, and that was enough to beat ' + us + '. You can live with a defense that bends. You cannot live with an offense that lets ' + b.fgAgainst + ' field goals be enough.',
+        'The defense did its job! ' + b.fgAgainst + ' kicks and no touchdowns, and they still lost? That is not on the defense, and everybody watching knows it.',
+        'The defense held them out of the end zone all afternoon. Whoever is calling the offense has to give that group something to defend.');
+    } else if (!won && has('tdAgainst') && int(b.tdAgainst, 0, 99) === 0) {
+      add('nokick', 9,
+        'They held ' + them + ' out of the end zone and lost anyway. Think about how rare that is, and how badly the other side of the ball has to play for it to happen.',
+        'You hold anybody without a touchdown, you are supposed to win that game. Supposed to.',
+        'Take the defense’s performance, put it on the wall, and ask the offense what it is going to do about it.');
+    }
+
+    /* flags and clock: the things nobody can blame on a player */
+    if (has('penFor') && (b.penFor >= 9 * S || (has('penForYds') && b.penForYds >= 90 * S))) {
+      add('discipline', 6,
+        b.penFor + ' penalties' + (has('penForYds') ? ' for ' + b.penForYds + ' yards' : '') + '. A team that keeps beating itself is being allowed to.',
+        'That is discipline, and discipline comes from one place. The head man.',
+        'Run the hard practice. Flags are the one thing a staff can fix in a week.');
+    }
+    if (g.clockBlame) {
+      add('clock', 8,
+        'And the clock. They managed the end of that game like nobody had a plan for it, which means nobody practised it.',
+        'I have been in those huddles. If the sideline is panicking, the huddle is panicking.',
+        'Script the last four minutes the way you script the first fifteen plays.');
+    }
+    if (g.blownLead) {
+      add('lead', 9,
+        'They had the lead and gave it away. Teams do not lose leads by accident. They lose them by getting conservative and handing the other side the tempo.',
+        'You can see it happen. The play calls get smaller, everybody starts playing not to lose, and then you lose.',
+        'Keep calling it the way you called it when you built the lead. That is the whole fix.');
+    }
+    if (g.flat) {
+      add('flat', 8,
+        'And they came out flat' + (g.home ? ' at home' : '') + '. Readiness on a Saturday is a Thursday problem.',
+        'That one is the staff. Players follow the energy in that building all week.',
+        'Change the week. Different tempo in practice, different message, something.');
+    }
+    if (g.badCall) {
+      add('call', 9,
+        'And then there is the one everybody will remember: ' + spoken(g.badCall) + '.',
+        'One call does not lose a football game. It just stays with you.',
+        'Own it on Monday in front of the team. They all saw it too.');
+    }
+
+    /* a bad loss to somebody you should beat */
+    if (!won && !tied && !rankOf(g.rankAgainst) && rankOf(g.rankFor)) {
+      add('bad-loss', 6,
+        'And this is a ranked team losing to an unranked one. That is a preparation question before it is a talent question.',
+        'Everybody loses one. It is what you do the week after that tells me who they are.',
+        'Nothing clever. Fundamentals, a short week of hard practice, and win the next one.');
+    }
+
+    return out.sort(function (a, c) { return c.weight - a.weight; });
+  }
+
   /* ---------- what the other team gave away, and whether it was taken ----------
      A recap that only talks about your own team is half a recap. Every one
      of these comes from the "them" column, and each says whether the mistake
@@ -1673,6 +1813,23 @@
     /* What there is to be hard about. The panel used to run out of material
        after the turnover margin; this is a list of real, specific complaints
        pulled from the box score, so the criticism has somewhere to go. */
+    var cCase = coachCase(bx0, g, S, perf, US, them);
+    /* A unit can fail as a unit: two quarterbacks for 71 yards between them
+       is not two bad days, it is a position that did not function. */
+    var unitTotal = function (groups, key) {
+      var n = 0, who = [];
+      perf.forEach(function (p) {
+        var grp = groupOf(normalisePos(p.pos || '') || String(p.pos || '').toUpperCase());
+        if (groups.indexOf(grp) < 0) return;
+        var st = statsOf(p.line, p.pos);
+        if (st[key] != null) { n += st[key]; who.push(p.name); }
+      });
+      return { n: n, who: who };
+    };
+    var qbRoom = unitTotal(['QB'], 'passYds');
+    var qbInts = unitTotal(['QB'], 'ints');
+    var qbFailed = qbRoom.who.length >= 1 && qbRoom.n > 0 && qbRoom.n < 150 * S;
+
     var gripes = [];
     if (bx0.thirdForAtt > 0 && int(bx0.thirdFor, 0, 99) / bx0.thirdForAtt < 0.34) gripes.push('third down was a coin flip they kept losing');
     if (bx0.rushFor !== '' && bx0.rushFor < 90 * S) gripes.push('they couldn’t run it when everybody in the stadium knew they had to');
@@ -1683,6 +1840,9 @@
     if (bx0.passAgainst !== '' && bx0.passAgainst >= 250 * S) gripes.push('the secondary got thrown at and lost');
     if (won && m <= 7 && !rT) gripes.push('they needed the whole afternoon to beat a team they should handle');
     if (!won && !tied && bx0.yardsFor !== '' && bx0.yardsAgainst !== '' && bx0.yardsFor > bx0.yardsAgainst) gripes.push('they outgained them and still lost, which means points were left on the field');
+    if (qbFailed) gripes.push('the quarterbacks — all ' + numWord(qbRoom.who.length) + ' of them — threw for ' + qbRoom.n + ' yards between them');
+    if (bx0.tdFor !== '' && int(bx0.tdFor, 0, 99) === 0) gripes.push('they never got into the end zone');
+    if (bx0.rzForAtt > 0 && int(bx0.rzFor, 0, 99) / bx0.rzForAtt <= 0.4) gripes.push('they got down there ' + bx0.rzForAtt + ' times and came away with ' + int(bx0.rzFor, 0, 99));
     var gripe = gripes.length ? beat('gripe', gripes) : '';
 
     /* ---- cold open ---- */
@@ -1713,6 +1873,7 @@
     if (stars.length && !quick) topics.push(stars[0].name + '’s day');
     if (rough.length && !quick) topics.push('The hot seat: ' + rough[0].name);
     if (boxHasAny(bx0)) topics.push('The numbers');
+    if (cCase.length && (!quick || cCase[0].weight >= 9)) topics.push('The staff');
     topics.push('What ' + them + ' gave away');
     topics.push('Helmet stickers');
     if (cast.useInsider && !quick) topics.push('The board');
@@ -1807,6 +1968,7 @@
     else if (won) q = blowout ? 'Is ' + US + ' actually this good, or is ' + them + ' just that bad?' : 'They won. Should they have won by more?';
     else if (tied) q = 'What does a tie actually tell you about this team?';
     else if (snapped && snapped.result === 'W') q = 'Does one loss undo ' + numWord(snapped.n) + ' wins, or did we just meet the real ' + US + '?';
+    else if (cCase.length && cCase[0].weight >= 9) q = 'Is this a roster problem or a coaching problem?';
     else q = tight ? 'Who loses this football game, the players or the plan?' : 'Bad day, or is this just who ' + US + ' is?';
     say(HOST, 'Question on the board. ' + q + ' ' + playerF + ', you’re up.');
     if (isRiv && ser.games >= 2) {
@@ -2013,6 +2175,33 @@
           return;
         }
 
+        var dire = G && G.overall === 0 && !won;
+        if (dire) {
+          say(ANALYST, beat('dire', [
+            'I’m not going to dress this one up. ' + (G.facts.length ? cap1(list2(G.facts)) + '. ' : '') + (G.minus.length ? cap1(list2(G.minus)) + '. ' : '') + 'At this level that is not good enough, and everybody in that building knows it.',
+            'That is one of the worst afternoons I’ve charted this year. ' + (G.facts.length ? cap1(list2(G.facts)) + '. ' : '') + 'There is no angle that makes it acceptable.',
+            (G.facts.length ? cap1(list2(G.facts)) + '. ' : '') + 'You cannot win a football game with that, and they didn’t.'
+          ]));
+          if (T.excuse) say(PLAYER, beat('dire-why', [
+            'I’m not defending the numbers. But look at why. ', 'The line is indefensible. The reason isn’t. ', 'Not arguing with the numbers. Arguing with the cause. '
+          ]) + T.excuse);
+          else if (T.onHim) say(PLAYER, hy(
+            'I’ll defend a lot of guys. That one’s on him, and he knows it.',
+            'I defend these kids every week. Not this one. That one’s on him, and he knows it.',
+            'I defend these kids EVERY week. Not this one! That one’s on HIM, and he knows it.'));
+          else say(PLAYER, beat('dire-p', [
+            'And I’m not defending it. I defend effort. That wasn’t an effort problem, that was a performance problem.',
+            'No. Not today. That was not close to good enough and he knows it before we say it.',
+            'I’ll back a kid through a bad day. That was past a bad day.'
+          ]));
+          say(HOST, beat('dire-h', ['So what happens to him now?', 'Does he keep the job?', 'Monday morning. What does the staff do with him?']));
+          say(ANALYST, beat('dire-fix', [
+            'If there’s somebody behind him, this is the week you find out. If there isn’t, you build the game plan around protecting him.',
+            'You don’t bench a man to punish him. You bench him if the other guy gives you a better chance. Otherwise you simplify everything around him.',
+            'Shrink his job. Fewer reads, quicker throws, and let the run game carry it until he’s breathing again.'
+          ]));
+          return;
+        }
         say(ANALYST, again
           ? 'Once is a bad day. Twice is a trend, and I’ve got the tape on both of them.'
           : G && G.minus.length
@@ -2253,6 +2442,44 @@
       : (won ? 'Good process, good result. Next week tells us which one it was.' : 'One data point. Ask me after the next two and I’ll give you a real answer.'));
     if (g.notes) say(HOST, 'One more thing before we go. ' + sentence(spoken(g.notes)));
 
+    /* ---- the staff ----
+       The segment the show was missing. It only runs when the numbers
+       actually support a charge, it argues both ways, and it ends with what
+       to do rather than who to sack. */
+    if (cCase.length && (!quick || cCase[0].weight >= 9)) {
+      var charges = cCase.slice(0, quick ? 2 : full ? 6 : 4);
+      head('THE STAFF');
+      say(HOST, beat('staff-open', [
+        'Right. Let’s talk about the sideline, because not all of this is on nineteen-year-olds. ' + analystF + '.',
+        'The part nobody in that building wants to hear. Coaching. ' + analystF + ', go.',
+        'Somebody has to say it, so it may as well be this segment. The staff. ' + analystF + '.',
+        'Players play, coaches decide. Let’s do the deciding. ' + analystF + '.'
+      ]));
+      charges.forEach(function (c, i) {
+        if (i) say(HOST, beat('staff-next' + i, ['What else?', 'Keep going.', 'And the next one?', 'There’s more, isn’t there?']));
+        say(ANALYST, c.charge);
+        say(PLAYER, c.defence);
+      });
+      /* the way forward: the same evidence, pointed at next week */
+      say(HOST, beat('staff-fix', [
+        'Alright. Both of you, one thing each. What does this staff actually do about it?',
+        'So what’s the fix? Not the complaint. The fix.',
+        'Give me the plan. If you’re in that meeting tomorrow morning, what do you say?'
+      ]));
+      say(ANALYST, 'Top of the list: ' + charges[0].fix + (charges[1] ? ' After that, ' + charges[1].fix.charAt(0).toLowerCase() + charges[1].fix.slice(1) : ''));
+      say(PLAYER, beat('staff-fix-p', [
+        'And it starts in the meeting room, not on the field. Tell them the truth, tell them the plan, and go to work.',
+        'Simplify it. Fewer calls, called faster, so those kids can play instead of think.',
+        'Own it in front of the team first. They respect that more than anything you put on a whiteboard.'
+      ]) + (charges[0].key === 'qb' ? ' And name the quarterback. Today.' : ''));
+      if (!quick) say(ANALYST, beat('staff-close', [
+        'None of that is dramatic. All of it is doable by Saturday.',
+        'That’s a week of work, not a crisis.',
+        'Do those two things and this looks very different in a fortnight.'
+      ]));
+      w('');
+    }
+
     /* ---- what is coming ----
        A recap that stops at Saturday is a box score read aloud. The schedule
        is what lets them point forward and at the thing that just went wrong
@@ -2322,7 +2549,14 @@
     if (bx0.rushFor !== '') bf.push(['Run game: fixed or broken?', bx0.rushFor >= 150 * S ? 'Fixed.' : bx0.rushFor < 90 * S ? 'Broken.' : 'Somewhere in between.']);
     if (bx0.thirdForAtt > 0) bf.push(['Third down: good enough?', int(bx0.thirdFor, 0, 99) / bx0.thirdForAtt >= 0.4 ? 'Good enough.' : 'Not close.']);
     bf.push([them + ' better than we thought?', up && up.kind === 'win' ? 'Not today they weren’t.' : won ? 'About what we thought.' : 'Yes. Give them credit.']);
-    if (rough.length) bf.push(['Does ' + rough[0].name + ' start next week?', 'Yes, and he should.']);
+    if (rough.length) {
+      var hotG = gradeLine(rough[0].raw, S);
+      var carousel = cCase.some(function (c) { return c.key === 'qb'; });
+      bf.push(['Does ' + rough[0].name + ' start next week?',
+        carousel ? 'Somebody has to. That’s the problem.'
+          : hotG && hotG.overall === 0 && !won ? 'If there’s a better option, no.'
+          : 'Yes, and he should.']);
+    }
     bf.push(['Bowl team?', ctx.prior.length >= 3 ? (won ? 'On this pace, yes.' : 'Getting harder.') : 'Too early. Ask me at the bye.']);
     bf.push(['One thing to fix by Saturday?', bx0.rushFor !== '' && bx0.rushFor < 90 * S ? 'The run game.' : bx0.toFor !== '' && int(bx0.toFor, 0, 99) > 1 ? 'Ball security.' : bx0.thirdForAtt > 0 && int(bx0.thirdFor, 0, 99) / bx0.thirdForAtt < 0.34 ? 'Third down.' : 'Finishing drives.']);
     var bfCount = quick ? 3 : full ? 7 : 5;
@@ -2350,6 +2584,7 @@
     w('Rundown:     ' + topics.join(' · '));
     w('Calls:       ' + analystF + ': ' + calls.analyst.text + '  |  ' + playerF + ': ' + calls.player.text);
     w('Call record: ' + analystF + ' ' + recNow.analyst.w + '-' + recNow.analyst.l + ', ' + playerF + ' ' + recNow.player.w + '-' + recNow.player.l);
+    if (cCase.length) w('Staff case:  ' + cCase.slice(0, 4).map(function (c) { return c.key; }).join(', '));
     if (ser.games >= 2) w('Series:      ' + ser.record + ' vs ' + them + (ser.isRivalry ? ' (rivalry)' : ''));
     if (sch.next) w('Next up:     Wk ' + int(sch.next.week, 0, 99) + ' ' + (sch.next.home ? 'vs ' : 'at ') + (sch.next.opponent || '?') + (rankOf(sch.next.rank) ? ' (No. ' + rankOf(sch.next.rank) + ')' : '') + (sch.next.rivalry ? ' — rivalry' : ''));
     if (ctx.prior.length) w('Earlier:     ' + ctx.prior.map(function (x) { return 'Wk ' + (x.week || '?') + ' ' + x.result + ' ' + int(x.scoreFor, 0, 999) + '-' + int(x.scoreAgainst, 0, 999) + ' ' + (x.home ? 'vs ' : 'at ') + (x.opponent || '?'); }).join('; '));
@@ -3678,9 +3913,24 @@
                                  boxPair('g-4a', bx.fourthAgainst, 'g-4aa', bx.fourthAgainstAtt, 'of', 'Their fourth downs')) +
           boxRow('Penalties', boxPair('g-pnf', bx.penFor, 'g-pnfy', bx.penForYds, 'for', 'Our penalties'),
                               boxPair('g-pna', bx.penAgainst, 'g-pnay', bx.penAgainstYds, 'for', 'Their penalties')) +
+          boxRow('Touchdowns', boxNum('g-tdf', bx.tdFor, 'Our touchdowns'), boxNum('g-tda', bx.tdAgainst, 'Their touchdowns')) +
+          boxRow('Field goals', boxNum('g-fgf', bx.fgFor, 'Our field goals'), boxNum('g-fga', bx.fgAgainst, 'Their field goals')) +
+          boxRow('Red zone', boxPair('g-rzf', bx.rzFor, 'g-rzfa', bx.rzForAtt, 'of', 'Our red zone'),
+                             boxPair('g-rza', bx.rzAgainst, 'g-rzaa', bx.rzAgainstAtt, 'of', 'Their red zone')) +
+          boxRow('Run / pass plays', boxNum('g-ratt', bx.rushAttFor, 'Our rushing attempts'), boxNum('g-patt', bx.passAttFor, 'Our pass attempts')) +
         '</div>' +
         '<div class="box-help">Downs are converted of tried (7 of 14). Penalties are flags for yards (8 for 65). Total yards fills itself in from rushing and passing. Leave anything blank you do not have.</div>' +
-        '<div class="field"><label for="g-notes">Anything else worth a mention</label><input type="text" id="g-notes" value="' + esc(g.notes) + '" placeholder="Fourth-down call at the end, injury, weather…"></div>' +
+        '<div class="field"><label for="g-notes">Anything else worth a mention</label><input type="text" id="g-notes" value="' + esc(g.notes) + '" placeholder="Injury, weather, a wild finish…"></div>' +
+      '</details>' +
+
+      /* The staff. None of this is in a box score, and all of it is what
+         people actually argue about on a Monday. */
+      '<details class="more"' + (g.qbChange || g.blownLead || g.clockBlame || g.flat || g.badCall ? ' open' : '') + '><summary>The staff — what the sideline got wrong</summary>' +
+        '<label class="check"><input type="checkbox" id="g-qbc"' + (g.qbChange ? ' checked' : '') + '> Changed quarterbacks</label>' +
+        '<label class="check"><input type="checkbox" id="g-lead"' + (g.blownLead ? ' checked' : '') + '> Had the lead and lost it</label>' +
+        '<label class="check"><input type="checkbox" id="g-clock"' + (g.clockBlame ? ' checked' : '') + '> Clock management hurt them</label>' +
+        '<label class="check"><input type="checkbox" id="g-flat"' + (g.flat ? ' checked' : '') + '> Came out flat</label>' +
+        '<div class="field"><label for="g-call">The call that cost them</label><input type="text" id="g-call" value="' + esc(g.badCall || '') + '" placeholder="Threw it on 3rd and 1 from the 8"><div class="help">The panel will bring it up, argue about it, and say what should happen next.</div></div>' +
       '</details>' +
 
       '<div class="modal-actions">' +
@@ -3724,6 +3974,9 @@
     g.rankFor = rankOf($('#g-rk').value);
     g.rankAgainst = rankOf($('#g-rka').value);
     var ids = {
+      tdFor: 'g-tdf', tdAgainst: 'g-tda', fgFor: 'g-fgf', fgAgainst: 'g-fga',
+      rzFor: 'g-rzf', rzForAtt: 'g-rzfa', rzAgainst: 'g-rza', rzAgainstAtt: 'g-rzaa',
+      rushAttFor: 'g-ratt', passAttFor: 'g-patt',
       rushFor: 'g-rf', rushAgainst: 'g-ra', passFor: 'g-pf', passAgainst: 'g-pa', yardsFor: 'g-yf', yardsAgainst: 'g-ya',
       toFor: 'g-tof', toAgainst: 'g-toa', thirdFor: 'g-3f', thirdForAtt: 'g-3fa', thirdAgainst: 'g-3a', thirdAgainstAtt: 'g-3aa',
       fourthFor: 'g-4f', fourthForAtt: 'g-4fa', fourthAgainst: 'g-4a', fourthAgainstAtt: 'g-4aa',
@@ -3743,6 +3996,11 @@
     g.thirdDown = '';
     g.penalties = '';
     g.notes = $('#g-notes').value.trim();
+    g.qbChange = $('#g-qbc').checked;
+    g.blownLead = $('#g-lead').checked;
+    g.clockBlame = $('#g-clock').checked;
+    g.flat = $('#g-flat').checked;
+    g.badCall = $('#g-call').value.trim();
 
     var rows = {};
     $$('[data-perf]').forEach(function (el) {
@@ -4739,7 +4997,8 @@
     b.games = objs(b.games);
     b.games.forEach(function (g) {
       if (!safe(g.id)) g.id = uid();
-      text(g, ['opponent', 'thirdDown', 'penalties', 'notes', 'script', 'scriptAuto']);
+      text(g, ['opponent', 'thirdDown', 'penalties', 'notes', 'script', 'scriptAuto', 'badCall']);
+      ['qbChange', 'blownLead', 'clockBlame', 'flat'].forEach(function (k) { if (k in g) g[k] = !!g[k]; });
       oneOf(g, 'result', ['W', 'L', 'T'], 'W');
       num(g, 'season', 1900, 2999); num(g, 'week', 1, 25); num(g, 'scoreFor', 0, 999); num(g, 'scoreAgainst', 0, 999);
       /* box-score numbers keep a real 0 -- "no turnovers" is not "not typed" */
@@ -5144,6 +5403,7 @@
     takeSnapshot: takeSnapshot,
     spoken: spoken,
     boxOf: boxOf,
+    coachCase: coachCase,
     seriesFacts: seriesFacts,
     declaredRival: declaredRival,
     scheduleFor: scheduleFor,
