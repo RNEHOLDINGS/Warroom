@@ -111,10 +111,12 @@
     var hurt = 'We were without two starters up front and it showed. We changed the plan at half time.';
     var sInj = withQuote(hurt);
     var clipInj = seg(sInj, 'WHAT THE COACH SAID');
-    ok(/[Dd]id we learn anything|couldn’t see from the numbers|box score doesn’t say/.test(clipInj), 'the host asks what the numbers could not show', clipInj);
+    ok(/gave us a bit there|There’s something in that|told us a couple of things|go back to what he said/.test(clipInj), 'the host just points at it, the way a host does', clipInj);
+    ok(!/what did we learn|the stats don’t tell us|box score doesn’t say/i.test(sInj), 'and never narrates the machinery of the show', (sInj.match(/.{0,60}(what did we learn|stats don’t tell).{0,40}/i) || [''])[0]);
+    ok(/[Hh]ere’s what the head coach|[Ll]et’s hear from the head coach|head coach, after the game|at the podium|Listen to the coach/.test(clipInj), 'the clip is introduced the way one is introduced on television', clipInj.split('\n').slice(0, 4).join(' | '));
     ok(/patched together|went out of his way to talk about the line/.test(clipInj), 'and the panel pulls the absences out of the quote', clipInj);
     ok(/the plan changed|two different games/.test(clipInj), 'and that the game plan changed at half time', clipInj);
-    ok(/can’t grade a football team off a sheet of paper|don’t get from reading a box score/.test(clipInj), 'the ex-player says why that matters', clipInj);
+    ok(/don’t see any of that in a box score|part people miss|watch it again knowing that|instead of reading the numbers/.test(clipInj), 'the ex-player says why that matters', clipInj);
     var facts = W.coachFacts(hurt).map(function (x) { return x.kind; });
     ok(facts.indexOf('injury') >= 0 && facts.indexOf('line') >= 0 && facts.indexOf('plan') >= 0, 'the quote is read for context, not just tone', JSON.stringify(facts));
     ok(W.coachFacts('We just have to execute better.').length === 0, 'and a quote with no context in it yields none');
@@ -129,6 +131,29 @@
     ok(/brought his name up unprompted|went out of his way to mention him/.test(named), 'and the panel says so when he comes up', (named.match(/.{0,80}(unprompted|mention him).{0,40}/) || [''])[0]);
     ok(/Nobody gets mentioned at a podium by accident|chosen before he walked out|asked him to/.test(named), 'and reads something into it', named);
     ok(W.coachNamed('We played badly').length === 0, 'a quote naming nobody names nobody');
+
+    /* --- a coach who talks like a coach --- */
+    var plain = [
+      ['We got our ass kicked up front. Plain and simple.', ['tough', 'blunt']],
+      ['That one’s on me. My bad. I gotta be better for these kids.', ['ownit']],
+      ['He’s my guy. We ain’t changing quarterbacks, I’m rolling with him.', ['protect']],
+      ['I’m pissed. That was piss poor and it can’t happen.', ['angry', 'blunt']],
+      ['Back to the drawing board. On to the next one.', ['process']],
+      ['Tip my cap, they’re a hell of a football team.', ['credit']],
+      ['Somebody else is gonna play. Nothing’s guaranteed around here.', ['changes']],
+      ['We were short-handed up front, had some guys banged up.', ['young']],
+      ['Gotta block better, gotta tackle better. Missed assignments all night.', ['execute']],
+      ['Love these kids. They didn’t quit on me.', ['proud']]
+    ];
+    plain.forEach(function (c) {
+      var got = W.readCoach(Object.assign({}, base, { coachQuote: c[0] }), W.boxOf(base), 0.6, [], 'Oregon', 'Utah');
+      var kinds = got.hits.map(function (x) { return x.kind; });
+      var missing = c[1].filter(function (k) { return kinds.indexOf(k) < 0; });
+      ok(missing.length === 0, 'reads a coach who talks like a coach: "' + c[0] + '"', 'got ' + JSON.stringify(kinds));
+    });
+    var blunt = seg(withQuote('We got our ass kicked up front. Plain and simple, no excuse.'), 'WHAT THE COACH SAID');
+    ok(/did not dress any of that up|didn’t dress any of that up|that plain maybe twice a season/.test(blunt), 'and says so when he refuses to dress it up', blunt);
+    ok(/twice as hard in the locker room/.test(blunt), 'and reads what it means for the room', blunt);
 
     /* --- the clip is voiced in his own voice --- */
     var g2 = { id: 'v1', season: st.season, week: 7, opponent: 'Utah', home: true, result: 'W', scoreFor: 31, scoreAgainst: 10,

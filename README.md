@@ -363,7 +363,17 @@ audio quality and the exact reply format are untested.
 
 Type the press-conference line into the game's **staff** section and the show
 plays it as a clip, **in the coach's own voice** — he has his own voice picker
-in Settings, under the panel's. Then they do what a panel does with a clip:
+in Settings, under the panel's. The host introduces it the way a host does
+("here's what the head coach had to say about it afterwards") and then gets
+out of the way. Then they do what a panel does with a clip:
+
+**Type it however he said it.** Coaches do not talk like press releases, so
+the reader handles the real thing: "we got our tails whipped up front", "that
+one's on me, my bad", "he's my guy, we ain't changing quarterbacks", "I'm
+pissed, that was piss poor", "back to the drawing board", "tip my cap, they're
+a hell of a football team", "somebody else is gonna play". When he refuses to
+dress it up, the panel says so — *"he didn't dress any of that up, which I
+like"* — and reads what it means for the room.
 
 **They translate it.** "We have to execute better" is read as a coach saying
 his players did not do it without naming one of them. "We'll evaluate

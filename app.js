@@ -1409,36 +1409,39 @@
      Nothing is inferred about a coach who said nothing. No quote, no
      segment. */
   var COACH_SPEAK = [
-    { kind: 'ownit', re: /\b(on me|my fault|i have to be better|i didn’t|i did not|i put (them|him)|coached? (them|him)? ?better|starts with me)\b/i,
+    { kind: 'ownit', re: /\b(on me|my fault|my bad|i own (that|it)|put that on me|i have to be better|i gotta be better|i got to be better|i didn’t|i did not|i put (them|him)|coached? (them|him)? ?better|starts with me|that one’s mine|blame me)\b/i,
       means: 'He took it himself. Coaches do that for two reasons: because they mean it, or because it stops everybody asking about a nineteen-year-old.',
       react: 'That’s the right answer. Whether he believes it or not, every kid in that room heard their coach take the bullet.' },
-    { kind: 'execute', re: /\b(execut\w+|fundamental\w*|details|assignment\w*|do our job|one-?on-?ones?)\b/i,
+    { kind: 'execute', re: /\b(execut\w+|fundamental\w*|details|assignment\w*|do(ing)? (our|their|your) job|one-?on-?ones?|gotta block|gotta tackle|missed (tackles|blocks|assignments)|catch the ball|hold onto the ball|do what we practice)\b/i,
       means: '“Execution” is how a coach says his players did not do it without naming one of them. It is the safest sentence in football.',
       react: 'Every coach I played for said that word. Every single one. It means somebody is getting coached hard on Tuesday.' },
-    { kind: 'protect', re: /\b(he’s our guy|he is our guy|believe in him|our quarterback|not changing|sticking with|backing him|stand behind)\b/i,
+    { kind: 'protect', re: /\b(he’?s (our|my|the) (guy|quarterback)|believe in (him|that kid)|our quarterback|not changing|ain’?t changing|sticking with|rolling with|riding with|backing him|stand behind|he’?ll be fine|i love that kid)\b/i,
       means: 'That is a public vote of confidence, which is a thing you only have to give when everybody is asking the question.',
       react: 'Good. You say that in front of a camera and that kid runs through a wall for you Saturday.' },
-    { kind: 'credit', re: /\b(credit to|hats off|they’?re? a good (football )?team|give them credit|well coached)\b/i,
+    { kind: 'credit', re: /\b(credit to|hats off|tip (my|your) (cap|hat)|props to|they’?re? a (good|hell of a|heck of a|damn good) (football )?team|give them credit|well coached|they beat us)\b/i,
       means: 'Credit to the opponent is the most popular exit from a hard question. It is also sometimes just true.',
       react: 'Sure, they’re good. That’s not the question he was asked, though, is it.' },
-    { kind: 'tough', re: /\b(out-?toughed|physical\w*|out-?hit|wanted it more|effort|compete|didn’?t fight|soft)\b/i,
+    { kind: 'tough', re: /\b(out-?toughed|physical\w*|out-?hit|whipped|whupped|ass kicked|tails? (whipped|kicked)|butts? kicked|punched (us )?in the mouth|manhandled|pushed around|wanted it more|out ?worked|effort|compete|didn’?t fight|didn’?t want it|soft|bullied)\b/i,
       means: 'When a coach questions toughness publicly, that is aimed at the locker room, not at us. He wants them to hear it on Monday.',
       react: 'And they will hear it. That’s a message, and it’s a loud one.' },
-    { kind: 'process', re: /\b(look at the tape|watch the film|get back to work|one game at a time|next week|move on|day at a time)\b/i,
+    { kind: 'process', re: /\b(look at the tape|watch (the )?(tape|film)|back to the drawing board|get back to work|one game at a time|next week|move on|on to the next|day at a time|we’?ll see|clean it up|fix it)\b/i,
       means: 'That is the non-answer. It is not dishonest, it is just nothing, and it usually means he does not want to say the real thing yet.',
       react: 'That’s a coach who’s already thinking about Tuesday’s practice and wants to get off this stage.' },
-    { kind: 'changes', re: /\b(evaluate|everything is on the table|changes|look at everything|competition|open up the)\b/i,
+    { kind: 'changes', re: /\b(evaluate|everything (is|’s) on the table|changes?( are)? coming|look at everything|competition|open up the|some(body|one|) ?(else )?(is |’s )?(gonna|going to) play|nothing(’s| is) guaranteed|new guys|different look)\b/i,
       means: 'Now that is a signal. Coaches do not float the word “evaluate” unless somebody’s job is genuinely in play.',
       react: 'Somebody in that building just felt their stomach drop. That’s the point of saying it out loud.' },
-    { kind: 'angry', re: /\b(unacceptable|embarrass\w*|not good enough|disappointed|angry|sick|disgusted|has to change)\b/i,
+    { kind: 'angry', re: /\b(unacceptable|embarrass\w*|not good enough|disappointed|angry|sick (to my stomach|of)|disgust\w*|pissed|piss ?poor|garbage|pathetic|horse ?crap|can’?t happen|has to change|fed up|had enough)\b/i,
       means: 'That is as close to anger as most of them get at a microphone. He has decided the team needs to hear it publicly.',
       react: 'He’s hot. And honestly? Good. I want to hear that after a game like that.' },
-    { kind: 'proud', re: /\b(proud|fought|never quit|kept battling|resilien\w*|character)\b/i,
+    { kind: 'proud', re: /\b(proud|fought|never quit|didn’?t quit|kept (battling|fighting|swinging)|hung in|resilien\w*|character|love (our|my) guys|these kids)\b/i,
       means: 'Pride in the effort is what a coach reaches for when the result will not give him anything.',
       react: 'There’s a version of that I’ll take and a version I won’t, and it depends entirely on whether they actually fought.' },
-    { kind: 'young', re: /\b(young|freshm\w+|inexperienc\w*|banged up|injur\w+|next man up|short-?handed)\b/i,
+    { kind: 'young', re: /\b(young|freshm\w+|first-?year|babies|pups|inexperienc\w*|banged up|injur\w+|next man up|short-?handed|thin)\b/i,
       means: 'Youth and injuries are real, and they are also the most available excuse in the sport. Both things are true at once.',
-      react: 'You’re young in August. By November you’re just your record.' }
+      react: 'You’re young in August. By November you’re just your record.' },
+    { kind: 'blunt', re: /\b(ass|butt|whupped|whipped us|flat out|plain and simple|simple as that|point blank|straight up|no excuse|sugar ?coat|horse ?crap|piss ?poor|garbage)\b/i,
+      means: 'And he did not dress any of that up, which I like. You get a sentence that plain maybe twice a season from a man in that job.',
+      react: 'THAT is a coach talking. No podium voice, no fifteen words where three will do. His players hear that and nod.' }
   ];
 
   /* ---------- what the coach knows that the box score does not ----------
@@ -1511,7 +1514,11 @@
       checks.push('And it is hard to execute when you do not know who is playing quarterback in the second half.');
     }
     if (kindOf('ownit') && cCase.length) {
-      checks.push('And for once the numbers agree with him. ' + cCase[0].charge.split('. ')[0] + '. That is a decision, and he just said as much.');
+      var DECISIONS = ['qb', 'playcall', 'balance', 'redzone', 'rz-trips', 'call', 'clock', 'lead', 'flat', 'discipline'];
+      var dec = cCase.filter(function (c) { return DECISIONS.indexOf(c.key) >= 0; })[0];
+      checks.push(dec
+        ? 'And he is right to. ' + dec.charge.split('. ')[0] + '. That one is his, and he just took it.'
+        : 'And the sheet does back him up. ' + cCase[0].charge.split('. ')[0] + '.');
     }
     if (kindOf('protect') && charge('qb')) {
       checks.push('Except they played two quarterbacks. You cannot say he is the guy on Sunday and have a carousel on Saturday.');
@@ -1529,6 +1536,9 @@
     }
     if (kindOf('changes') && charge('qb')) {
       checks.push('Read that one carefully. That is a quarterback competition being opened in public.');
+    }
+    if (kindOf('blunt')) {
+      checks.push('And if he is saying it like that at a microphone, he has already said it twice as hard in the locker room.');
     }
     if (kindOf('young') && !won) {
       checks.push('Young is a reason in September. In ' + (int(g.week, 0, 99) >= 8 ? 'November' : 'October') + ' it starts sounding like a plan that is not working.');
@@ -2703,18 +2713,22 @@
     if (coachSaid) {
       head('WHAT THE COACH SAID');
       say(HOST, beat('clip-in', [
-        'Let’s hear from the man himself. Here’s ' + US + '’s head coach afterwards.',
-        'Before we go further, this is what the head coach said after the game.',
-        'Roll it. ' + US + '’s coach, about twenty minutes after the final whistle.',
-        'Here he is. Post-game, ' + US + '’s head coach.'
+        'Here’s what the head coach had to say about it afterwards.',
+        'This is ' + US + '’s head coach, after the game.',
+        'Let’s hear from the head coach.',
+        'Here he is at the podium afterwards.',
+        'The head coach, a few minutes after the final whistle.',
+        'Listen to the coach here.'
       ]));
       L.push('COACH: ' + coachSaid.quote);
       L.push('');
       say(HOST, beat('clip-ask', [
-        analystF + '. Translate that for me.',
-        'Okay. ' + analystF + ', what did he actually say there?',
-        'What’s he telling us, ' + analystF + '?',
-        analystF + ', you speak this language. Go.'
+        analystF + '.',
+        'Okay. ' + analystF + ', what do you make of that?',
+        analystF + ', your read.',
+        'Thoughts.',
+        analystF + ', what’s he telling us there?',
+        'So what is that?'
       ]));
       if (coachSaid.hits.length) {
         say(ANALYST, coachSaid.hits.slice(0, 2).map(function (x) { return x.means; }).join(' '));
@@ -2737,19 +2751,25 @@
       }
       if (coachSaid.facts.length) {
         say(HOST, beat('clip-learn', [
-          'Did we learn anything in there? Anything the stats don’t tell us?',
-          'Anything in that we couldn’t see from the numbers?',
-          'What did we actually find out there that the box score doesn’t say?'
+          'He gave us a bit there, didn’t he.',
+          'There’s something in that.',
+          'And he told us a couple of things.',
+          'Hang on, go back to what he said about it.'
         ]));
         say(ANALYST, coachSaid.facts.slice(0, quick ? 1 : 3).map(function (x) { return x.lead + '. ' + x.says; }).join(' '));
         say(PLAYER, beat('clip-learn-p', [
-          'And that matters. You can’t grade a football team off a sheet of paper without knowing that.',
-          'See, that’s the stuff. That’s what you don’t get from reading a box score on your phone.',
-          'Thank you. Now go back and look at those numbers again with that in your head.'
+          'And that changes the whole thing. You don’t see any of that in a box score.',
+          'See, that’s the part people miss when they’re looking at a stat line on their phone.',
+          'Thank you. Now go back and watch it again knowing that.',
+          'That’s why you listen to these things instead of reading the numbers and shouting.'
         ]));
       }
       if (coachSaid.named.length) {
-        say(HOST, 'He named ' + list2(coachSaid.named.slice(0, 2).map(function (p) { return p.name; })) + ' specifically.');
+        say(HOST, beat('clip-name-h', [
+          'He mentioned ' + list2(coachSaid.named.slice(0, 2).map(function (p) { return p.name; })) + ' by name there.',
+          'And he brought up ' + list2(coachSaid.named.slice(0, 2).map(function (p) { return p.name; })) + '.',
+          'He said ' + list2(coachSaid.named.slice(0, 2).map(function (p) { return p.name; })) + ' out loud, which you noticed too.'
+        ]));
         say(ANALYST, beat('clip-named', [
           'Coaches pick those names on purpose. Nobody gets mentioned at a podium by accident.',
           'That name was chosen before he walked out there. They always are.',
@@ -2757,7 +2777,7 @@
         ]));
       }
       if (coachSaid.checks.length) {
-        say(HOST, beat('clip-check', ['Do you buy it?', 'And does it hold up?', 'Fine. Does the game agree with him?', 'Right, but is he right?']));
+        say(HOST, beat('clip-check', ['Do you buy it?', 'Do we buy that?', 'Is he right, though?', 'And does that hold up?', 'Fair?']));
         say(ANALYST, coachSaid.checks.slice(0, quick ? 1 : 2).join(' '));
         say(PLAYER, beat('clip-last', [
           'I’ll say this for him: he stood there and answered. Plenty don’t.',
