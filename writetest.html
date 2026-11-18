@@ -39,6 +39,11 @@ var FULL = '```\n' + SEGS.map(function (name, i) {
   return '--- SEGMENT ' + (i + 1) + ': ' + name + ' ---\n\n' +
     SAYS.map(function (l, j) { return (i === 9 && j === 0 ? 'COACH: J.Carty has to be better.' : l); }).join('\n\n');
 }).join('\n\n') + '\n```';
+/* Every segment present, two lines each: a complete show that is simply
+   shorter than the setting asked for. Not a stub. */
+var TERSE = SEGS.map(function (name, i) {
+  return '--- SEGMENT ' + (i + 1) + ': ' + name + ' ---\n\n' + SAYS.slice(0, 2).join('\n\n');
+}).join('\n\n');
 var STUB = '--- SEGMENT 1: COLD OPEN ---\n\nWHITCOMB: Welcome in. Oregon lost to Utah, 27 to 13.\n\nMABRY: I’m done making excuses.\n\n' +
   '--- SEGMENT 2: THE NUMBERS ---\n\nHARLAN: Twenty-one of thirty-eight, three picks.\n\n' +
   '--- SEGMENT 3: FINAL TAKE ---\n\nWHITCOMB: That’s the show.';
@@ -73,6 +78,7 @@ window.fetch = function (url, init) {
       /* A model that ran out of room part-way: three segments, a handful of
          lines. This is what was being handed over as a finished show. */
       if (window.__mode === 'stub') return reply(200, { candidates: [{ content: { parts: [{ text: STUB }] }, finishReason: 'MAX_TOKENS' }] });
+      if (window.__mode === 'terse') return reply(200, { candidates: [{ content: { parts: [{ text: TERSE }] }, finishReason: 'STOP' }] });
       if (window.__mode === 'nothink' && /thinkingConfig/.test(init.body)) {
         return reply(400, { error: { code: 400, message: 'Invalid JSON payload received. Unknown name "thinkingConfig" at \'generation_config\'.', status: 'INVALID_ARGUMENT' } });
       }
@@ -252,6 +258,19 @@ window.fetch = function (url, init) {
         'and only the budget is dropped, not everything else with it');
       ok(tries[1].body.generationConfig.maxOutputTokens === tries[0].body.generationConfig.maxOutputTokens, 'the room for the script is kept');
       ok(/SEGMENT 15/.test(q('#scriptBox').value), 'so the whole episode still arrives', q('#scriptBox').value.slice(0, 60));
+
+      /* --- a complete show that came in short is kept, not thrown away ---
+         Judging it on a fraction of the target meant that asking for a
+         longer show started rejecting perfectly good episodes for the
+         crime of being 30 lines instead of 90. */
+      window.__mode = 'terse'; window.__calls = [];
+      click('[data-action="write-script"]');
+      return sleep(400);
+    }).then(function () {
+      var txt = q('#voiceArea').textContent;
+      ok(/Written by/.test(txt), 'a show with all its segments is kept even when it is well under length', txt.slice(0, 120));
+      ok(/came in at \d+ lines/.test(txt) && /complete show, just a shorter one/.test(txt), 'and it says so, instead of pretending it asked for that', txt.slice(0, 260));
+      ok(/SEGMENT 15/.test(q('#scriptBox').value), 'the whole thing is in the box', q('#scriptBox').value.slice(-60));
 
       window.__mode = 'ok';
       click('[data-action="close"]');

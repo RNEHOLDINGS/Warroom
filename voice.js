@@ -359,15 +359,26 @@
           var lines = (text.match(/^[A-Z][A-Z'’.\- ]{1,30}:\s+\S/mg) || []).length;
           var segs = (text.match(/^---\s*SEGMENT/mg) || []).length;
           var want = wantedLines(len), wantSegs = runOrder(opts.brief).split('\n').length;
-          var short = lines < want * 0.55 || segs < Math.ceil(wantSegs * 0.6);
-          if (short) {
-            var why = cand.finishReason === 'MAX_TOKENS'
-              ? 'it ran out of room before it finished'
-              : 'it stopped early';
+          /* What makes a script a stub is missing segments or being cut off
+             mid-sentence, not being shorter than we asked for. Judging it on
+             a proportion of the target meant that raising the target for a
+             long show also started rejecting perfectly good episodes for
+             the crime of being 90 lines instead of 150. */
+          var cut = cand.finishReason === 'MAX_TOKENS';
+          var missing = segs < Math.ceil(wantSegs * 0.6);
+          if (cut || missing || lines < 12) {
+            var why = cut ? 'it ran out of room before it finished'
+              : missing ? 'it stopped after ' + segs + ' of them'
+              : 'there is barely anything in it';
             var e = new Error('That came back as ' + lines + ' lines across ' + segs + ' of ' + wantSegs +
               ' segments — ' + why + '. Write it again, pick a shorter show, or use the built-in writer.');
             e.shortScript = text;
             throw e;
+          }
+          /* Complete but well under length is worth saying once, without
+             throwing away a show that is perfectly usable. */
+          if (lines < want * 0.55 && opts.onProgress) {
+            opts.onProgress({ shortBy: lines, wanted: want });
           }
           return text;
         });

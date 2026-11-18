@@ -253,7 +253,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v37';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v38';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -4962,12 +4962,14 @@
       return;
     }
     var ctrl = new AbortController();
+    var wroteShort = null;
     writeJob = { ctrl: ctrl, id: id };
     a.innerHTML = '<div class="voice-progress"><b>Writing the episode</b><div class="meter"><i style="width:40%"></i></div>' +
       '<button class="btn small" data-action="write-cancel">Stop</button></div>';
     V.writeShow({
       brief: showBrief(g), key: key, model: c.writeModel, signal: ctrl.signal,
       onProgress: function (p) {
+        if (p.shortBy) { wroteShort = p; return; }
         var area = voiceArea(id);
         if (area && p.waiting) area.innerHTML = '<div class="voice-progress"><b>Google asked us to slow down — waiting ' + p.waiting + 's</b><div class="meter"><i style="width:40%"></i></div><button class="btn small" data-action="write-cancel">Stop</button></div>';
       }
@@ -4980,7 +4982,9 @@
       var box = $('#scriptBox');
       if (box && box.getAttribute('data-id') === String(id)) box.value = g.script;
       var area = voiceArea(id);
-      if (area) area.innerHTML = '<p class="help">Written by ' + esc(c.writeModel) + '. Read it before you voice it — everything in it should be in the producer notes at the bottom.</p>';
+      if (area) area.innerHTML = '<p class="help">Written by ' + esc(c.writeModel) + '. Read it before you voice it — everything in it should be in the producer notes at the bottom.</p>' +
+        (wroteShort ? '<p class="help">It came in at ' + wroteShort.shortBy + ' lines where the ' + esc((LENGTHS.filter(function (L) { return L.id === c.length; })[0] || LENGTHS[1]).label) + ' setting asks for about ' + wroteShort.wanted +
+          '. It is a complete show, just a shorter one — writing it again often gets a longer one, or the built-in writer will always go the full distance.</p>' : '');
       toast('Written. Have a read before voicing.');
     }).catch(function (err) {
       var area = voiceArea(id);
