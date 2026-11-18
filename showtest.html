@@ -201,6 +201,50 @@
     var lossTake = W.buildScript(Object.assign({ id: 'lt', result: 'L', scoreFor: 10, scoreAgainst: 31, yardsFor: 250, yardsAgainst: 450, toFor: '', toAgainst: 2 }, base));
     ok(/still lost by 21/.test(lossTake) && !/most of your margin/.test(lossTake), 'takeaways in a loss are not called the margin');
 
+    /* --- the three lengths are three different shows -------------------
+       Full used to come out sixteen per cent longer than Standard, which
+       is not a longer show, it is the same show with one more name in it.
+       A long show has to go deeper on the men it already named, and it has
+       to grow when you type more in. */
+    var lenGame = Object.assign({}, base, {
+      id: 'lg', result: 'L', scoreFor: 17, scoreAgainst: 31, yardsFor: 312, yardsAgainst: 455,
+      toFor: 0, toAgainst: 3, thirdDown: '4/15', penalties: '8/70', rushFor: 62, passFor: 250,
+      tdFor: 2, tdAgainst: 4, fgFor: 1, fgAgainst: 1, rzFor: 2, rzForAtt: 5,
+      coachQuote: 'We did not execute. That starts with me, and we will look hard at the quarterback position this week.',
+      performances: [
+        { name: 'J. Carty', pos: 'QB', line: '18/34, 212 yds, 1 TD, 3 INT', verdict: 'struggled' },
+        { name: 'T. Reed', pos: 'HB', line: '14 carries, 48 yds', verdict: 'struggled' },
+        { name: 'L. Clark', pos: 'WR', line: '9 catches, 131 yds, 1 TD', verdict: 'standout' },
+        { name: 'M. Boone', pos: 'LB', line: '12 tackles, 2 sacks', verdict: 'standout' },
+        { name: 'D. Hale', pos: 'CB', line: '1 INT, 5 tackles', verdict: 'standout' },
+        { name: 'R. Pace', pos: 'LT', line: '3 sacks allowed', verdict: 'struggled' }
+      ]
+    });
+    var wordsAt = function (len, game) {
+      var was = W.state().show.length;
+      W.state().show = Object.assign({}, W.state().show, { length: len });
+      var spoken = W.buildScript(game).split('PRODUCER NOTES')[0].split('\n')
+        .filter(function (l) { return /^[A-Z][A-Z’'.\- ]{1,30}: /.test(l); });
+      var n = spoken.reduce(function (acc, l) { return acc + l.replace(/^[^:]+: /, '').split(/\s+/).length; }, 0);
+      W.state().show = Object.assign({}, W.state().show, { length: was });
+      return n;
+    };
+    var wQuick = wordsAt('quick', lenGame), wStd = wordsAt('standard', lenGame), wFull = wordsAt('full', lenGame);
+    ok(wQuick < wStd && wStd < wFull, 'the three lengths come out in the right order', [wQuick, wStd, wFull].join(' < '));
+    ok(wFull > wStd * 1.25, 'and Full is a different show from Standard, not the same one with a name added',
+      wFull + ' words against ' + wStd + ', ' + Math.round(wFull / wStd * 100) + '%');
+    ok(wQuick < wStd * 0.55, 'while a quick hit really is quick', wQuick + ' against ' + wStd);
+
+    /* it has to grow with what you give it, or "every player you typed in"
+       is a promise the show does not keep */
+    var fuller = Object.assign({}, lenGame, { id: 'lg2', performances: lenGame.performances.concat([
+      { name: 'K. Fells', pos: 'WR', line: '5 catches, 64 yds', verdict: 'solid' },
+      { name: 'A. Reyes', pos: 'DT', line: '6 tackles, 1 TFL', verdict: 'standout' },
+      { name: 'C. Dunn', pos: 'TE', line: '3 catches, 41 yds, 1 TD', verdict: 'standout' }
+    ]) });
+    ok(wordsAt('full', fuller) > wFull * 1.05, 'a full show grows when you type more players in', wordsAt('full', fuller) + ' against ' + wFull);
+    ok(wordsAt('standard', fuller) < wordsAt('full', fuller) * 0.8, 'and a standard one does not try to keep up', wordsAt('standard', fuller) + ' against ' + wordsAt('full', fuller));
+
     /* --- two voices to a segment -------------------------------------
        The speech engine takes two speakers per take, so a third voice
        inside a segment is an extra request and a seam in the audio. A

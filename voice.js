@@ -209,6 +209,7 @@
       ['STOCK UP', 'Who came out of this better than they went in, and why, with his actual line.', 1],
       ['THE HOT SEAT', 'Whoever was poor, named, with the numbers that say so. No softening.', 1],
       ['THE NUMBERS', 'The box score read as an argument, not a list.', 1],
+      ['THE TAPE', 'One sequence, called the way somebody who watched it would call it.', 2],
       ['THE SWING', 'The play or sequence the game turned on.', 0],
       ['THE OTHER SIDELINE', 'What the opponent did well or got away with.', 0],
       ['HELMET STICKERS', 'Short. One each, for a player who earned it.', 0],
@@ -220,13 +221,14 @@
       ['THE BIG FINISH', 'The host lands it on one line that only fits this game.', 1]
     ];
     /* A quick hit is the spine only; a full show is everything there is. */
-    return rows.filter(function (r) { return len === 'full' || len === 'standard' ? true : r[2] === 1; })
+    /* 2 marks a segment only the long show has room for. */
+    return rows.filter(function (r) { return r[2] === 2 ? len === 'full' : len === 'quick' ? r[2] === 1 : true; })
       .map(function (r, i) { return (i + 1) + '. --- SEGMENT ' + (i + 1) + ': ' + r[0] + ' --- ' + r[1]; }).join('\n');
   }
 
   function lengthRule(brief) {
-    return brief.show.length === 'quick' ? 'About 25 to 35 spoken lines in total.'
-      : brief.show.length === 'full' ? 'About 70 to 90 spoken lines in total, so roughly 6 a segment. Take your time with the arguments.'
+    return brief.show.length === 'quick' ? 'About 20 to 26 spoken lines in total. Nobody gets a speech.'
+      : brief.show.length === 'full' ? 'About 150 to 180 spoken lines in total, so roughly 11 or 12 a segment. This is the long show: let the arguments run, let them interrupt each other, go back over a point when it is worth going back over. Do not summarise where you could argue.'
       : 'About 45 to 60 spoken lines in total, so roughly 4 a segment.';
   }
 
@@ -293,7 +295,11 @@
   /* Roughly what a finished episode costs in tokens, so the cap can be set
      from the show being asked for rather than from one number that fitted
      the short one. */
-  function wantedLines(len) { return len === 'quick' ? 35 : len === 'full' ? 90 : 60; }
+  /* Roughly 150 words a minute spoken, six or seven words a line. A full
+     show that was ninety lines came out barely longer than a standard one,
+     which is not a different show, it is the same show with one more name
+     in it. */
+  function wantedLines(len) { return len === 'quick' ? 26 : len === 'full' ? 180 : 60; }
 
   function writeShow(opts) {
     var len = (opts.brief.show || {}).length;
