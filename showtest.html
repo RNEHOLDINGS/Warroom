@@ -200,6 +200,81 @@
       'and nobody argues with a base rate nobody quoted', numbers(noTO));
     var lossTake = W.buildScript(Object.assign({ id: 'lt', result: 'L', scoreFor: 10, scoreAgainst: 31, yardsFor: 250, yardsAgainst: 450, toFor: '', toAgainst: 2 }, base));
     ok(/still lost by 21/.test(lossTake) && !/most of your margin/.test(lossTake), 'takeaways in a loss are not called the margin');
+
+    /* --- two voices to a segment -------------------------------------
+       The speech engine takes two speakers per take, so a third voice
+       inside a segment is an extra request and a seam in the audio. A
+       79-line show cost 31 requests with three voices a segment and 11
+       with two. The host tees the next segment up at the end of his own
+       rather than refereeing inside somebody else's. */
+    var castOf = function (script) {
+      var segs = [], cur = null;
+      script.split('\n').forEach(function (line) {
+        if (/^--- /.test(line)) { cur = { name: (line.match(/^--- (?:SEGMENT \d+: )?([A-Z’' ]+?)\s*-*$/) || [0, line])[1], who: {} }; segs.push(cur); return; }
+        var m = /^([A-Z][A-Z’'.\- ]{1,30}):\s/.exec(line);
+        if (m && cur) cur.who[m[1].trim()] = (cur.who[m[1].trim()] || 0) + 1;
+      });
+      return segs.filter(function (x) { return Object.keys(x.who).length; });
+    };
+    var worst = function (script) {
+      return castOf(script).filter(function (x) { return Object.keys(x.who).length > 2; })
+        .map(function (x) { return x.name + ' [' + Object.keys(x.who).join(',') + ']'; });
+    };
+    /* A show with everything in it: a coach's quote, players on both the
+       stock-up and hot-seat lists, a swing, bad calls to argue about and a
+       next opponent. Three bare fixtures never reach those segments, which
+       is exactly where the rest of the host's lines were hiding. */
+    var loaded = Object.assign({}, base, {
+      id: 'ld', result: 'L', scoreFor: 13, scoreAgainst: 27,
+      yardsFor: 280, yardsAgainst: 455, toFor: 0, toAgainst: 3,
+      thirdDown: '3/14', penalties: '9/85', rushFor: 41, passFor: 239,
+      tdFor: 1, tdAgainst: 3, fgFor: 2, fgAgainst: 1,
+      rzFor: 1, rzForAtt: 4, injury: 'Left tackle went out in the second quarter',
+      coachQuote: 'We did not execute. That starts with me, and we will look hard at the quarterback position this week.',
+      notes: 'Rain all afternoon.',
+      performances: [
+        { name: 'J. Carty', pos: 'QB', line: '14/31, 148 yds, 0 TD, 3 INT', verdict: 'struggled' },
+        { name: 'T. Reed', pos: 'HB', line: '19 carries, 41 yds', verdict: 'struggled' },
+        { name: 'L. Clark', pos: 'WR', line: '8 catches, 121 yds, 1 TD', verdict: 'standout' },
+        { name: 'M. Boone', pos: 'LB', line: '13 tackles, 1 sack', verdict: 'standout' }
+      ]
+    });
+    /* The board and the schedule only appear when there is a board and a
+       schedule, so give it both. Between the two fixtures every segment the
+       show can produce is covered. */
+    var st0 = W.state();
+    var savedRecruits = st0.recruits, savedSched = st0.schedule, savedPlayers = st0.players, savedShow = st0.show;
+    st0.show = Object.assign({}, st0.show, { useInsider: true });
+    st0.recruits = [
+      { id: 'cr1', type: 'hs', name: 'Deon Alvarez', pos: 'WR', stars: 4, state: 'TX', rank: 88, standing: 2, status: 'board', dealbreaker: 'playing time' },
+      { id: 'cr2', type: 'hs', name: 'Pat Ngata', pos: 'LT', stars: 4, state: 'CA', rank: 140, status: 'committed' },
+      { id: 'cr3', type: 'hs', name: 'Ray Dubois', pos: 'CB', stars: 3, state: 'LA', rank: 420, status: 'board' }
+    ];
+    st0.players = (savedPlayers || []).concat([
+      { id: 'pl9', name: 'Gone Guy', pos: 'WR', year: 'SO', ovr: 76, exit: 'portal' },
+      { id: 'pl8', name: 'Maybe Guy', pos: 'DT', year: 'JR', ovr: 74, risk: true }
+    ]);
+    st0.schedule = [
+      { season: base.season, week: 6, opponent: 'Nebraska', home: true },
+      { season: base.season, week: 7, opponent: 'Iowa State', home: false }
+    ];
+    var boardShow = W.buildScript(Object.assign({}, base, { id: 'bd', result: 'W', scoreFor: 27, scoreAgainst: 20, yardsFor: 390, yardsAgainst: 350, toFor: 1, toAgainst: 1 }));
+    st0.recruits = savedRecruits; st0.schedule = savedSched; st0.players = savedPlayers; st0.show = savedShow;
+    ok(/THE INSIDER/.test(boardShow) && /WHAT’S COMING/.test(boardShow), 'the board and the schedule both made it into the test show',
+      (boardShow.match(/--- SEGMENT[^\n]*/g) || []).join(' | '));
+
+    [['a win', W.buildScript(Object.assign({ id: 'ww', result: 'W', scoreFor: 31, scoreAgainst: 17, yardsFor: 440, yardsAgainst: 300, toFor: 2, toAgainst: 1 }, base))], ['a loss', lossTake], ['a quick hit', W.buildScript(Object.assign({ id: 'qq', result: 'W', scoreFor: 24, scoreAgainst: 17 }, base))], ['a show with everything in it', W.buildScript(loaded)], ['a show with the board and the schedule', boardShow]].forEach(function (pairx) {
+      var bad = worst(pairx[1]);
+      ok(bad.length === 0, 'every segment of ' + pairx[0] + ' holds two voices at most', bad.join(' | '));
+    });
+    var segs = castOf(W.buildScript(loaded));
+    ok(segs.length >= 9, 'the show still has its segments', segs.length);
+    var names = segs.map(function (x) { return x.name; }).join(',');
+    ok(/HOT SEAT/.test(names) && /NUMBERS/.test(names) && /COACH/.test(names), 'including the ones a bare fixture never reaches', names);
+    var heard = {};
+    segs.forEach(function (x) { Object.keys(x.who).forEach(function (k) { heard[k] = 1; }); });
+    ok(Object.keys(heard).length >= 3, 'and everybody on the panel is still on the show, just not all at once', Object.keys(heard).join(','));
+
     finish();
   } catch (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); }
 })();

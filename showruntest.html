@@ -79,7 +79,7 @@
     ok(/J\. Carty|T\. Reed/.test(stick) && /L\. Clark/.test(stick), 'named from the game’s own players', stick);
 
     /* --- calls --- */
-    ok(/Calls for next week, on the record/.test(said(s1)), 'the show ends with calls');
+    ok(/call for next week, on the record/i.test(said(s1)), 'the show ends with calls');
     var calls1 = W.callsFor(wk1, 'Oregon');
     ok(calls1.analyst.text && calls1.player.text && calls1.analyst.text !== calls1.player.text, 'each of them makes one', JSON.stringify(calls1.analyst.text));
     ok(W.callsFor(wk1, 'Oregon').analyst.text === calls1.analyst.text, 'and the same game always produces the same call');

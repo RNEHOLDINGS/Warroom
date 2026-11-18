@@ -127,7 +127,7 @@
     /* --- a thread through the show --- */
     var lossScript = W.buildScript(Object.assign({}, g, { id: 'g9', result: 'L', scoreFor: 14, scoreAgainst: 24, rushFor: 40, passFor: 180,
       performances: [{ name: 'D.Moss', pos: 'HB', line: '9 car 25 yds', verdict: 'struggled' }] }));
-    ok(/you said it started up front\. Let’s see if the numbers back you up/.test(said(lossScript)), 'the numbers segment picks up what was said earlier');
+    ok(/you said it started up front\. Let’s see whether the numbers back you up/i.test(said(lossScript)), 'the numbers segment picks up what was said earlier');
     ok(/(just saying about|saw it with) D\. Moss/.test(seg(said(lossScript), 'THE NUMBERS') || said(lossScript)), 'and ties a stat back to the player already discussed', seg(lossScript, 'THE NUMBERS'));
 
     /* --- the energy slider --- */

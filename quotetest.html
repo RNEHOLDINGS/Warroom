@@ -69,9 +69,10 @@
     /* --- the clip itself --- */
     var line = 'We have to execute better. That’s on me, I have to put them in better positions.';
     var s = withQuote(line);
-    ok(/WHAT THE COACH SAID/.test(s), 'a quote gets its own segment');
+    ok(/WHAT THE COACH SAID/.test(s) && /THE CLIP/.test(s), 'a quote gets its own segment, and the tape rolls in one of its own before it');
+    var tape = seg(s, 'THE CLIP');
     var clip = seg(s, 'WHAT THE COACH SAID');
-    ok(clip.indexOf('COACH: ' + line) >= 0, 'his words are played back exactly as typed', clip.split('\n').slice(0, 6).join(' | '));
+    ok(tape.indexOf('COACH: ' + line) >= 0, 'his words are played back exactly as typed', tape.split('\n').slice(0, 6).join(' | '));
     ok(/COACH — Oregon’s head coach/.test(s), 'and the cast list says who that voice is');
     ok(/What the coach said/.test(s.split('--- COLD OPEN')[0]), 'the rundown lists it');
     ok(/Coach said:  We have to execute/.test(s), 'the producer notes keep it', (s.match(/Coach said:.*/) || [''])[0]);
@@ -111,9 +112,10 @@
     var hurt = 'We were without two starters up front and it showed. We changed the plan at half time.';
     var sInj = withQuote(hurt);
     var clipInj = seg(sInj, 'WHAT THE COACH SAID');
+    var tapeInj = seg(sInj, 'THE CLIP');
     ok(/gave us a bit there|There’s something in that|told us a couple of things|go back to what he said/.test(clipInj), 'the host just points at it, the way a host does', clipInj);
     ok(!/what did we learn|the stats don’t tell us|box score doesn’t say/i.test(sInj), 'and never narrates the machinery of the show', (sInj.match(/.{0,60}(what did we learn|stats don’t tell).{0,40}/i) || [''])[0]);
-    ok(/[Hh]ere’s what the head coach|[Ll]et’s hear from the head coach|head coach, after the game|at the podium|Listen to the coach/.test(clipInj), 'the clip is introduced the way one is introduced on television', clipInj.split('\n').slice(0, 4).join(' | '));
+    ok(/[Hh]ere’s what the head coach|[Ll]et’s hear from the head coach|head coach, after the game|at the podium|[Ll]isten to the coach/.test(tapeInj), 'the clip is introduced the way one is introduced on television', tapeInj.split('\n').slice(0, 4).join(' | '));
     ok(/patched together|went out of his way to talk about the line/.test(clipInj), 'and the panel pulls the absences out of the quote', clipInj);
     ok(/the plan changed|two different games/.test(clipInj), 'and that the game plan changed at half time', clipInj);
     ok(/don’t see any of that in a box score|part people miss|watch it again knowing that|instead of reading the numbers/.test(clipInj), 'the ex-player says why that matters', clipInj);

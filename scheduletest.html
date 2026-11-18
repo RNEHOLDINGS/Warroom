@@ -86,7 +86,7 @@
     var s1 = W.buildScript(wk1);
     ok(/WHAT’S COMING/.test(s1), 'there is a look-ahead segment');
     var look = seg(s1, 'WHAT’S COMING');
-    ok(/Next week: on the road at No\. 9 Washington/.test(look), 'it names the next opponent, the venue and their rank', look);
+    ok(/next week: on the road at No\. 9 Washington/i.test(look), 'it names the next opponent, the venue and their rank', look);
     ok(/run game|third down/.test(look), 'and ties what went wrong to what is coming', look);
     ok(/3 left on the schedule/.test(look) || /left on the schedule/.test(look), 'it knows how much season is left', look);
     ok(/Next up: Washington/.test(s1), 'the rundown says who is next');

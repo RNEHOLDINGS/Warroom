@@ -253,7 +253,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v35';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v36';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -2151,7 +2151,20 @@
       }
       return text;
     };
-    var say = function (label, text) { L.push(label + ': ' + tone(talk(human(label, text)))); L.push(''); };
+    /* With the host out of the middle of the arguments, two of somebody's
+       lines can end up back to back where his question used to sit. Printed
+       that way it reads like a transcript glitch, and spoken it puts a hard
+       stop in the middle of a thought, so the second joins the first. */
+    var say = function (label, text) {
+      var said = tone(talk(human(label, text)));
+      var at = L.length - 2;
+      if (L[L.length - 1] === '' && at >= 0 && typeof L[at] === 'string' && L[at].indexOf(label + ': ') === 0) {
+        L[at] = L[at].replace(/\s+$/, '') + ' ' + said.replace(/^\s+/, '');
+        return;
+      }
+      L.push(label + ': ' + said);
+      L.push('');
+    };
     var rule = function () { w('============================================================'); };
     var streakAfter = ctx.after && ctx.after.n >= 2 ? ctx.after : null;
     var snapped = ctx.before && ctx.before.n >= 2 && ctx.before.result !== g.result ? ctx.before : null;
@@ -2306,7 +2319,10 @@
     else playerOpen = pick(['I’ve defended this football team on this show every single week. Not today. I’m not doing it today.', 'I watched that whole thing and I need a minute. Actually, no, I don’t need a minute. That was embarrassing.']);
     say(PLAYER, playerOpen);
 
-    /* the callback: what he said last week, checked against what happened */
+    /* The callback and the needling open the argument instead of the show.
+       Two voices to a segment: the cold open is the host and the man who
+       played, and the analyst walks in when the question goes up. */
+    var openArgument = function () {
     if (last && last.result === 'W' && !won) {
       say(ANALYST, playerF + ', last week you told everybody to write it down. Where’d you write it? Pencil?');
       say(PLAYER, 'Oh, here we go. It’s ONE game.');
@@ -2327,6 +2343,7 @@
       ]));
       say(PLAYER, beat('groan', ['Here we go.', 'Oh, here comes the spreadsheet.', 'The charts. Every week, the charts.', 'Say the number. Go on, say it.', 'I can feel a percentage coming.', 'And there it is.']));
     }
+    };
     /* last week's calls, graded, and the season record they add up to.
        A prediction nobody keeps score of is just noise. */
     if (last) {
@@ -2338,13 +2355,8 @@
         ' On the season, ' + analystF + ' is ' + rec2.analyst.w + ' and ' + rec2.analyst.l + ', ' + playerF + ' is ' + rec2.player.w + ' and ' + rec2.player.l + '.');
       if (graded.player.hit === false && graded.analyst.hit === true) say(PLAYER, hy('Records are for the off-season.', 'Nobody remembers the calls. They remember the takes.', 'NOBODY remembers the calls!'));
       else if (graded.player.hit === true && graded.analyst.hit === false) say(PLAYER, hy('I’ll take it.', 'Put it on the board. That’s two in a row I’ve had right.', 'PUT IT ON THE BOARD!'));
-      else if (graded.player.hit === true) say(ANALYST, 'We both got there. Different roads.');
+      else if (graded.player.hit === true) say(PLAYER, 'We both got there. Different roads.');
     }
-    w('');
-
-    /* ---- segment 1 ---- */
-    if (!quick) {
-    head('THE QUESTION');
     var q;
     if (up && up.kind === 'win') q = 'An upset. Was it a fluke, or were the rankings just wrong about ' + US + '?';
     else if (up) q = 'How does ' + US_R + ' lose to ' + (rT ? THEM_R : 'an unranked ' + them) + '?';
@@ -2355,7 +2367,15 @@
     else if (snapped && snapped.result === 'W') q = 'Does one loss undo ' + numWord(snapped.n) + ' wins, or did we just meet the real ' + US + '?';
     else if (cCase.length && cCase[0].weight >= 9) q = 'Is this a roster problem or a coaching problem?';
     else q = tight ? 'Who loses this football game, the players or the plan?' : 'Bad day, or is this just who ' + US + ' is?';
-    say(HOST, 'Question on the board. ' + q + ' ' + playerF + ', you’re up.');
+    /* The host puts the question up as he hands over, which is what lets
+       the next segment be two voices instead of three. */
+    if (!quick) say(HOST, 'Question on the board. ' + q + ' ' + playerF + ', ' + analystF + ', it’s yours.');
+    w('');
+
+    /* ---- segment 1 ---- */
+    if (!quick) {
+    head('THE QUESTION');
+    openArgument();
     if (isRiv && ser.games >= 2) {
       say(PLAYER, beat('riv', [
         'And before we start: this one counts double and everybody in both buildings knows it. ' + ser.record + ' in this series.',
@@ -2422,7 +2442,6 @@
       ]));
       say(PLAYER, beat('lost-push-p2', ['“Name the snap.” Unbelievable.', 'Measurement. He wants a MEASUREMENT.', 'This is why nobody invites analysts to tailgates.']));
     }
-    say(HOST, beat('hold', ['Okay, hold it. We’re coming back to that.', 'Park that. It’s coming back.', 'Hold that thought, both of you.', 'We’ll settle this in the numbers.']));
     w('');
     }
 
@@ -2454,11 +2473,14 @@
           : bigBefore >= 1 ? ' That’s his ' + (ORDINAL_WORD[bigBefore + 1] || (bigBefore + 1) + 'th') + ' good game this year.' : '';
         var opener = i === 0
           ? beat('stock-open', won
-            ? ['Let’s hand out some credit. Stock up for ' + US + '. Start me with', 'Stock up. First ' + US + ' name on my list is', 'Credit where it’s earned. Stock up, and we start with', 'Stock up. The one ' + US + ' fan who slept well is', 'Let’s do the good news first. Stock up:']
-            : ['Even in a loss, somebody on ' + US + ' showed up. Stock up. Start me with', 'Stock up, and yes, ' + US + ' has one. Start me with', 'There’s always somebody. Stock up:', 'Find me a bright spot. Stock up. Start with', 'Stock up, short list this week. Start with'])
-          : beat('stock-next', ['Who else?', 'Give me another one.', 'Next name.', 'Keep it going. Who else?', 'One more name.', 'And after him?']);
+            ? ['Let’s hand out some credit. Stock up for ' + US + ', starting with', 'Stock up. First ' + US + ' name on my sheet is', 'Credit where it’s earned. Stock up, and we start with', 'Stock up. The one ' + US + ' fan who slept well is', 'Good news first. Stock up:']
+            : ['Even in a loss, somebody on ' + US + ' showed up. Stock up, starting with', 'Stock up, and yes, ' + US + ' has one. It’s', 'There’s always somebody. Stock up:', 'A bright spot, then. Stock up:', 'Stock up, short list this week. It’s'])
+          : beat('stock-next', ['Next.', 'Next name.', 'Then there’s', 'Keep going. There’s also', 'One more.', 'And after him,']);
         var disputed = G && G.overall === 0;
-        say(HOST, opener + ' ' + p.name + (p.pos ? ', ' + p.pos : '') + '. ' + sentence(p.line || 'Big afternoon') + note +
+        /* Two voices to a segment, so the sheet and the argument share it:
+           the analyst reads the name and the line, the man who played says
+           what he thinks of it. */
+        say(ANALYST, opener + ' ' + p.name + (p.pos ? ', ' + p.pos : '') + '. ' + sentence(p.line || 'Big afternoon') + note +
           (coachOn ? ' And his coach went out of his way to mention him afterwards.' : '') +
           (disputed ? ' ' + beat('disputed-h', [
             'Although I look at that line and I am not sure it belongs in this segment.',
@@ -2482,7 +2504,7 @@
             'He is not the only reason they lost. He is comfortably the biggest one.'
           ]));
           if (i === 0) {
-            say(HOST, beat('disputed-h2', ['So where does he go? Stock up or hot seat?', 'Is that a stock up or a hot seat, then?']));
+            say(ANALYST, beat('disputed-h2', ['So where does he go? Stock up or hot seat?', 'Is that a stock up or a hot seat, then?']));
             say(PLAYER, 'Neither. He’s just a quarterback having a hard season, and we’re the ones who have to talk about it every Monday.');
           }
           return;
@@ -2518,9 +2540,8 @@
             : (G.facts.length ? cap1(list2(G.facts)) + ' is a normal day in a game this length. ' : 'That line is a normal day. ') +
               (G.minus.length ? 'And there was ' + G.minus[0] + ' in there. ' : '') + 'He did his job. I just wouldn’t put him on a poster for it.');
         say(ANALYST, take.replace(/\s+$/, ''));
-        /* who he has been all season, not just today -- the host keeps the
-           season file, so the analyst's turn stays a turn */
-        if (role || season) say(HOST, pick([
+        /* who he has been all season, not just today */
+        if (role || season) say(ANALYST, pick([
           'And remember who we’re talking about: ' + (role || 'a man with ' + season) + (role && season ? ', ' + season + '.' : '.'),
           'For the season, he’s ' + (role || 'up to ' + season) + (role && season ? ' with ' + season + '.' : '.'),
           'Context: ' + (role || season) + (role && season ? '. ' + cap1(season) + '.' : '.')
@@ -2541,11 +2562,11 @@
       });
     }
     if (solid.length) {
-      say(HOST, (stars.length ? 'And a quick word for ' : 'Nobody jumped off the screen, but a word for ') + list2(solid.slice(0, 2).map(function (p) { return p.name; })) + ', who just did the job.');
-      say(ANALYST, pick(['Those are the games nobody remembers and every coach loves.', 'That’s how a team stays out of trouble.']));
+      say(ANALYST, (stars.length ? 'And a quick word for ' : 'Nobody jumped off the screen, but a word for ') + list2(solid.slice(0, 2).map(function (p) { return p.name; })) + ', who just did the job.');
+      say(PLAYER, pick(['Those are the games nobody remembers and every coach loves.', 'That’s how a team stays out of trouble.']));
     }
     if (!stars.length && !solid.length) {
-      say(HOST, 'Nobody on ' + US + ' got flagged as a standout this week. So who gets it?');
+      say(ANALYST, 'Nobody on ' + US + ' got flagged as a standout this week. So who gets it?');
       say(PLAYER, 'That’s your story right there. ' + (won ? 'You won, and you can’t name one guy who won it for you.' : 'You lost, and not one guy stood up.'));
       say(ANALYST, 'Or eleven people did their jobs and nobody made a highlight. That’s allowed.');
     }
@@ -2576,13 +2597,13 @@
         var opener = i === 0
           ? beat('hot-open', ['Okay, enough nice. The hot seat.', 'Now the part ' + playerF + ' hates. The hot seat.', 'Hot seat.', 'Right. Somebody has to sit in it. Hot seat.', 'The uncomfortable chair. Hot seat.', 'Enough flowers. Hot seat.'])
           : beat('hot-next', ['One more.', 'And one more.', 'Next one, and it’s not pretty.', 'One more name for the chair.']);
-        say(HOST, opener + ' ' + p.name + (p.pos ? ' at ' + p.pos : '') + '. ' + sentence(p.line || 'It wasn’t his day') +
+        say(ANALYST, opener + ' ' + p.name + (p.pos ? ' at ' + p.pos : '') + '. ' + sentence(p.line || 'It wasn’t his day') +
           (inARow ? ' And that’s two rough ones in a row.' : again ? ' And he was on the hot seat the last time we talked about him, too.' : fell ? ' And this is a guy we had in stock up last time.' : '') +
           (coachOnH ? ' And his coach brought his name up unprompted after the game, which tells you something.' : ''));
 
         /* the production was there and something else put him here */
         if (roleH) say(PLAYER, 'Hang on. This is ' + roleH + '. ' + (seasonH ? cap1(seasonH) + '. ' : '') + 'One bad afternoon doesn’t change that.');
-        else if (seasonH && profH.games >= ROLE_MIN_GAMES) say(HOST, 'For the season he’s at ' + seasonH + ', so this is not the whole picture.');
+        else if (seasonH && profH.games >= ROLE_MIN_GAMES) say(PLAYER, 'For the season he’s at ' + seasonH + ', so this is not the whole picture.');
         if (G && (G.overall >= 2 || (G.base >= 2 && G.minus.length))) {
           say(PLAYER, hy('I’m not sure he belongs here. ', 'Wait. Why is he on the hot seat? ', 'Wait, WAIT. Why is he on the hot seat? ') + (G.plus[0] ? cap1(G.plus[0]) + '. ' : '') + 'That’s a good line.');
           say(ANALYST, G.minus.length
@@ -2631,7 +2652,7 @@
             'No. Not today. That was not close to good enough and he knows it before we say it.',
             'I’ll back a kid through a bad day. That was past a bad day.'
           ]));
-          say(HOST, beat('dire-h' + i, ['So what happens to him now?', 'Does he keep the job?', 'Monday morning. What does the staff do with him?', 'Where does he go from here?']));
+          say(PLAYER, beat('dire-h' + i, ['So what happens to him now?', 'Does he keep the job?', 'Monday morning. What does the staff do with him?', 'Where does he go from here?']));
           say(ANALYST, beat('dire-fix' + i + p.key, [
             'If there’s somebody behind him, this is the week you find out. If there isn’t, you build the game plan around protecting him.',
             'You don’t bench a man to punish him. You bench him if the other guy gives you a better chance. Otherwise you simplify everything around him.',
@@ -2672,15 +2693,14 @@
           ]));
           say(ANALYST, 'I’m not blaming him for ' + (won ? 'anything' : 'the loss') + '. I’m telling you what happened.');
           say(PLAYER, 'It sounds like blame.');
-          if (i === 0) say(HOST, 'It’s definitely blame.');
+          if (i === 0) say(ANALYST, 'It is blame. I’m just not pretending otherwise.');
         }
       });
     } else {
       var argued = stars.filter(function (x) { var gg = gradeLine(x.raw, S); return gg && gg.overall === 0; })[0];
-      say(HOST, argued
-        ? 'Nobody was flagged for the hot seat this week, which is its own story after the five minutes we just spent on ' + argued.name + '.'
-        : 'Nobody on the hot seat this week.');
-      say(ANALYST, 'Then somebody didn’t watch the whole tape.');
+      say(ANALYST, (argued
+        ? 'Nobody was flagged for the hot seat this week, which is its own story after the five minutes we just spent on ' + argued.name + '. '
+        : 'Nobody on the hot seat this week. ') + 'Which means somebody didn’t watch the whole tape.');
       say(PLAYER, 'Or, and stay with me here, everybody just played fine.');
     }
     w('');
@@ -2705,15 +2725,15 @@
       var hasTO = bx.toFor !== '' || bx.toAgainst !== '';
       /* pick up the thread from earlier in the show instead of starting cold */
       if (!won && !tied && !up) {
-        say(HOST, playerF + ', you said it started up front. Let’s see if the numbers back you up. ' + analystF + ', go.');
+        say(ANALYST, 'You said it started up front. Let’s see whether the numbers back you up.');
         say(PLAYER, 'They will.');
       } else {
         /* the reply belongs to the cue */
         var cue = pick([
-          [analystF + ', this is your segment. ' + playerF + ', try not to interrupt.', 'No promises.'],
-          ['Let’s go to the numbers. ' + analystF + ', you’ve been waiting all show.', 'Here comes the spreadsheet.']
+          ['This next part is mine, and I’d ask you not to interrupt.', 'No promises.'],
+          ['Right. The numbers, which I have been sat on all show.', 'Here comes the spreadsheet.']
         ]);
-        say(HOST, cue[0]);
+        say(ANALYST, cue[0]);
         say(PLAYER, cue[1]);
       }
       /* when a stat belongs to somebody already talked about, say so */
@@ -2767,8 +2787,10 @@
       };
       points.forEach(function (p, i) {
         var nexts = [beat('nums-next', ['What else is on the sheet?', 'Give me the next one.', 'What else have you got?', 'Next number.']), beat('nums-next2', ['Keep going.', 'Carry on.', 'And?'])];
-        if (i > 0 && i === points.length - 1) say(HOST, beat('nums-last', ['Last one. Make it quick.', 'One more, then we move.', 'Give me one more and we’re out.', 'Last number, then stickers.']));
-        else if (i > 0) say(HOST, nexts[i - 1] || 'Keep going.');
+        /* The prompts between numbers go to the man being argued with,
+           because two voices to a segment means nobody is refereeing it. */
+        if (i > 0 && i === points.length - 1) say(PLAYER, beat('nums-last', ['Last one. Make it quick.', 'One more, then can we move on.', 'Give me one more and we’re out.', 'Last number, then stickers.']));
+        else if (i > 0) say(PLAYER, nexts[i - 1] || 'Keep going.');
         /* Nothing typed for turnovers means no battle to call. Saying "even
            in turnovers" there was a fact the script made up. */
         var lead = i === 0 && !hasTO && points.length < 3 ? 'Nobody gave me turnovers, so I am not going to pretend I know who won that battle. ' : '';
@@ -2797,20 +2819,20 @@
     var nmu = nextManUp(g, voiced, S);
     if (swungBy.length || nmu) {
       head('THE SWING');
-      say(HOST, beat('swing-open', [
+      say(ANALYST, beat('swing-open', [
         'Let’s talk about what went right, because something did.',
-        'The other side of it now. What swung this game?',
-        'Before we bury anybody, what actually went ' + US + '’s way?',
-        'Something went right out there. ' + analystF + '.'
+        'The other side of it now. Here is what swung this game.',
+        'Before we bury anybody, here is what actually went ' + US + '’s way.',
+        'Something went right out there, and this is it.'
       ]));
       swungBy.slice(0, quick ? 1 : full ? 4 : 2).forEach(function (x, i) {
-        if (i) say(HOST, beat('swing-next' + i, ['What else?', 'And?', 'Keep going.']));
+        if (i) say(PLAYER, beat('swing-next' + i, ['What else?', 'And?', 'Keep going.']));
         say(ANALYST, x.analyst);
         say(PLAYER, x.player);
       });
       if (nmu) {
         var who = nmu.hurt ? nmu.hurt.name : 'somebody';
-        say(HOST, nmu.hurt
+        say(ANALYST, nmu.hurt
           ? who + ' went down. ' + sentence(spoken(nmu.text))
           : sentence(spoken(nmu.text)));
         if (nmu.stepped) {
@@ -2842,18 +2864,18 @@
     var gifts = opponentGifts(bx0, g, them, US, S, pick);
     if (gifts.length) {
       head('THE OTHER SIDELINE');
-      say(HOST, beat('other-open', [
-        'Flip it around. What did ' + them + ' give away?',
-        'Let’s talk about the other sideline. What did ' + them + ' hand over?',
-        'Other sideline. What did ' + them + ' hand ' + US + '?',
-        'Half this game belongs to ' + them + '. What did they give up?'
+      say(ANALYST, beat('other-open', [
+        'Flip it around. Here is what ' + them + ' gave away.',
+        'The other sideline, then. What ' + them + ' handed over.',
+        'Other sideline. What ' + them + ' handed ' + US + '.',
+        'Half this game belongs to ' + them + ', so here is what they gave up.'
       ]));
       gifts.slice(0, quick ? 1 : full ? 3 : 2).forEach(function (x, i) {
-        if (i) say(HOST, pick(['What else?', 'And?']));
+        if (i) say(PLAYER, pick(['What else?', 'And?']));
         say(ANALYST, x.analyst);
         say(PLAYER, x.player);
       });
-      if (!quick) say(HOST, won
+      if (!quick) say(ANALYST, won
         ? beat('other-close-w', ['Good teams take what they’re given. Noted.', 'Take the gifts, win the game. Noted.', 'Duly noted, and duly cashed.'])
         : beat('other-close-l', ['And that’s the part that’ll sting on the bus.', 'That’s the one they’ll watch twice.', 'Handed chances, took none. Noted.']));
       w('');
@@ -2865,18 +2887,19 @@
     var stickers = helmetStickers(g, voiced, bx0, S, sp);
     if (stickers.length) {
       head('HELMET STICKERS');
-      say(HOST, beat('stick-open', [
-        'Helmet stickers. ' + playerF + ', hand them out.',
-        'Stickers on the helmet. Who gets one?',
-        'Time for the stickers. Go.',
-        'Helmet stickers, and be quick about it.'
+      /* The ritual belongs to the two handing them out. */
+      say(PLAYER, beat('stick-open', [
+        'Helmet stickers. I’ve got these.',
+        'Stickers on the helmet. Here’s who gets one.',
+        'Sticker time. Let’s go.',
+        'Helmet stickers, and I’ll be quick.'
       ]));
       stickers.slice(0, quick ? 2 : 4).forEach(function (x, i) {
         var line = x.unit + ': ' + x.who + (x.why ? '. ' + cap1(sentence(x.why)) : '.');
         if (i % 2 === 0) say(PLAYER, (i === 0 ? '' : 'And ') + line);
         else say(ANALYST, line);
       });
-      if (!quick) say(HOST, beat('stick-close', ['Stickers earned.', 'That’s the helmet sorted.', 'Stickers awarded. Appeals go to nobody.', 'Helmet’s full. Moving on.']));
+      if (!quick) say(ANALYST, beat('stick-close', ['Stickers earned.', 'That’s the helmet sorted.', 'Stickers awarded. Appeals go to nobody.', 'Helmet’s full.']));
       w('');
     }
 
@@ -2924,16 +2947,20 @@
           (out.length ? (out.length === 1 ? 'One guy is already in the portal' : out.length + ' are already in the portal') + (out.length <= 3 ? ', ' + out.map(function (p) { return p.name; }).join(' and ') : '') : 'Nobody’s in the portal yet') +
           (risk.length ? ', and I’m told ' + (risk.length === 1 ? 'another one is thinking about it' : risk.length + ' more are thinking about it') + '. If they all go, that ' + n.totals.open + ' becomes ' + n.totals.openIfRisk + '.' : '.'));
       }
-      say(PLAYER, 'That’s the part people miss. You’re not building a roster. You’re plugging a hole while somebody drills a new one.');
-      say(ANALYST, 'That’s the most reasonable thing you’ve said all morning.');
-      say(PLAYER, 'I’m full of reasonable things.');
       w('');
     }
 
     /* ---- final take ---- */
     var gp = ctx.prior.length + 1;
     head('FINAL TAKE');
-    say(HOST, 'Ten seconds each. ' + (rU || rT ? 'Where does ' + US + ' land in the poll?' : 'Where does ' + US + ' finish?'));
+    /* The coda to the board, moved to where the two of them are already in
+       the room together. */
+    if (cast.useInsider && !quick) {
+      say(PLAYER, 'Before we go. That recruiting stuff is the part people miss. You’re not building a roster, you’re plugging a hole while somebody drills a new one.');
+      say(ANALYST, 'That’s the most reasonable thing you’ve said all morning.');
+      say(PLAYER, 'I’m full of reasonable things.');
+    }
+    say(ANALYST, 'Ten seconds each, then. ' + (rU || rT ? 'Where does ' + US + ' land in the poll?' : 'Where does ' + US + ' finish?'));
     say(PLAYER, up && up.kind === 'win'
       ? 'They’re moving up. How far is up to the voters, but after beating ' + THEM_R + ', they’re moving.'
       : up
@@ -2944,7 +2971,7 @@
     say(ANALYST, gp >= 4
       ? rec + ' after ' + gp + ' games. That’s not a sample anymore, that’s a résumé. ' + (won ? 'And the résumé is starting to hold up.' : 'And the résumé has some holes in it.')
       : (won ? 'Good process, good result. Next week tells us which one it was.' : 'One data point. Ask me after the next two and I’ll give you a real answer.'));
-    if (g.notes) say(HOST, 'One more thing before we go. ' + sentence(spoken(g.notes)));
+    if (g.notes) say(ANALYST, 'One more thing before we go. ' + sentence(spoken(g.notes)));
 
     /* ---- the clip ----
        Rolling tape on the coach and then arguing with it is most of what
@@ -2953,7 +2980,7 @@
        voice, the analyst translates it, the ex-player answers from inside a
        locker room, and then it gets held against the game itself. */
     if (coachSaid) {
-      head('WHAT THE COACH SAID');
+      head('THE CLIP');
       say(HOST, beat('clip-in', [
         'Here’s what the head coach had to say about it afterwards.',
         'This is ' + US + '’s head coach, after the game.',
@@ -2964,13 +2991,14 @@
       ]));
       L.push('COACH: ' + coachSaid.quote);
       L.push('');
-      say(HOST, beat('clip-ask', [
-        analystF + '.',
-        'Okay. ' + analystF + ', what do you make of that?',
-        analystF + ', your read.',
-        'Thoughts.',
-        analystF + ', what’s he telling us there?',
-        'So what is that?'
+      head('WHAT THE COACH SAID');
+      say(ANALYST, beat('clip-ask', [
+        'So. What he is telling us there.',
+        'Right. What do we make of that.',
+        'Here is my read on it.',
+        'Thoughts, then.',
+        'What he is actually telling us there is this.',
+        'So what is that.'
       ]));
       if (coachSaid.hits.length) {
         say(ANALYST, coachSaid.hits.slice(0, 2).map(function (x) { return x.means; }).join(' '));
@@ -2992,7 +3020,7 @@
         say(PLAYER, 'That’s the job. You’ve got twelve minutes to say nothing and get to the bus.');
       }
       if (coachSaid.facts.length) {
-        say(HOST, beat('clip-learn', [
+        say(PLAYER, beat('clip-learn', [
           'He gave us a bit there, didn’t he.',
           'There’s something in that.',
           'And he told us a couple of things.',
@@ -3007,7 +3035,7 @@
         ]));
       }
       if (coachSaid.named.length) {
-        say(HOST, beat('clip-name-h', [
+        say(PLAYER, beat('clip-name-h', [
           'He mentioned ' + list2(coachSaid.named.slice(0, 2).map(function (p) { return p.name; })) + ' by name there.',
           'And he brought up ' + list2(coachSaid.named.slice(0, 2).map(function (p) { return p.name; })) + '.',
           'He said ' + list2(coachSaid.named.slice(0, 2).map(function (p) { return p.name; })) + ' out loud, which you noticed too.'
@@ -3019,7 +3047,7 @@
         ]));
       }
       if (coachSaid.checks.length) {
-        say(HOST, beat('clip-check', ['Do you buy it?', 'Do we buy that?', 'Is he right, though?', 'And does that hold up?', 'Fair?']));
+        say(PLAYER, beat('clip-check', ['Do you buy it?', 'Do we buy that?', 'Is he right, though?', 'And does that hold up?', 'Fair?']));
         say(ANALYST, coachSaid.checks.slice(0, quick ? 1 : 2).join(' '));
         say(PLAYER, beat('clip-last', [
           'I’ll say this for him: he stood there and answered. Plenty don’t.',
@@ -3037,20 +3065,20 @@
     if (cCase.length && (!quick || cCase[0].weight >= 9)) {
       var charges = cCase.slice(0, quick ? 2 : full ? 6 : 4);
       head('THE STAFF');
-      say(HOST, beat('staff-open', [
-        'Right. Let’s talk about the sideline, because not all of this is on nineteen-year-olds. ' + analystF + '.',
-        'The part nobody in that building wants to hear. Coaching. ' + analystF + ', go.',
-        'Somebody has to say it, so it may as well be this segment. The staff. ' + analystF + '.',
-        'Players play, coaches decide. Let’s do the deciding. ' + analystF + '.'
+      say(ANALYST, beat('staff-open', [
+        'Right. The sideline, because not all of this is on nineteen-year-olds.',
+        'Now the part nobody in that building wants to hear. Coaching.',
+        'Somebody has to say it, so it may as well be this segment. The staff.',
+        'Players play, coaches decide. Let’s do the deciding.'
       ]));
       charges.forEach(function (c, i) {
-        if (i) say(HOST, beat('staff-next' + i, ['What else?', 'Keep going.', 'And the next one?', 'There’s more, isn’t there?']));
+        if (i) say(PLAYER, beat('staff-next' + i, ['What else?', 'Keep going.', 'And the next one?', 'There’s more, isn’t there?']));
         say(ANALYST, c.charge);
         say(PLAYER, c.defence);
       });
       /* the way forward: the same evidence, pointed at next week */
-      say(HOST, beat('staff-fix', [
-        'Alright. Both of you, one thing each. What does this staff actually do about it?',
+      say(PLAYER, beat('staff-fix', [
+        'Alright. One thing each, then. What does this staff actually do about it?',
         'So what’s the fix? Not the complaint. The fix.',
         'Give me the plan. If you’re in that meeting tomorrow morning, what do you say?'
       ]));
@@ -3084,16 +3112,16 @@
         : '';
       head('WHAT’S COMING');
       if (sch.bye && !sch.next) {
-        say(HOST, 'And that’s the regular season. Nothing left on the schedule.');
+        say(PLAYER, 'And that’s the regular season. Nothing left on the schedule.');
         say(ANALYST, 'Then the only thing left to argue about is what it added up to.');
       } else if (sch.bye) {
-        say(HOST, 'They’ve got a bye, and then ' + nextUp + '. Two weeks to fix things, ' + playerF + '.');
+        say(ANALYST, 'They’ve got a bye, and then ' + nextUp + '. Two weeks to fix things, ' + playerF + '.');
         say(PLAYER, 'Two weeks is a gift. ' + (sore ? 'If they come out of an open week and ' + sore + ' still looks like that, that’s on the staff.' : 'No excuses after an open week.'));
         say(ANALYST, 'Open weeks help the team that knows what its problem is. ' + (sore ? 'Theirs is ' + sore + ', and everybody in that building knows it.' : 'This staff seems to.'));
       } else {
-        say(HOST, 'Next week: ' + nextUp + '.' +
+        say(ANALYST, 'Next week: ' + nextUp + '.' +
           (sch.rivalryNext ? ' And that one’s a rivalry' + (nextSer && nextSer.games ? ', ' + nextSer.record + ' in the series' : '') + '.' : '') +
-          ' ' + playerF + ', what has to change by Saturday?');
+          ' So what has to change by Saturday?');
         say(PLAYER, (sore ? cap1(sore) + '. You can’t take that into ' + nextName + ' and expect a different ending. ' : 'Honestly? Nothing structural. ') +
           (sch.rivalryNext
             ? 'And in a rivalry game none of the records matter anyway. Throw them out.' + (nextSer && nextSer.run > 1 && nextSer.runBy === 'L' ? ' Especially when you’ve lost ' + nextSer.run + ' in a row in it.' : '')
@@ -3111,14 +3139,14 @@
     /* the calls that next week's show will grade */
     var calls = callsFor(g, US, nextName);
     var recNow = callRecord(g);
-    say(HOST, 'Calls for next week, on the record. ' + analystF + '?');
-    say(ANALYST, calls.analyst.text);
-    say(HOST, playerF + '?');
-    say(PLAYER, calls.player.text);
+    /* Nobody has to read these back to them: they are the two who have to
+       live with being wrong, and it keeps the segment to two voices. */
+    say(ANALYST, 'Call for next week, on the record. ' + calls.analyst.text);
+    say(PLAYER, 'Mine: ' + calls.player.text.charAt(0).toLowerCase() + calls.player.text.slice(1));
     if (recNow.analyst.w + recNow.analyst.l + recNow.player.w + recNow.player.l > 0) {
-      say(HOST, 'Logged. ' + analystF + ' is ' + recNow.analyst.w + ' and ' + recNow.analyst.l + ' this season, ' + playerF + ' is ' + recNow.player.w + ' and ' + recNow.player.l + '.');
+      say(ANALYST, 'Logged. That’s me ' + recNow.analyst.w + ' and ' + recNow.analyst.l + ' this season, you ' + recNow.player.w + ' and ' + recNow.player.l + '.');
     } else {
-      say(HOST, 'Logged. We’ll find out next week.');
+      say(ANALYST, 'Logged. We’ll find out next week.');
     }
     w('');
 
@@ -3152,9 +3180,9 @@
     w('--- THE BIG FINISH --------------------------------------');
     w('');
     say(HOST, 'Big finish. Quick answers, nobody gets a sentence.');
-    bf.slice(0, bfCount).forEach(function (x, i) {
+    bf.slice(0, bfCount).forEach(function (x) {
       say(HOST, x[0]);
-      say(i % 2 === 0 ? PLAYER : ANALYST, x[1]);
+      say(PLAYER, x[1]);
     });
     say(HOST, 'That’s ' + cast.title + '. Same time next week.');
     w('');
