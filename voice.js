@@ -106,13 +106,21 @@
     /* Every request boundary is both a place the voices reset and one more
        chance to be told to slow down, so a chunk holds as much as the model
        will take rather than as little as reads tidily. Two speakers is the
-       model's own limit, not a choice. */
+       model's own limit, not a choice; measured on a real show, that limit
+       was what forced two splits in three, and the character limit forced
+       none at all.
+
+       A segment header used to force one as well, to buy the longer pause
+       between segments. On a 79-line show that was ten extra requests for
+       six tenths of a second each, which is a bad trade on a key that is
+       allowed a handful a minute. The header still earns the longer pause
+       wherever the voices were going to change anyway. */
     maxChars = maxChars || 4000;
     var chunks = [], cur = null;
     turns.forEach(function (t) {
       var inRun = cur && cur.speakers.indexOf(t.speaker) >= 0;
       var fits = cur && (inRun || cur.speakers.length < 2) &&
-        !t.segmentBreak && cur.chars + t.text.length <= maxChars;
+        cur.chars + t.text.length <= maxChars;
       if (!fits) {
         cur = { speakers: [], turns: [], chars: 0, segmentBreak: t.segmentBreak };
         chunks.push(cur);
@@ -236,6 +244,12 @@
       '- Every line is `LABEL: what they say`, using exactly these labels: ' + labels.join(', ') + '.',
       '- Segment headers look like `--- SEGMENT 1: THE QUESTION ---`, on their own line.',
       '- No stage directions, no parentheses, no sound effects, no narration. Nobody describes the show they are on.',
+      /* Not a style note. The speech engine takes two voices per take, so
+         a third label inside a segment is an extra request and a seam in
+         the audio -- and on a free key, requests are the scarce thing. */
+      '- Inside one segment, use only TWO of the labels and stay with them. Change the pair at the next segment header, not in the middle of an exchange.',
+      '- Across the show every panellist gets their share of segments. The host does not have to be in all of them.',
+      brief.coach ? '- In the coach segment, COACH is one of the two voices.' : '',
       brief.coach ? '- COACH appears exactly once, and says exactly the quote given below, word for word. He is a clip, not a guest. Nobody interviews him.' : '',
       '',
       '# THE RUNNING ORDER',
@@ -704,13 +718,33 @@
 
   /* ---------- the whole script ---------- */
 
+  /* Finished parts of the last run, so being told to slow down halfway
+     does not mean paying for the first half twice. Kept against exactly
+     what produced them -- change the script, the model or a voice and it
+     is a different show, and the old parts are no use. */
+  var held = null;
+  function runKey(opts, turns) {
+    var txt = opts.script, h = 0;
+    for (var i = 0; i < txt.length; i++) { h = (h * 31 + txt.charCodeAt(i)) | 0; }
+    return [h, turns.length, opts.model, JSON.stringify(opts.voices), JSON.stringify(opts.styles), opts.fallbackVoice, opts.show, opts.hype].join('|');
+  }
+  /* How much of a run is already in hand, for the screen to say so. */
+  function heldParts(opts) {
+    if (!held) return 0;
+    var turns = parseDialogue(opts.script);
+    return held.key === runKey(opts, turns) ? held.pieces.length : 0;
+  }
+
   function voiceScript(opts) {
     var turns = parseDialogue(opts.script);
     if (!turns.length) return Promise.reject(new Error('There are no spoken lines in that script to voice.'));
     /* Longer runs than before: every request boundary is a place where
        the voices lose the thread of the argument and reset. */
     var chunks = chunkTurns(turns, opts.maxChars);
-    var pieces = [];
+    var key = runKey(opts, turns);
+    var pieces = held && held.key === key ? held.pieces.slice(0, chunks.length) : [];
+    held = { key: key, pieces: pieces };
+    var resumedAt = pieces.length;
     var step = function (i) {
       if (opts.signal && opts.signal.aborted) return Promise.reject(abortError());
       if (i >= chunks.length) return Promise.resolve();
@@ -724,12 +758,15 @@
       });
     };
     var gapBefore = minGap;
-    return step(0).then(function () {
+    if (opts.onProgress && resumedAt) opts.onProgress({ done: resumedAt, total: chunks.length, resumed: resumedAt });
+    return step(resumedAt).then(function () {
       if (minGap === gapBefore && minGap > 0) minGap = Math.floor(minGap / 2);
       if (opts.onProgress) opts.onProgress({ done: chunks.length, total: chunks.length });
       var wav = toWav(pieces);
-      wav.requests = chunks.length;
+      wav.requests = chunks.length - resumedAt;
+      wav.resumed = resumedAt;
       wav.lines = turns.length;
+      held = null;          /* finished: nothing left to pick up */
       return wav;
     });
   }
@@ -739,6 +776,8 @@
     WRITE_MODELS: WRITE_MODELS,
     listModels: listModels,
     pacing: pacing,
+    heldParts: heldParts,
+    dropHeld: function () { held = null; },
     tryModel: tryModel,
     writePrompt: writePrompt,
     writeShow: writeShow,

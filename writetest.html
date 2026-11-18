@@ -181,6 +181,14 @@ window.fetch = function (url, init) {
         'the prompt names every segment rather than leaving the running order to the model',
         order.filter(function (seg) { return prompt.indexOf(seg) < 0; }).join(', ') || 'all present');
       ok(/Do not skip one, do not merge two, do not stop early/.test(prompt), 'and says not to skip them');
+
+      /* Two voices to a segment. Not a style note: the speech engine takes
+         two per take, so a third label inside a segment is an extra
+         request, and on a free key requests are the scarce thing. */
+      ok(/use only TWO of the labels/.test(prompt), 'the writer is told to keep a segment to two voices', (prompt.match(/.*only TWO of the labels.*/) || [''])[0]);
+      ok(/Change the pair at the next segment header/.test(prompt), 'and to change the pair at a segment header, not mid-exchange');
+      ok(/every panellist gets their share/.test(prompt), 'without anyone dropping off the show');
+      ok(/COACH is one of the two voices/.test(prompt), 'and the coach clip counts as one of its two');
       var briefAt = prompt.indexOf('# WHAT HAPPENED'), nowAt = prompt.lastIndexOf('# NOW WRITE IT');
       ok(briefAt > 0 && nowAt > briefAt,
         'the job is restated after the brief, because thousands of characters of JSON sat between the instructions and the writing', briefAt + ' then ' + nowAt);

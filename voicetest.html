@@ -109,7 +109,7 @@
     });
   };
 
-  var game, chosen;
+  var game, chosen, LONGS, partsWanted, got;
   Promise.resolve().then(function () {
     /* ---------- the cast moved on from the old defaults ---------- */
     var sh = W.state().show;
@@ -140,7 +140,19 @@
 
     var chunks = V.chunkTurns(turns);
     ok(chunks.every(function (c) { return c.speakers.length <= 2; }), 'no request has more than two voices — Google’s limit', chunks.map(function (c) { return c.speakers.length; }).join(''));
-    ok(chunks.every(function (c) { return c.turns.slice(1).every(function (t) { return !t.segmentBreak; }); }), 'no request straddles two segments');
+    /* A segment header used to force its own request, to buy the longer
+       pause between segments. Six tenths of a second is not worth a
+       request on a key that is allowed a handful a minute, so a header is
+       now crossed freely and only earns the pause where the voices were
+       changing anyway. */
+    var forcedSplit = 0;
+    for (var ci = 1; ci < chunks.length; ci++) {
+      var prev = chunks[ci - 1], first = chunks[ci].turns[0];
+      if (!(prev.speakers.length >= 2 && prev.speakers.indexOf(first.speaker) < 0) && prev.chars + first.text.length <= 4000) forcedSplit++;
+    }
+    ok(forcedSplit === 0, 'nothing splits a request except the two-voice limit it cannot do anything about', forcedSplit + ' avoidable splits');
+    ok(chunks.length < turns.filter(function (t) { return t.segmentBreak; }).length + chunks.filter(function (c) { return c.speakers.length === 2; }).length + 2,
+      'so the show costs fewer requests than it used to', chunks.length + ' parts for ' + turns.length + ' lines');
     ok([].concat.apply([], chunks.map(function (c) { return c.turns; })).map(function (t) { return t.text; }).join('|') === turns.map(function (t) { return t.text; }).join('|'), 'splitting keeps every line, in order');
 
     /* ---------- no key: tell them how to get one ---------- */
@@ -376,6 +388,49 @@
     ok(calls.length === 1 && calls[0].signal.aborted, 'closing the dialog aborts the request in flight', calls.length + ' calls, aborted=' + (calls[0] && calls[0].signal.aborted));
     ok(q('#modal').hidden, 'and nothing reopens afterwards');
     ok(!/Stopped/.test(q('#view').textContent + q('#modal').textContent), 'no stray message appears on the page behind');
+
+    /* ---------- stopping does not throw away what was paid for -------
+       A show of known shape, so the counts below mean something whatever
+       the sections above left in the box. */
+    var LONG = [];
+    ['THE QUESTION', 'STOCK UP', 'THE NUMBERS', 'THE SWING', 'FINAL TAKE', 'THE BIG FINISH'].forEach(function (seg, i) {
+      LONG.push('--- ' + seg + ' ---------------------------------------');
+      LONG.push('');
+      ['WHITCOMB', 'MABRY', 'HARLAN', 'RIDENOUR'].forEach(function (who, j) {
+        LONG.push(who + ': Line ' + (i + 1) + '.' + (j + 1) + ' about the game and what it says.');
+        LONG.push('');
+      });
+    });
+    LONGS = LONG.join('\n');
+    click('[data-action="script"][data-id="vg1"]');
+    q('#scriptBox').value = LONGS;
+    click('[data-action="close"]');
+    click('[data-action="script"][data-id="vg1"]');
+    partsWanted = V.chunkTurns(V.parseDialogue(LONGS)).length;
+    ok(partsWanted >= 6, 'the stand-in show is long enough to stop in the middle of', partsWanted);
+
+    V.dropHeld();
+    calls = []; mode = 'ok'; delay = 60; V.pacing(0);
+    click('[data-action="voice-script"]');
+    return waitFor(function () { return calls.length >= 3; }, 8000);
+  }).then(function () {
+    got = calls.length;
+    click('[data-action="voice-cancel"]');
+    return sleep(300);
+  }).then(function () {
+    ok(/already voiced/.test(q('#voiceArea').textContent), 'stopping says how much is already in hand rather than just "Stopped"', q('#voiceArea').textContent);
+    var done = V.heldParts({ script: LONGS, model: W.showCfg().model,
+      voices: { WHITCOMB: 'Nobody' }, styles: {}, fallbackVoice: 'Nobody', show: W.showCfg().title, hype: W.showCfg().hype });
+    ok(done === 0, 'parts are kept against the exact run that made them, so a different cast gets none of them', done);
+
+    calls = [];
+    click('[data-action="voice-script"]');
+    return waitFor(function () { return q('#voiceArea audio') || q('#voiceArea .banner'); }, 30000);
+  }).then(function () {
+    ok(!!q('#voiceArea audio'), 'carrying on finishes the show', q('#voiceArea').textContent.slice(0, 120));
+    ok(calls.length < partsWanted, 'and the parts already voiced are not paid for a second time', calls.length + ' more requests for a ' + partsWanted + ' part show');
+    ok(calls.length >= 1, 'while the rest of it is actually voiced', calls.length);
+    ok(got + calls.length <= partsWanted + 1, 'so the two runs together cost about what one run would have', got + ' then ' + calls.length + ' for ' + partsWanted);
     finish();
   }).catch(function (e) { out.push('EXC ' + (e && e.stack || e)); fails++; finish(); });
 })();

@@ -253,7 +253,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v34';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v35';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -4947,6 +4947,7 @@
       var pct = p.total ? Math.round(p.done / p.total * 100) : 0;
       area.innerHTML = '<div class="voice-progress">' +
         '<b>' + (p.waiting ? 'Google asked us to slow down — waiting ' + p.waiting + 's' : p.done >= p.total ? 'Stitching it together' : 'Voicing part ' + (p.done + 1) + ' of ' + p.total) + '</b>' +
+        (p.resumed ? '<div class="help">Picking up where it stopped — ' + p.resumed + ' ' + plural(p.resumed, 'part') + ' already voiced, and not paid for twice.</div>' : '') +
         '<div class="meter"><i style="width:' + pct + '%"></i></div>' +
         /* A free key is allowed a few requests a minute and a show is
            twenty-odd, so the wait is the normal case and worth saying out
@@ -4982,8 +4983,12 @@
     }).catch(function (err) {
       var area = voiceArea(id);
       if (!area) return;
-      if (err && err.name === 'AbortError') { area.innerHTML = '<p class="help">Stopped.</p>'; return; }
-      area.innerHTML = '<div class="banner crit">' + esc((err && err.message) || 'Voicing failed.') + '</div>';
+      /* Whatever was finished is kept. Saying so is the difference between
+         waiting out a rate limit and starting the whole show again. */
+      var done = V.heldParts({ script: g.script, model: c.model, voices: voices, styles: styles, fallbackVoice: c.voices.host, show: c.title, hype: c.hype });
+      var pickUp = done ? '<p class="help">' + done + ' ' + plural(done, 'part') + ' ' + (done === 1 ? 'is' : 'are') + ' already voiced. Press Voice it again and it carries on from there.</p>' : '';
+      if (err && err.name === 'AbortError') { area.innerHTML = '<p class="help">Stopped.</p>' + pickUp; return; }
+      area.innerHTML = '<div class="banner crit">' + esc((err && err.message) || 'Voicing failed.') + '</div>' + pickUp;
     }).then(function () {
       if (voiceJob && voiceJob.ctrl === ctrl) voiceJob = null;
     });
