@@ -22,6 +22,26 @@
 /* a stand-in for Google's writing model */
 window.__calls = [];
 var REAL_FETCH = window.fetch.bind(window);
+/* What a finished episode looks like coming back: every segment in the
+   running order, enough lines to be the show that was asked for. */
+var SEGS = ['RUNDOWN', 'COLD OPEN', 'THE QUESTION', 'STOCK UP', 'THE HOT SEAT', 'THE NUMBERS', 'THE SWING',
+  'THE OTHER SIDELINE', 'HELMET STICKERS', 'WHAT THE COACH SAID', 'THE STAFF', 'THE INSIDER',
+  'WHAT’S COMING', 'FINAL TAKE', 'THE BIG FINISH'];
+var SAYS = [
+  'WHITCOMB: Welcome in. Oregon lost to Utah, 27 to 13.',
+  'MABRY: I’m done making excuses for that offense.',
+  'HARLAN: Twenty-one of thirty-eight, three picks. That’s the game.',
+  'RIDENOUR: They’re still chasing a tackle in this class.',
+  'WHITCOMB: Say that again, because I don’t think people heard it.',
+  'MABRY: Yep.'
+];
+var FULL = '```\n' + SEGS.map(function (name, i) {
+  return '--- SEGMENT ' + (i + 1) + ': ' + name + ' ---\n\n' +
+    SAYS.map(function (l, j) { return (i === 9 && j === 0 ? 'COACH: J.Carty has to be better.' : l); }).join('\n\n');
+}).join('\n\n') + '\n```';
+var STUB = '--- SEGMENT 1: COLD OPEN ---\n\nWHITCOMB: Welcome in. Oregon lost to Utah, 27 to 13.\n\nMABRY: I’m done making excuses.\n\n' +
+  '--- SEGMENT 2: THE NUMBERS ---\n\nHARLAN: Twenty-one of thirty-eight, three picks.\n\n' +
+  '--- SEGMENT 3: FINAL TAKE ---\n\nWHITCOMB: That’s the show.';
 window.__mode = 'ok';
 window.fetch = function (url, init) {
   if (String(url).indexOf('generativelanguage.googleapis.com') < 0) return REAL_FETCH(url, init);
@@ -50,8 +70,13 @@ window.fetch = function (url, init) {
         return reply(200, { candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/L16;rate=24000', data: btoa(new Array(3000).join('a')) } }] } }] });
       }
       if (window.__mode === 'empty') return reply(200, { candidates: [{ content: { parts: [{ text: 'Sorry, I cannot help with that.' }] }, finishReason: 'STOP' }] });
-      var script = '```\n--- COLD OPEN ---\n\nWHITCOMB: Welcome in. Oregon lost to Utah, 27 to 13.\n\nMABRY: I’m done making excuses for that offense.\n\nHARLAN: Twenty-one of thirty-eight, three picks. That’s the game.\n\nCOACH: J.Carty has to be better.\n\nRIDENOUR: They’re still chasing a tackle in this class.\n```';
-      reply(200, { candidates: [{ content: { parts: [{ text: script }] }, finishReason: 'STOP' }] });
+      /* A model that ran out of room part-way: three segments, a handful of
+         lines. This is what was being handed over as a finished show. */
+      if (window.__mode === 'stub') return reply(200, { candidates: [{ content: { parts: [{ text: STUB }] }, finishReason: 'MAX_TOKENS' }] });
+      if (window.__mode === 'nothink' && /thinkingConfig/.test(init.body)) {
+        return reply(400, { error: { code: 400, message: 'Invalid JSON payload received. Unknown name "thinkingConfig" at \'generation_config\'.', status: 'INVALID_ARGUMENT' } });
+      }
+      reply(200, { candidates: [{ content: { parts: [{ text: FULL }] }, finishReason: 'STOP' }] });
     }, 10);
   });
 };
@@ -140,6 +165,27 @@ window.fetch = function (url, init) {
       ok(call.headers['x-goog-api-key'] === 'TEST-KEY-123', 'with the same key as the voices');
       ok(!call.body.generationConfig.responseModalities, 'and it asks for text, not audio');
 
+      /* Thinking is spent out of maxOutputTokens, so a model that thought
+         hard about a long brief had nothing left to write with. Asking for
+         the longest show was producing the shortest one. */
+      var cfg = call.body.generationConfig, prompt = call.body.contents[0].parts[0].text;
+      ok(cfg.thinkingConfig && cfg.thinkingConfig.thinkingBudget > 0,
+        'thinking is given an allowance of its own, since it comes out of the same pot as the script', JSON.stringify(cfg.thinkingConfig));
+      ok(cfg.maxOutputTokens >= 5000, 'and the script is left real room on top of it', cfg.maxOutputTokens);
+
+      /* The running order, instead of leaving it to the model: a show with
+         twelve of its fifteen parts missing is most of what "a one minute
+         show" was. */
+      var order = ['RUNDOWN', 'COLD OPEN', 'THE QUESTION', 'STOCK UP', 'THE HOT SEAT', 'THE NUMBERS', 'FINAL TAKE', 'THE BIG FINISH'];
+      ok(order.every(function (seg) { return prompt.indexOf(seg) >= 0; }),
+        'the prompt names every segment rather than leaving the running order to the model',
+        order.filter(function (seg) { return prompt.indexOf(seg) < 0; }).join(', ') || 'all present');
+      ok(/Do not skip one, do not merge two, do not stop early/.test(prompt), 'and says not to skip them');
+      var briefAt = prompt.indexOf('# WHAT HAPPENED'), nowAt = prompt.lastIndexOf('# NOW WRITE IT');
+      ok(briefAt > 0 && nowAt > briefAt,
+        'the job is restated after the brief, because thousands of characters of JSON sat between the instructions and the writing', briefAt + ' then ' + nowAt);
+      ok(/spoken lines/.test(prompt.slice(nowAt)), 'including how long it should be', prompt.slice(nowAt, nowAt + 120));
+
       var now = q('#scriptBox').value;
       ok(/MABRY: I’m done making excuses/.test(now), 'what came back is in the box', now.slice(0, 120));
       ok(!/^```/.test(now.trim()), 'a code fence is stripped');
@@ -166,6 +212,39 @@ window.fetch = function (url, init) {
       });
     }).then(function () {
       ok(/rejected the API key/.test(q('#voiceArea').textContent), 'a bad key is reported in plain words', q('#voiceArea').textContent);
+
+      /* --- a show that stopped early is not a short show --------------
+         It used to be handed over as though the model had chosen to be
+         brief. It had not. */
+      window.__mode = 'stub'; window.__calls = [];
+      click('[data-action="write-script"]');
+      return sleep(400);
+    }).then(function () {
+      var txt = q('#voiceArea').textContent;
+      ok(/\d+ lines across \d+ of \d+ segments/.test(txt), 'a script that stopped early is refused with the count', txt.slice(0, 200));
+      ok(/ran out of room/.test(txt), 'and says it ran out of room, when that is what the model said happened', txt.slice(0, 200));
+      ok(!!q('#voiceArea [data-action="write-script"]') && !!q('#voiceArea [data-action="use-short"]'),
+        'with both things worth doing beside it: write it again, or keep what came back');
+      ok(!/COLD OPEN/.test(q('#scriptBox').value) || /HARD COUNT/.test(q('#scriptBox').value),
+        'and the script you already had is left alone until you say otherwise');
+
+      var had = q('#scriptBox').value;
+      click('#voiceArea [data-action="use-short"]');
+      ok(q('#scriptBox').value !== had && /COLD OPEN/.test(q('#scriptBox').value), 'keeping it keeps it', q('#scriptBox').value.slice(0, 60));
+      ok(W.state().games[0].script === q('#scriptBox').value, 'and saves it');
+
+      /* --- a model that will not take a thinking budget --------------- */
+      window.__mode = 'nothink'; window.__calls = [];
+      click('[data-action="write-script"]');
+      return sleep(600);
+    }).then(function () {
+      var tries = window.__calls.filter(function (c) { return c.body && c.body.contents; });
+      ok(tries.length === 2, 'a model that refuses a thinking budget is asked once more without one, not reported as a failure', tries.length);
+      ok(tries[0].body.generationConfig.thinkingConfig && !tries[1].body.generationConfig.thinkingConfig,
+        'and only the budget is dropped, not everything else with it');
+      ok(tries[1].body.generationConfig.maxOutputTokens === tries[0].body.generationConfig.maxOutputTokens, 'the room for the script is kept');
+      ok(/SEGMENT 15/.test(q('#scriptBox').value), 'so the whole episode still arrives', q('#scriptBox').value.slice(0, 60));
+
       window.__mode = 'ok';
       click('[data-action="close"]');
 

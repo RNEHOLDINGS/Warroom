@@ -253,7 +253,7 @@
      Copies live in their own key, so they survive a bad save of the main one;
      they do not survive the browser clearing the site, which is what Export
      is for. */
-  var APP_BUILD = 'warroom-v33';   /* bump with CACHE in sw.js */
+  var APP_BUILD = 'warroom-v34';   /* bump with CACHE in sw.js */
   var SNAP_KEY = 'warroom.snapshots';
   var SNAP_MAX = 6;
   function countsOf(o) {
@@ -4850,12 +4850,40 @@
       var area = voiceArea(id);
       if (!area) return;
       if (err && err.name === 'AbortError') { area.innerHTML = '<p class="help">Stopped.</p>'; return; }
+      /* A short script is a refusal you can act on: the same model will
+         usually get it right second time, and what did come back is not
+         worthless. Both are one tap rather than a retype. */
+      if (err && err.shortScript) {
+        shortScript = { id: String(id), text: err.shortScript };
+        area.innerHTML = '<div class="banner crit">' + esc(err.message) + '</div>' +
+          '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
+            '<button class="btn small primary" data-action="write-script" data-id="' + esc(String(id)) + '">Write it again</button>' +
+            '<button class="btn small" data-action="use-short" data-id="' + esc(String(id)) + '">Keep what came back</button>' +
+          '</div>';
+        return;
+      }
       area.innerHTML = '<div class="banner crit">' + esc((err && err.message) || 'Writing failed.') + '</div>';
     }).then(function () {
       if (writeJob && writeJob.ctrl === ctrl) writeJob = null;
     });
   }
   function cancelWriting() { if (writeJob) { writeJob.ctrl.abort(); writeJob = null; } }
+
+  /* What the last short attempt produced, so "Keep what came back" has
+     something to keep. One at a time; it is replaced by the next attempt. */
+  var shortScript = null;
+  function keepShortScript(id) {
+    if (!shortScript || shortScript.id !== String(id)) return;
+    var g = state.games.filter(function (x) { return x.id === id; })[0];
+    if (!g) return;
+    g.script = g.scriptAuto = shortScript.text.trim();
+    shortScript = null;
+    save();
+    var box = $('#scriptBox');
+    if (box && box.getAttribute('data-id') === String(id)) box.value = g.script;
+    var area = voiceArea(id);
+    if (area) area.innerHTML = '<p class="help">Kept. It is short — read it before you voice it.</p>';
+  }
 
   /* ---------- Voice it ---------- */
 
@@ -6026,6 +6054,7 @@
       case 'print-script': printScript(id); break;
       case 'voice-script': voiceIt(id); break;
       case 'write-cancel': cancelWriting(); break;
+      case 'use-short': keepShortScript(id); break;
       case 'voice-cancel': cancelVoicing(); break;
       case 'scan-roster': scanModal('players'); break;
       case 'scan-recruits': scanModal('recruits'); break;

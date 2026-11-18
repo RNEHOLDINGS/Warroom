@@ -187,6 +187,41 @@
      will reach for the same aphorisms this app spent months removing, so
      it is told what not to do, in detail, and told that every number has to
      come from the brief. */
+  /* The running order the built-in writer uses. Without it the model
+     invented two or three segments and stopped, which is most of what a
+     "one minute show" was: not a short episode, a show with twelve of its
+     fifteen parts missing. A list it can work through is harder to
+     shortcut than an instruction to write at length. */
+  function runOrder(brief) {
+    var len = brief.show.length;
+    var rows = [
+      ['RUNDOWN', 'The host sets up the three things this episode covers. Two or three lines.', 1],
+      ['COLD OPEN', 'Straight into the result and the argument it starts. No welcome, no preamble.', 1],
+      ['THE QUESTION', 'The host puts the one question this game raises. The panel disagree on it.', 1],
+      ['STOCK UP', 'Who came out of this better than they went in, and why, with his actual line.', 1],
+      ['THE HOT SEAT', 'Whoever was poor, named, with the numbers that say so. No softening.', 1],
+      ['THE NUMBERS', 'The box score read as an argument, not a list.', 1],
+      ['THE SWING', 'The play or sequence the game turned on.', 0],
+      ['THE OTHER SIDELINE', 'What the opponent did well or got away with.', 0],
+      ['HELMET STICKERS', 'Short. One each, for a player who earned it.', 0],
+      ['WHAT THE COACH SAID', 'The COACH clip, then the panel reading what it means.', 0],
+      ['THE STAFF', 'The coaching and the calls, defended and attacked.', 0],
+      ['THE INSIDER', 'Recruiting, from the board in the brief.', 0],
+      ['WHAT’S COMING', 'Next opponent and what has to change by then.', 0],
+      ['FINAL TAKE', 'One flat sentence each. No speeches.', 1],
+      ['THE BIG FINISH', 'The host lands it on one line that only fits this game.', 1]
+    ];
+    /* A quick hit is the spine only; a full show is everything there is. */
+    return rows.filter(function (r) { return len === 'full' || len === 'standard' ? true : r[2] === 1; })
+      .map(function (r, i) { return (i + 1) + '. --- SEGMENT ' + (i + 1) + ': ' + r[0] + ' --- ' + r[1]; }).join('\n');
+  }
+
+  function lengthRule(brief) {
+    return brief.show.length === 'quick' ? 'About 25 to 35 spoken lines in total.'
+      : brief.show.length === 'full' ? 'About 70 to 90 spoken lines in total, so roughly 6 a segment. Take your time with the arguments.'
+      : 'About 45 to 60 spoken lines in total, so roughly 4 a segment.';
+  }
+
   function writePrompt(brief) {
     var labels = brief.cast.map(function (c) { return c.label; });
     return [
@@ -199,14 +234,16 @@
       '',
       '# FORMAT',
       '- Every line is `LABEL: what they say`, using exactly these labels: ' + labels.join(', ') + '.',
-      '- Segment headers look like `--- SEGMENT 1: THE QUESTION ---`. Use them to break the show up.',
+      '- Segment headers look like `--- SEGMENT 1: THE QUESTION ---`, on their own line.',
       '- No stage directions, no parentheses, no sound effects, no narration. Nobody describes the show they are on.',
       brief.coach ? '- COACH appears exactly once, and says exactly the quote given below, word for word. He is a clip, not a guest. Nobody interviews him.' : '',
       '',
+      '# THE RUNNING ORDER',
+      'Write every one of these segments, in this order, with its header. Do not skip one, do not merge two, do not stop early.',
+      runOrder(brief),
+      '',
       '# HOW LONG',
-      brief.show.length === 'quick' ? 'About 25 to 35 spoken lines. Cold open, the numbers, what swung it, and the calls.'
-        : brief.show.length === 'full' ? 'About 70 to 90 spoken lines. Take your time with the arguments.'
-        : 'About 45 to 60 spoken lines.',
+      lengthRule(brief),
       '',
       '# THE ROOM',
       'The energy is ' + brief.show.energy + '.',
@@ -228,15 +265,36 @@
       '',
       '# WHAT HAPPENED',
       'Everything below is true and complete. Use it. Nothing else is true.',
-      JSON.stringify(brief, null, 1)
+      JSON.stringify(brief, null, 1),
+      '',
+      /* Restated after the brief: a few thousand characters of JSON sat
+         between the instructions and the writing, and the last thing read
+         is the thing that gets followed. */
+      '# NOW WRITE IT',
+      'Every segment in the running order above, each with its header, in that order. ' + lengthRule(brief) +
+        ' Start with the first header and nothing before it.'
     ].filter(Boolean).join('\n');
   }
 
+  /* Roughly what a finished episode costs in tokens, so the cap can be set
+     from the show being asked for rather than from one number that fitted
+     the short one. */
+  function wantedLines(len) { return len === 'quick' ? 35 : len === 'full' ? 90 : 60; }
+
   function writeShow(opts) {
-    var body = JSON.stringify({
-      contents: [{ parts: [{ text: writePrompt(opts.brief) }] }],
-      generationConfig: { temperature: 1, maxOutputTokens: 8192 }
-    });
+    var len = (opts.brief.show || {}).length;
+    /* Thinking is on by default on these models and it is spent out of
+       maxOutputTokens, so a model that thought hard about a long brief had
+       nothing left to write with -- which is how asking for the longest
+       show produced the shortest one. Give thinking its own allowance and
+       leave the script a budget of its own on top. */
+    var think = true;
+    var build = function () {
+      var cfg = { temperature: 1, maxOutputTokens: Math.round(wantedLines(len) * 28) + 4000 };
+      if (think) cfg.thinkingConfig = { thinkingBudget: 2048 };
+      return JSON.stringify({ contents: [{ parts: [{ text: writePrompt(opts.brief) }] }], generationConfig: cfg });
+    };
+    var body = build();
     var attempt = 0;
     var go = function () {
       attempt++;
@@ -254,7 +312,20 @@
             if (opts.onProgress) opts.onProgress({ waiting: Math.round(wait / 1000) });
             return sleep(wait, opts.signal).then(go);
           }
-          if (!r.ok) throw new Error(explain(r.status, raw));
+          if (!r.ok) {
+            /* Not every model takes a thinking budget, and one that does not
+               says so rather than ignoring it. Asking once without it beats
+               refusing to write the show. */
+            if (r.status === 400 && think) {
+              var m400 = '';
+              try { m400 = (JSON.parse(raw).error || {}).message || ''; } catch (e) { m400 = raw; }
+              if (/thinking|unknown name|unknown field|invalid json payload/i.test(m400)) {
+                think = false; body = build(); attempt = 0;
+                return go();
+              }
+            }
+            throw new Error(explain(r.status, raw));
+          }
           var data = JSON.parse(raw);
           var cand = (data.candidates || [])[0] || {};
           var text = ((cand.content && cand.content.parts) || []).map(function (p) { return p.text || ''; }).join('').trim();
@@ -262,6 +333,22 @@
           /* a model that wrapped the script in a code fence is still a script */
           text = text.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/, '').trim();
           if (!/^[A-Z][A-Z'’.\- ]{1,30}:\s+\S/m.test(text)) throw new Error('That came back without any dialogue in it. Try again, or use the built-in writer.');
+          /* A script that stopped early used to be handed over as though
+             the model had chosen to be brief. It had not: it ran out of
+             room, or quit after three segments. Say which. */
+          var lines = (text.match(/^[A-Z][A-Z'’.\- ]{1,30}:\s+\S/mg) || []).length;
+          var segs = (text.match(/^---\s*SEGMENT/mg) || []).length;
+          var want = wantedLines(len), wantSegs = runOrder(opts.brief).split('\n').length;
+          var short = lines < want * 0.55 || segs < Math.ceil(wantSegs * 0.6);
+          if (short) {
+            var why = cand.finishReason === 'MAX_TOKENS'
+              ? 'it ran out of room before it finished'
+              : 'it stopped early';
+            var e = new Error('That came back as ' + lines + ' lines across ' + segs + ' of ' + wantSegs +
+              ' segments — ' + why + '. Write it again, pick a shorter show, or use the built-in writer.');
+            e.shortScript = text;
+            throw e;
+          }
           return text;
         });
       });
